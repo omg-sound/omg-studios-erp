@@ -38,6 +38,20 @@ function db() {
   try { _db.exec("PRAGMA foreign_keys = ON;"); } catch (e) { console.warn("[db] foreign_keys 설정 경고:", e.message); }
   if (!db._logged) {
     console.log(`[db] driver=${driver} path=${config.dbPath}`);
+    // 폴백 드라이버로 떨어진 것을 눈에 띄게 알린다.
+    // better-sqlite3 는 optionalDependencies 라 설치가 실패해도 npm 이 조용히 넘어가고
+    // 앱은 node:sqlite 로 그냥 뜬다. 2026-07-26 에 실제로 그 상태가 Render 빌드 캐시에
+    // 굳어 운영이 폴백으로 돌았고, 두 드라이버의 동작 차이(SQL 이 안 쓰는 명명 파라미터를
+    // better-sqlite3 는 무시, node:sqlite 는 거부)로 청구 탭이 500 이 났다.
+    // 테스트는 better-sqlite3 로 돌기 때문에 이 상태는 테스트로 잡히지 않는다.
+    if (driver !== "better-sqlite3" && config.isProd) {
+      console.warn(
+        `⚠️  [db] 폴백 드라이버(${driver})로 실행 중 — 운영은 better-sqlite3 여야 합니다.\n` +
+          "    better-sqlite3 설치가 실패했거나 빌드 캐시에서 빠진 상태입니다.\n" +
+          "    Render → Manual Deploy → Clear build cache & deploy 로 재설치하세요.\n" +
+          "    테스트는 better-sqlite3 로 돌기 때문에 이 차이는 테스트로 잡히지 않습니다."
+      );
+    }
     db._logged = true;
   }
   return _db;
