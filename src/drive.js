@@ -90,9 +90,8 @@ function sharedListParams() {
 
 const fs = require("fs");
 
-const STATE_ROOT_FOLDER = STATE_FOLDER_PREFIX + "root";
-const STATE_ROOT_RENAMED = "drive_root_renamed_omg_v1"; // 루트 폴더명 1회 변경 게이트(구 'OMG Studios Deliverables' → omg-studios-manager)
-const ROOT_FOLDER_NAME = "omg-studios-manager";
+// 개인 내 드라이브 시절의 래퍼 폴더(omg-studios-manager)와 그 캐시·이름 변경 게이트는
+// 공유 드라이브 전환(2026-07-25)으로 사라졌다. 저장 루트는 공유 드라이브 자체다.
 
 /** 캐시된 폴더 id가 실재하고 휴지통이 아니면 true. 조회 실패(404 등)·휴지통이면 false. */
 async function folderAlive(drive, id) {
@@ -105,84 +104,26 @@ async function folderAlive(drive, id) {
 }
 
 /**
- * 공유 드라이브 최상위의 'omg-studios-manager' 폴더 목록. 생성일 오름차순(가장 오래된=원본).
- * 내 드라이브 시절에는 `'root' in parents` 였다. 공유 드라이브에서는 드라이브 ID 가 곧 루트다.
- */
-async function listRootFolders() {
-  const drive = driveClient();
-  const q = `name = '${ROOT_FOLDER_NAME.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '${config.driveSharedDriveId}' in parents`;
-  const { data } = await drive.files.list({ q, fields: "files(id,name,createdTime)", orderBy: "createdTime", pageSize: 50, ...sharedListParams() });
-  return data.files || [];
-}
-
-/**
- * 루트 폴더(omg-studios-manager)를 lazy 생성·캐시.
- * 캐시가 있고 살아있으면 재사용. 캐시가 없거나 무효(삭제/휴지통/안 보임)면 **이름으로 기존 폴더를 먼저 검색**해
- * 재사용(중복 생성 방지 — 캐시 유실/토큰 변경으로 같은 이름 폴더가 여러 개 생기던 문제). 여러 개면 가장 오래된 것(원본).
- * 아무 것도 없을 때만 새로 만든다.
+ * 저장 루트 = 공유 드라이브 자체.
+ *
+ * 개인 내 드라이브를 쓰던 시절에는 그 안에 `omg-studios-manager` 폴더를 두고 그걸 루트로 삼았고,
+ * 캐시 유실·토큰 변경으로 같은 이름 폴더가 여러 개 생기는 문제가 있어 탐색·통합 로직이 필요했다.
+ * 이제는 ERP 전용 공유 드라이브(omg-studios-erp)를 쓰므로 래퍼 폴더도, 그 중복 처리도 필요 없다.
+ * (2026-07-25 이관 완료 후 정리)
  */
 async function ensureFolder() {
-  const drive = driveClient();
-  const cached = getState(STATE_ROOT_FOLDER);
-  if (cached && (await folderAlive(drive, cached))) {
-    if (!getState(STATE_ROOT_RENAMED)) {
-      try { await drive.files.update({ fileId: cached, requestBody: { name: ROOT_FOLDER_NAME }, ...SHARED }); } catch (_e) {}
-      setState(STATE_ROOT_RENAMED, "done");
-    }
-    return cached;
-  }
-  if (cached) setState(STATE_ROOT_FOLDER, null); // 무효(삭제/휴지통/안 보임) 캐시 폐기
-  // 새로 만들기 전에 앱이 볼 수 있는 기존 루트 폴더를 검색 — 있으면 재사용(가장 오래된 원본).
-  try {
-    const existing = await listRootFolders();
-    if (existing.length) {
-      setState(STATE_ROOT_FOLDER, existing[0].id);
-      setState(STATE_ROOT_RENAMED, "done");
-      return existing[0].id;
-    }
-  } catch (_e) { /* 검색 실패 시 생성으로 폴백 */ }
-  const { data } = await drive.files.create({
-    requestBody: {
-      name: ROOT_FOLDER_NAME,
-      mimeType: "application/vnd.google-apps.folder",
-      parents: [config.driveSharedDriveId], // 공유 드라이브 최상위
-    },
-    fields: "id",
-    ...SHARED,
-  });
-  setState(STATE_ROOT_FOLDER, data.id);
-  setState(STATE_ROOT_RENAMED, "done"); // 신규 생성은 이미 새 이름
-  return data.id;
+  if (!config.driveSharedDriveId) throw new DriveNotLinkedError();
+  return config.driveSharedDriveId;
 }
 
-/**
- * 중복 루트 폴더 감지·통합: 앱이 볼 수 있는 루트 폴더 중 **가장 오래된 것(원본)** 을 정본 캐시로 지정.
- * 이후 업로드·이관이 원본 폴더로 간다. 반환 { folders:[{id,createdTime}], canonical, duplicates }.
- * (파일 이동은 하지 않음 — 사용자가 Drive에서 빈 중복 폴더를 확인·삭제하도록 안내.)
- */
+/** 예전 인터페이스 유지용 — 공유 드라이브에서는 루트 탐색이 없다. */
+async function listRootFolders() {
+  return [];
+}
+
+/** 예전 인터페이스 유지용 — 중복 루트 개념이 사라져 통합할 것이 없다. */
 async function reconcileRootFolder() {
-  const folders = await listRootFolders();
-  if (!folders.length) return { folders: [], canonical: null, duplicates: 0, subDuplicates: 0 };
-  const canonical = folders[0].id; // createdTime asc → 가장 오래된 원본
-  setState(STATE_ROOT_FOLDER, canonical);
-  setState(STATE_ROOT_RENAMED, "done");
-  // 하위 폴더 중복도 통합: 정본 루트 아래 폴더를 이름별로 묶어 가장 오래된 것을 캐시로, 나머지는 중복 카운트.
-  let subDuplicates = 0;
-  try {
-    const drive = driveClient();
-    const { data } = await drive.files.list({
-      q: `mimeType = 'application/vnd.google-apps.folder' and trashed = false and '${canonical}' in parents`,
-      fields: "files(id,name,createdTime)", orderBy: "createdTime", pageSize: 100, ...sharedListParams(),
-    });
-    const byName = {};
-    for (const f of data.files || []) (byName[f.name] = byName[f.name] || []).push(f);
-    for (const nm of Object.keys(byName)) {
-      const dupes = byName[nm]; // createdTime asc
-      setState(STATE_FOLDER_PREFIX + "sub_" + nm, dupes[0].id); // 가장 오래된 원본으로 캐시 재지정
-      subDuplicates += dupes.length - 1;
-    }
-  } catch (_e) { /* 하위 폴더 통합 실패는 무시(루트만이라도 통합) */ }
-  return { folders, canonical, duplicates: folders.length - 1, subDuplicates };
+  return { folders: [], canonical: config.driveSharedDriveId || null, duplicates: 0, subDuplicates: 0 };
 }
 
 /** 루트(또는 지정 부모) 아래 같은 이름의 하위 폴더 목록. 생성일 오름차순(가장 오래된=원본). */
@@ -279,9 +220,9 @@ async function backupToDrive(filePath, { keep = 14 } = {}) {
   return { ok: true, fileId: up.id, pruned };
 }
 
-/** 캐시된 폴더 id(첫 업로드 전이면 null). 점검용 — 생성은 안 함. */
+/** 저장 루트 id(=공유 드라이브 id). 점검용. */
 function getFolderId() {
-  return getState(STATE_ROOT_FOLDER) || null;
+  return config.driveSharedDriveId || null;
 }
 
 /** Drive 파일/폴더 메타(존재 확인·바로가기 링크). 없으면(404 등) 예외. */
@@ -296,10 +237,15 @@ async function getFileMeta(fileId) {
  * 반환: { id, name, webViewLink, created(신규생성 여부) } 또는 미연동 시 예외.
  */
 async function checkFolder() {
-  const before = getFolderId();
-  const id = await ensureFolder(); // 캐시 있으면 그대로, 없으면 생성
+  const id = await ensureFolder(); // = 공유 드라이브 id
   const meta = await getFileMeta(id);
-  return { id: meta.id, name: meta.name, webViewLink: meta.webViewLink || null, trashed: !!meta.trashed, created: !before };
+  // files.get 은 드라이브 루트를 그냥 "Drive" 로 부른다. 화면에는 실제 드라이브 이름을 보여준다.
+  let name = meta.name;
+  try {
+    const { data } = await driveClient().drives.get({ driveId: id, fields: "name" });
+    if (data && data.name) name = data.name;
+  } catch (_e) { /* 이름 조회 실패는 비치명적 */ }
+  return { id: meta.id, name, webViewLink: meta.webViewLink || null, trashed: !!meta.trashed, created: false };
 }
 
 /**
