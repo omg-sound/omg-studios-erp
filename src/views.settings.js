@@ -694,7 +694,9 @@ function systemWarnings() {
   // 디스크 여유(2026-07-09 스케일 점검): 디스크가 차면 SQLite 쓰기 실패 = 전면 장애인데 감시가 없었음. 500MB 미만이면 경고.
   const free = diskFreeBytes();
   if (free != null && free < 500 * 1024 * 1024) warns.push(`디스크 여유 공간이 ${formatBytes(free)}뿐입니다 — 가득 차면 DB 저장이 실패합니다(백업 보존 축소·디스크 증설 검토).`);
-  if (config.googleConfigured && !drive.isLinked()) warns.push("구글 Drive 미연동 — 첨부·백업 오프사이트가 로컬에만 저장됩니다.");
+  // 자료 저장(서비스 계정)과 OAuth(메일·캘린더·연락처)는 별개 자격증명이라 경고도 나눈다.
+  if (!drive.isLinked()) warns.push("자료 저장 Drive 미설정 — 첨부·백업이 서버 로컬 디스크에만 저장됩니다(오프사이트 사본 없음).");
+  if (config.googleConfigured && !drive.isOAuthLinked()) warns.push("구글 계정 미연동 — 메일 발송·캘린더·연락처 연동이 동작하지 않습니다.");
   if (!getState("studio_calendar_id")) warns.push("스튜디오 캘린더 미설정 — 세션의 구글 캘린더 자동 연동이 꺼져 있습니다.");
   // 청구 알림 메일(2026-07-14): 수신 주소가 없으면 청구가 발행돼도 아무에게도 안 간다(조용한 장애 클래스).
   if (!mailer.getRecipients().length) warns.push("청구 알림 이메일 수신 주소가 없습니다 — 청구가 발행돼도 알림이 발송되지 않습니다(환경설정 > 일반 > 알림).");
@@ -717,7 +719,11 @@ function systemTab(chief) {
     : `<section class="card"><p class="text-sm"><span class="badge badge-success mr-2">정상</span>연동·백업에 확인이 필요한 항목이 없습니다.</p></section>`;
 
   // 연동 상태 — 각 설정 섹션(환경설정 탭)에 흩어져 있던 것을 배지로 요약.
+  // Drive(서비스 계정)와 OAuth(메일·캘린더·연락처)는 **서로 다른 자격증명**이다.
+  // 2026-07-26 Drive 가 서비스 계정으로 갈라진 뒤로 한 배지로 묶으면 오해를 준다.
   const linked = drive.isLinked();
+  const oauthOn = drive.isOAuthLinked();
+  const oauthAcct = drive.getDriveAccountEmail();
   const calSet = !!getState("studio_calendar_id");
   let peopleOn = false;
   try { peopleOn = !!require("./people").peopleClient(); } catch (_e) { peopleOn = false; }
@@ -725,13 +731,15 @@ function systemTab(chief) {
   const integrations = `<section class="card">
       <h2 class="mb-2 text-sm font-semibold">연동 상태</h2>
       <div class="flex flex-wrap gap-x-6 gap-y-1.5 text-sm">
+        <span>자료 저장 Drive ${badge(linked, "공유 드라이브", "로컬 디스크")}</span>
+        <span>구글 계정(메일·캘린더·연락처) ${badge(oauthOn, "연동됨", "미연동")}</span>
         <span>구글 캘린더 ${badge(calSet, "자동 연동", "꺼짐")}</span>
-        <span>구글 Drive ${badge(linked, "연동됨", "미연동")}</span>
         <span>구글 연락처 ${badge(peopleOn, "푸시 가능", "미연동")}</span>
         <span>알림 웹훅 ${badge(alerts.isConfigured(), "설정됨", "미설정")}</span>
         <span>청구 알림 메일 ${badge(mailer.isConfigured(), `수신 ${mailer.getRecipients().length}명`, "미설정")}</span>
       </div>
-      <p class="mt-2 text-xs text-muted">세부 설정·연결은 일반 탭에서.</p>
+      ${oauthAcct ? `<p class="mt-2 text-xs text-muted">연동 계정 <span class="text-fg">${esc(oauthAcct)}</span></p>` : ""}
+      <p class="mt-1 text-xs text-muted">자료 저장은 전용 서비스 계정, 나머지는 위 구글 계정 OAuth 를 씁니다. 세부 설정은 일반 탭에서.</p>
     </section>`;
 
   // 백업 — 마지막 백업 시각·크기·보관 개수 + 수동 백업(치프).
