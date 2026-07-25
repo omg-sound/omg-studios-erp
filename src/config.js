@@ -27,6 +27,12 @@ const config = {
   // 기본 studio@omgworks.kr, 배포 env(STUDIO_DRIVE_EMAIL)로만 변경(앱 UI로는 못 바꿈).
   studioDriveEmail: (process.env.STUDIO_DRIVE_EMAIL || "studio@omgworks.kr").trim().toLowerCase(),
 
+  // 첨부·백업 저장 Drive는 **조직 소유 공유 드라이브(omg-studios-erp)** 를 쓴다(2026-07-25).
+  // 개인 내 드라이브에 두면 그 계정에 문제가 생길 때 서류가 함께 사라진다.
+  // 접근은 전용 서비스 계정으로 하며, 메일·캘린더·연락처가 쓰는 OAuth 토큰과는 별개다.
+  driveSaKey: process.env.GOOGLE_SA_KEY || "", // 서비스 계정 JSON 키(base64)
+  driveSharedDriveId: (process.env.DRIVE_ERP_DRIVE_ID || "").trim(),
+
   sessionSecret: process.env.SESSION_SECRET || "dev-insecure-session-secret",
   tokenEncKey: process.env.TOKEN_ENC_KEY || "dev-insecure-token-enc-key",
 
@@ -58,6 +64,8 @@ const config = {
 
 config.isProd = config.env === "production";
 config.googleConfigured = Boolean(config.google.clientId && config.google.clientSecret);
+// Drive 백엔드 사용 가능 여부. googleConfigured(OAuth = 메일·캘린더·연락처)와 별개다.
+config.driveConfigured = Boolean(config.driveSaKey && config.driveSharedDriveId);
 
 function isWeakSecret(value, devDefault) {
   const v = String(value || "").trim();

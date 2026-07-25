@@ -1,12 +1,16 @@
 "use strict";
 
 /**
- * 구글 Drive 스토리지 모듈 — 스캐폴드(플레이북1 §2.2~2.4).
- * MVP(프로젝트 관리)에서는 미사용. 자료 전달 단계에서 업로드/프록시 스트리밍을 활성화한다.
+ * 구글 Drive 스토리지 모듈.
  *
  * 핵심 설계:
- * - 관리자 OAuth refresh token을 재사용(별도 서비스 계정 없음), 최소권한 scope 'drive.file'.
- * - refresh token은 admin_state에 AES-256-GCM 암호화 저장(db.encrypt/decrypt).
+ * - 첨부·백업은 **조직 소유 공유 드라이브 `omg-studios-erp`** 에 저장한다(2026-07-25 전환).
+ *   전에는 관리자 개인 내 드라이브(`omg-studios-manager` 폴더)에 두었는데,
+ *   그 계정에 문제가 생기면 사업자등록증·주민등록증 사본이 함께 사라지는 구조였다.
+ * - 접근은 **전용 서비스 계정**(erp-drive@…)으로 한다. 공유 드라이브는 멤버십이 접근
+ *   근거라, 예전 `drive.file` 스코프의 "앱이 만든 파일만 보임" 제약이 없다.
+ * - ⚠️ 이 파일의 `getRefreshToken()` 은 Drive 전용이 아니다. mailer·calendar·people 이
+ *   같은 OAuth 토큰을 함께 쓰므로 **걷어내면 안 된다.**
  * - 업로드 파일은 공개하지 않고 백엔드가 프록시 스트리밍(/api/assets/:id/raw).
  */
 
@@ -39,17 +43,40 @@ const STATE_DRIVE_EMAIL = "drive_account_email"; // 현재 Drive 토큰이 어�
 function setDriveAccountEmail(email) { setState(STATE_DRIVE_EMAIL, String(email || "").trim() || null); }
 function getDriveAccountEmail() { return getState(STATE_DRIVE_EMAIL) || null; }
 
+/**
+ * Drive 백엔드를 쓸 수 있는지. 서비스 계정 키와 공유 드라이브 ID가 모두 설정돼야 한다.
+ * (OAuth 토큰 유무와 무관 — 그쪽은 메일·캘린더·연락처용이다.)
+ */
 function isLinked() {
-  return Boolean(config.googleConfigured && getRefreshToken());
+  return config.driveConfigured;
 }
 
-/** refresh token으로 인증된 Drive 클라이언트. 미연결 시 DriveNotLinkedError. */
+let saAuth = null;
+
+/** 서비스 계정으로 인증된 Drive 클라이언트. 미설정 시 DriveNotLinkedError. */
 function driveClient() {
-  const refresh = getRefreshToken();
-  if (!config.googleConfigured || !refresh) throw new DriveNotLinkedError();
-  const auth = oauthClient();
-  auth.setCredentials({ refresh_token: refresh });
-  return google.drive({ version: "v3", auth });
+  if (!config.driveConfigured) throw new DriveNotLinkedError();
+  if (!saAuth) {
+    const key = JSON.parse(Buffer.from(config.driveSaKey, "base64").toString("utf8"));
+    saAuth = new google.auth.JWT({
+      email: key.client_email,
+      key: key.private_key,
+      scopes: ["https://www.googleapis.com/auth/drive"],
+    });
+  }
+  return google.drive({ version: "v3", auth: saAuth });
+}
+
+// 공유 드라이브를 다루려면 모든 호출에 붙여야 하는 파라미터.
+const SHARED = { supportsAllDrives: true };
+/** list 계열 전용 — 공유 드라이브 안만 검색한다. */
+function sharedListParams() {
+  return {
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    corpora: "drive",
+    driveId: config.driveSharedDriveId,
+  };
 }
 
 const fs = require("fs");
@@ -61,18 +88,21 @@ const ROOT_FOLDER_NAME = "omg-studios-manager";
 /** 캐시된 폴더 id가 실재하고 휴지통이 아니면 true. 조회 실패(404 등)·휴지통이면 false. */
 async function folderAlive(drive, id) {
   try {
-    const { data } = await drive.files.get({ fileId: id, fields: "id,trashed" });
+    const { data } = await drive.files.get({ fileId: id, fields: "id,trashed", ...SHARED });
     return !data.trashed;
   } catch (_e) {
     return false;
   }
 }
 
-/** 앱이 볼 수 있는(=앱이 만든, drive.file) 루트 레벨 'omg-studios-manager' 폴더 목록. 생성일 오름차순(가장 오래된=원본). */
+/**
+ * 공유 드라이브 최상위의 'omg-studios-manager' 폴더 목록. 생성일 오름차순(가장 오래된=원본).
+ * 내 드라이브 시절에는 `'root' in parents` 였다. 공유 드라이브에서는 드라이브 ID 가 곧 루트다.
+ */
 async function listRootFolders() {
   const drive = driveClient();
-  const q = `name = '${ROOT_FOLDER_NAME.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'root' in parents`;
-  const { data } = await drive.files.list({ q, fields: "files(id,name,createdTime)", orderBy: "createdTime", pageSize: 50, spaces: "drive" });
+  const q = `name = '${ROOT_FOLDER_NAME.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '${config.driveSharedDriveId}' in parents`;
+  const { data } = await drive.files.list({ q, fields: "files(id,name,createdTime)", orderBy: "createdTime", pageSize: 50, ...sharedListParams() });
   return data.files || [];
 }
 
@@ -87,7 +117,7 @@ async function ensureFolder() {
   const cached = getState(STATE_ROOT_FOLDER);
   if (cached && (await folderAlive(drive, cached))) {
     if (!getState(STATE_ROOT_RENAMED)) {
-      try { await drive.files.update({ fileId: cached, requestBody: { name: ROOT_FOLDER_NAME } }); } catch (_e) {}
+      try { await drive.files.update({ fileId: cached, requestBody: { name: ROOT_FOLDER_NAME }, ...SHARED }); } catch (_e) {}
       setState(STATE_ROOT_RENAMED, "done");
     }
     return cached;
@@ -103,8 +133,13 @@ async function ensureFolder() {
     }
   } catch (_e) { /* 검색 실패 시 생성으로 폴백 */ }
   const { data } = await drive.files.create({
-    requestBody: { name: ROOT_FOLDER_NAME, mimeType: "application/vnd.google-apps.folder" },
+    requestBody: {
+      name: ROOT_FOLDER_NAME,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [config.driveSharedDriveId], // 공유 드라이브 최상위
+    },
     fields: "id",
+    ...SHARED,
   });
   setState(STATE_ROOT_FOLDER, data.id);
   setState(STATE_ROOT_RENAMED, "done"); // 신규 생성은 이미 새 이름
@@ -128,7 +163,7 @@ async function reconcileRootFolder() {
     const drive = driveClient();
     const { data } = await drive.files.list({
       q: `mimeType = 'application/vnd.google-apps.folder' and trashed = false and '${canonical}' in parents`,
-      fields: "files(id,name,createdTime)", orderBy: "createdTime", pageSize: 100, spaces: "drive",
+      fields: "files(id,name,createdTime)", orderBy: "createdTime", pageSize: 100, ...sharedListParams(),
     });
     const byName = {};
     for (const f of data.files || []) (byName[f.name] = byName[f.name] || []).push(f);
@@ -145,7 +180,7 @@ async function reconcileRootFolder() {
 async function listSubfolders(name, parentId) {
   const drive = driveClient();
   const q = `name = '${String(name).replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '${parentId}' in parents`;
-  const { data } = await drive.files.list({ q, fields: "files(id,name,createdTime)", orderBy: "createdTime", pageSize: 50, spaces: "drive" });
+  const { data } = await drive.files.list({ q, fields: "files(id,name,createdTime)", orderBy: "createdTime", pageSize: 50, ...sharedListParams() });
   return data.files || [];
 }
 
@@ -168,6 +203,7 @@ async function ensureSubfolder(name) {
   const { data } = await drive.files.create({
     requestBody: { name, mimeType: "application/vnd.google-apps.folder", parents: [root] },
     fields: "id",
+    ...SHARED,
   });
   setState(key, data.id);
   return data.id;
@@ -181,6 +217,7 @@ async function uploadFile({ filePath, name, mimeType, folder }) {
     requestBody: { name, parents: [parent] },
     media: { mimeType: mimeType || "application/octet-stream", body: fs.createReadStream(filePath) },
     fields: "id",
+    ...SHARED,
   });
   return data.id;
 }
@@ -188,7 +225,7 @@ async function uploadFile({ filePath, name, mimeType, folder }) {
 /** Drive 파일을 res로 프록시 스트리밍(공개 URL 없이, 백엔드가 비공개 유지). */
 async function streamFile(fileId, res) {
   const drive = driveClient();
-  const resp = await drive.files.get({ fileId, alt: "media" }, { responseType: "stream" });
+  const resp = await drive.files.get({ fileId, alt: "media", ...SHARED }, { responseType: "stream" });
   await new Promise((resolve, reject) => {
     res.on("close", () => { try { resp.data.destroy(); } catch (_e) {} }); // 클라이언트 중단 시 업스트림 파괴(FD/소켓 누수 방지) — 로컬 스트림과 동일
     resp.data.on("end", resolve).on("error", reject).pipe(res);
@@ -198,7 +235,7 @@ async function streamFile(fileId, res) {
 async function deleteFile(fileId) {
   const drive = driveClient();
   // 영구삭제 대신 휴지통으로 이동 — 첨부 교체·오삭제 시 30일 복구 창 확보(민감 금융서류 보호).
-  await drive.files.update({ fileId, requestBody: { trashed: true } });
+  await drive.files.update({ fileId, requestBody: { trashed: true }, ...SHARED });
 }
 
 /**
@@ -214,7 +251,7 @@ async function backupToDrive(filePath, { keep = 14 } = {}) {
   const name = path.basename(filePath);
   const { data } = await drive.files.list({
     q: `'${parent}' in parents and trashed = false`,
-    fields: "files(id,name)", orderBy: "name", pageSize: 200, spaces: "drive",
+    fields: "files(id,name)", orderBy: "name", pageSize: 200, ...sharedListParams(),
   });
   const files = (data.files || []).filter((f) => /^app-\d.*\.db$/.test(f.name));
   for (const f of files) { if (f.name === name) { try { await deleteFile(f.id); } catch (_e) {} } } // 같은 날 재실행 중복 제거
@@ -222,6 +259,7 @@ async function backupToDrive(filePath, { keep = 14 } = {}) {
     requestBody: { name, parents: [parent] },
     media: { mimeType: "application/x-sqlite3", body: fs.createReadStream(filePath) },
     fields: "id",
+    ...SHARED,
   });
   // 정리: 이름(app-YYYY-MM-DD.db) 사전순 = 날짜순 → 최신 keep개만 보존, 나머지 휴지통.
   const remaining = files.filter((f) => f.name !== name).map((f) => ({ id: f.id, name: f.name }));
@@ -240,7 +278,7 @@ function getFolderId() {
 /** Drive 파일/폴더 메타(존재 확인·바로가기 링크). 없으면(404 등) 예외. */
 async function getFileMeta(fileId) {
   const drive = driveClient();
-  const { data } = await drive.files.get({ fileId, fields: "id,name,webViewLink,mimeType,trashed,createdTime" });
+  const { data } = await drive.files.get({ fileId, fields: "id,name,webViewLink,mimeType,trashed,createdTime", ...SHARED });
   return data;
 }
 

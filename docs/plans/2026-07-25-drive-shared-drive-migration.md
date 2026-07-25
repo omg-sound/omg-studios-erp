@@ -29,6 +29,25 @@ Drive 접근은 전부 `src/drive.js` 를 지나고, 그 위를 `src/storage.js`
 `drive | local` 백엔드로 추상화한다. 라우트는 `storage` 만 쓰므로
 **바꿀 곳은 사실상 `drive.js` 하나다.**
 
+### ⚠️ OAuth 토큰은 걷어내면 안 된다
+
+`drive.js` 의 `getRefreshToken()` 을 **Drive 말고도 세 모듈이 함께 쓴다.**
+
+| 모듈 | 용도 |
+|---|---|
+| `mailer.js` | 메일 발송 |
+| `calendar.js` | 캘린더 (주석에 "Drive와 같은 refresh token 재사용") |
+| `people.js` | 연락처 |
+
+따라서 이번 작업은 **"OAuth 를 서비스 계정으로 교체" 가 아니라 "Drive 만 서비스
+계정으로 분리"** 다. OAuth 저장·조회 경로(`saveRefreshToken`, `getRefreshToken`,
+`setDriveAccountEmail`, `getDriveAccountEmail`)와 `routes/auth.routes.js` 의
+토큰 저장은 그대로 둔다.
+
+`isLinked()` 의 의미도 나눈다. 지금은 "OAuth 토큰 있음" 이고 `storage.js` 가
+이걸로 백엔드를 고르는데, 앞으로 **Drive 백엔드 판정은 서비스 계정 설정 여부**로
+바꾼다. 메일·캘린더·연락처의 판정에는 손대지 않는다.
+
 ## 핵심 사실 두 가지
 
 **1. 파일 ID 는 이동해도 바뀌지 않는다.**
@@ -52,12 +71,15 @@ DB(`deliverables.file_id`, 클라이언트 첨부)에 저장된 값은 그대로
 
 ### 2단계 — `drive.js` 전환
 
-- `driveClient()` 를 OAuth refresh token 대신 서비스 계정 JWT 로
+- `driveClient()` 를 OAuth refresh token 대신 **서비스 계정 JWT** 로
+  (`getRefreshToken()` 자체는 메일·캘린더·연락처가 쓰므로 **남겨둔다**)
 - 루트 폴더 결정: `'root' in parents` → 공유 드라이브 ID 를 부모로
 - 모든 `files.*` 호출에 `supportsAllDrives: true`,
   `list` 계열에는 `includeItemsFromAllDrives: true` + `corpora: 'drive'` + `driveId` 추가
 - `backupToDrive()` 의 `spaces: "drive"` 목록 조회도 위 파라미터 반영
-- `isLinked()` 의미 변경: "OAuth 토큰 있음" → "서비스 계정·드라이브 설정 있음"
+- `isLinked()` 는 **Drive 백엔드 판정용**으로 의미를 바꾼다:
+  "OAuth 토큰 있음" → "서비스 계정 키 + 공유 드라이브 ID 설정됨".
+  `storage.js` 의 `activeBackend()` 가 이걸 따른다.
 
 ### 3단계 — 기존 파일 이동
 
