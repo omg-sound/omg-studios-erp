@@ -186,6 +186,18 @@ router.post("/migrate-drive", requireStaff, asyncHandler(async (req, res) => {
   if (r.failed.length) console.warn("[migrate-drive] failed:", JSON.stringify(r.failed));
   res.redirect(`/settings?tab=settings&flash=${r.failed.length ? "drive_partial" : "drive_done"}`);
 }));
+// ── 1회성: 개인 드라이브의 omg-studios-manager 폴더를 공유 드라이브로 이관 ──
+// 폴더째 옮기므로 파일 ID·하위 구조·DB(file_id)가 모두 그대로다.
+router.post("/migrate-shared-drive", requireStaff, asyncHandler(async (req, res) => {
+  const { moveToSharedDrive } = require("../lib/shared-drive-migrate");
+  let r;
+  try { r = await moveToSharedDrive(); }
+  catch (e) { console.warn("[migrate-shared-drive] 실패:", e && e.message); return res.redirect("/settings?tab=settings&flash=shared_drive_failed"); }
+  if (!r.ok) return res.redirect("/settings?tab=settings&flash=shared_drive_failed");
+  logAudit(req.user, "system.drive.move-to-shared", r.alreadyMoved ? "이미 이관됨" : String(r.movedId || ""));
+  res.redirect(`/settings?tab=settings&flash=${r.alreadyMoved ? "shared_drive_already" : "shared_drive_done"}`);
+}));
+
 router.post("/studio-logo/delete", requireStaff, (req, res) => {
   setStudioLogo(null);
   res.redirect("/settings?tab=settings&flash=deleted");

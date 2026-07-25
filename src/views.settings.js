@@ -233,20 +233,13 @@ function contentTab() {
 /** 자료 저장(구글 Drive) 상태 + 로컬→Drive 이관. 최소 권한(drive.file)으로 앱 전용 폴더에만 저장. */
 function driveStorageSection() {
   const linked = drive.isLinked();
-  const studioAcct = config.studioDriveEmail; // 자료 저장 고정 계정
   const localN = localFileCount();
   let status;
-  if (!config.googleConfigured) {
-    status = `<p class="text-sm text-muted">Google OAuth가 설정되지 않았습니다.</p>`;
-  } else if (linked) {
-    const acct = drive.getDriveAccountEmail();
-    const mismatch = acct && acct !== studioAcct;
-    status = `<p class="text-sm"><span class="badge badge-success">연동됨</span> 첨부 서류·자료 전달 파일이 <span class="font-medium">구글 Drive</span> 앱 전용 폴더에 저장됩니다.${acct ? ` <span class="text-muted">· 계정 <span class="font-medium text-fg">${esc(acct)}</span></span>` : ""}</p>
-      ${mismatch
-        ? `<p class="text-xs text-danger">⚠️ 현재 <span class="font-medium">${esc(acct)}</span>에 연결돼 있습니다. 자료 저장 계정은 <span class="font-medium">${esc(studioAcct)}</span>로 고정입니다 — 그 계정으로 로그인해 Drive를 다시 연결하세요.</p>`
-        : `<p class="text-xs text-muted">자료 저장 계정은 <span class="text-fg">${esc(studioAcct)}</span> <span class="text-fg">한 곳</span>으로 고정입니다. 치프가 바뀌어도 이 계정 Drive에만 저장됩니다.</p>`}`;
+  if (linked) {
+    status = `<p class="text-sm"><span class="badge badge-success">연결됨</span> 첨부 서류·자료 전달 파일이 <span class="font-medium">공유 드라이브 omg-studios-erp</span>에 저장됩니다. <span class="text-muted">소유자는 조직이라 담당자 계정이 바뀌어도 남습니다.</span></p>
+      <p class="text-xs text-muted">전용 서비스 계정으로 접근합니다 — 사람이 로그인해 연결하는 방식이 아닙니다. 설정은 배포 환경변수(<code>GOOGLE_SA_KEY</code>·<code>DRIVE_ERP_DRIVE_ID</code>)로만 바꿉니다.</p>`;
   } else {
-    status = `<p class="text-sm text-muted"><span class="badge badge-warning">미연동</span> 지금은 파일이 <span class="font-medium">서버 로컬 디스크</span>에 저장됩니다. <span class="font-medium text-fg">${esc(studioAcct)}</span> 계정으로 <a class="text-primary hover:underline" href="/auth/google">로그인</a>하면 Drive 저장이 켜집니다(자료 저장은 이 계정으로 고정).</p>`;
+    status = `<p class="text-sm text-muted"><span class="badge badge-warning">미설정</span> 지금은 파일이 <span class="font-medium">서버 로컬 디스크</span>에 저장됩니다. 배포 환경변수 <code>GOOGLE_SA_KEY</code>·<code>DRIVE_ERP_DRIVE_ID</code>를 설정하면 공유 드라이브 저장이 켜집니다.</p>`;
   }
   const driveN = linked ? driveFileCount() : 0;
   const migrate = linked && localN > 0
@@ -254,13 +247,17 @@ function driveStorageSection() {
     : linked
       ? `<p class="text-xs text-muted">로컬에 남은 파일이 없습니다 · Drive 저장 ${driveN}개.</p>`
       : "";
+  // 개인 드라이브에 남은 옛 폴더를 공유 드라이브로 옮기는 1회성 버튼(이관 후에는 '이미 이관됨'으로 끝난다).
+  const moveOld = linked && drive.isOAuthLinked()
+    ? `<form method="post" action="/settings/migrate-shared-drive" data-confirm="개인 드라이브의 omg-studios-manager 폴더를 공유 드라이브로 옮길까요? 파일 ID는 그대로라 첨부 링크는 유지됩니다."><button class="btn-ghost btn-sm" type="submit">옛 개인 드라이브 폴더 이관</button></form>`
+    : "";
   const check = linked
-    ? `<div class="flex flex-wrap gap-2 border-t border-border pt-2"><a class="btn-ghost btn-sm" href="/settings/drive-check">Drive 연결 테스트 (폴더·업로드 확인) ↗</a><a class="btn-ghost btn-sm" href="/auth/google?drive=1">${esc(studioAcct)} 계정으로 다시 연결</a></div>`
-    : `<div class="border-t border-border pt-2"><a class="btn-primary btn-sm" href="/auth/google?drive=1">${esc(studioAcct)} 계정으로 로그인해 Drive 연결</a></div>`;
+    ? `<div class="flex flex-wrap gap-2 border-t border-border pt-2"><a class="btn-ghost btn-sm" href="/settings/drive-check">Drive 연결 테스트 (폴더·업로드 확인) ↗</a>${moveOld}</div>`
+    : "";
   return `<div class="${SETTING_BLOCK}">
     <div>
       <h2 class="text-sm font-semibold">자료 저장 (구글 Drive)</h2>
-      ${explain(`첨부 서류·자료 전달 파일의 실제 저장 위치. 최소 권한(<code>drive.file</code>)으로 앱이 만든 전용 폴더에만 접근합니다. 그 폴더를 원하는 위치로 옮기거나 공유해 쓰실 수 있습니다.`)}
+      ${explain(`첨부 서류·자료 전달 파일의 실제 저장 위치. 조직 소유 <span class="text-fg">공유 드라이브</span>에 두어, 담당자 계정이 바뀌거나 사라져도 서류가 남도록 했습니다. 주민등록증 사본 등 민감 서류가 들어가므로 이 드라이브는 홈페이지 등 다른 앱과 분리돼 있습니다.`)}
     </div>
     ${status}${migrate}${check}
   </div>`;
@@ -275,7 +272,8 @@ async function studioCalendarSection(chief = false) {
   let inner;
   if (!config.googleConfigured) {
     inner = `<p class="text-sm text-muted">Google OAuth가 설정되지 않았습니다.</p>`;
-  } else if (!drive.isLinked()) {
+  } else if (!drive.isOAuthLinked()) {
+    // 캘린더는 관리자 OAuth 토큰을 쓴다(Drive 서비스 계정과 별개).
     inner = `<p class="text-sm text-muted">구글 계정 연동이 필요합니다. <a class="text-primary hover:underline" href="/auth/google">구글 계정 연동(캘린더 권한 포함)</a> 후 다시 시도하세요.</p>`;
   } else {
     const calendars = await calendar.listCalendars();

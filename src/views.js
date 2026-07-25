@@ -358,10 +358,13 @@ const FLASH_MESSAGES = {
   drive_done: "로컬 파일을 구글 Drive로 이관했습니다.",
   drive_partial: "일부 파일을 Drive로 이관했습니다 — 실패분은 로컬에 남아 있습니다(로그 확인).",
   drive_unlinked: "구글 Drive 연동이 필요합니다 — 구글 계정 연동 후 다시 시도하세요.",
+  shared_drive_done: "개인 드라이브의 폴더를 공유 드라이브로 옮겼습니다. 파일 ID가 유지되므로 기존 첨부 링크도 그대로입니다.",
+  shared_drive_already: "옮길 폴더가 없습니다 — 이미 공유 드라이브로 이관된 상태입니다.",
+  shared_drive_failed: "공유 드라이브 이관에 실패했습니다 — 로그를 확인하세요.",
   added_cal_off: "추가됨 · 구글 캘린더 자동 연동 안 됨 (환경설정 › 일반 › 스튜디오 캘린더 확인)",
   saved_cal_off: "저장됨 · 구글 캘린더 자동 연동 안 됨 (환경설정 › 일반 › 스튜디오 캘린더 확인)",
 };
-const FLASH_WARN = new Set(["last_chief", "drive_partial", "drive_unlinked", "added_cal_off", "saved_cal_off"]);
+const FLASH_WARN = new Set(["last_chief", "drive_partial", "drive_unlinked", "shared_drive_already", "shared_drive_failed", "added_cal_off", "saved_cal_off"]);
 function flashBanner(query) {
   const key = query && query.flash;
   // notice = 자유 문구(동기화 결과 등 동적 메시지). FLASH_MESSAGES 키가 아니므로 별도 처리 — esc로 이스케이프하고 길이 제한(배너 남용·깨짐 방지).

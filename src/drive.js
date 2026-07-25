@@ -51,6 +51,15 @@ function isLinked() {
   return config.driveConfigured;
 }
 
+/**
+ * 관리자 OAuth 연동 여부. 메일·캘린더·연락처가 이 토큰을 쓴다.
+ * 2026-07-25 이전에는 `isLinked()` 가 이 뜻이었고 Drive 판정도 겸했는데,
+ * Drive 가 서비스 계정으로 갈라지면서 둘을 분리했다.
+ */
+function isOAuthLinked() {
+  return Boolean(config.googleConfigured && getRefreshToken());
+}
+
 let saAuth = null;
 
 /** 서비스 계정으로 인증된 Drive 클라이언트. 미설정 시 DriveNotLinkedError. */
@@ -323,6 +332,7 @@ module.exports = {
   setDriveAccountEmail,
   getDriveAccountEmail,
   isLinked,
+  isOAuthLinked,
   driveClient,
   ensureFolder,
   ensureSubfolder,
