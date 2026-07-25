@@ -112,8 +112,8 @@ async function folderAlive(drive, id) {
  * (2026-07-25 이관 완료 후 정리)
  */
 async function ensureFolder() {
-  if (!config.driveSharedDriveId) throw new DriveNotLinkedError();
-  return config.driveSharedDriveId;
+  if (!config.driveRootFolderId) throw new DriveNotLinkedError();
+  return config.driveRootFolderId;
 }
 
 /** 예전 인터페이스 유지용 — 공유 드라이브에서는 루트 탐색이 없다. */
@@ -123,7 +123,7 @@ async function listRootFolders() {
 
 /** 예전 인터페이스 유지용 — 중복 루트 개념이 사라져 통합할 것이 없다. */
 async function reconcileRootFolder() {
-  return { folders: [], canonical: config.driveSharedDriveId || null, duplicates: 0, subDuplicates: 0 };
+  return { folders: [], canonical: config.driveRootFolderId || null, duplicates: 0, subDuplicates: 0 };
 }
 
 /** 루트(또는 지정 부모) 아래 같은 이름의 하위 폴더 목록. 생성일 오름차순(가장 오래된=원본). */
@@ -220,9 +220,9 @@ async function backupToDrive(filePath, { keep = 14 } = {}) {
   return { ok: true, fileId: up.id, pruned };
 }
 
-/** 저장 루트 id(=공유 드라이브 id). 점검용. */
+/** 저장 루트 id(= omg-studios-erp 폴더). 점검용. */
 function getFolderId() {
-  return config.driveSharedDriveId || null;
+  return config.driveRootFolderId || null;
 }
 
 /** Drive 파일/폴더 메타(존재 확인·바로가기 링크). 없으면(404 등) 예외. */
@@ -237,15 +237,9 @@ async function getFileMeta(fileId) {
  * 반환: { id, name, webViewLink, created(신규생성 여부) } 또는 미연동 시 예외.
  */
 async function checkFolder() {
-  const id = await ensureFolder(); // = 공유 드라이브 id
+  const id = await ensureFolder(); // = omg-studios-erp 폴더
   const meta = await getFileMeta(id);
-  // files.get 은 드라이브 루트를 그냥 "Drive" 로 부른다. 화면에는 실제 드라이브 이름을 보여준다.
-  let name = meta.name;
-  try {
-    const { data } = await driveClient().drives.get({ driveId: id, fields: "name" });
-    if (data && data.name) name = data.name;
-  } catch (_e) { /* 이름 조회 실패는 비치명적 */ }
-  return { id: meta.id, name, webViewLink: meta.webViewLink || null, trashed: !!meta.trashed, created: false };
+  return { id: meta.id, name: meta.name, webViewLink: meta.webViewLink || null, trashed: !!meta.trashed, created: false };
 }
 
 /**

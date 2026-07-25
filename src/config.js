@@ -31,7 +31,11 @@ const config = {
   // 개인 내 드라이브에 두면 그 계정에 문제가 생길 때 서류가 함께 사라진다.
   // 접근은 전용 서비스 계정으로 하며, 메일·캘린더·연락처가 쓰는 OAuth 토큰과는 별개다.
   driveSaKey: process.env.GOOGLE_SA_KEY || "", // 서비스 계정 JSON 키(base64)
+  // 드라이브 ID와 루트 폴더 ID를 따로 둔다. 공유 드라이브 omg-studios 안의
+  // omg-studios-erp 폴더만 이 앱에 공유돼 있어서(드라이브 멤버 아님),
+  // 파일을 만들 부모는 폴더 ID 이고 목록 조회(corpora=drive)에는 드라이브 ID 가 필요하다.
   driveSharedDriveId: (process.env.DRIVE_ERP_DRIVE_ID || "").trim(),
+  driveRootFolderId: (process.env.DRIVE_ERP_ROOT_FOLDER_ID || "").trim(),
 
   sessionSecret: process.env.SESSION_SECRET || "dev-insecure-session-secret",
   tokenEncKey: process.env.TOKEN_ENC_KEY || "dev-insecure-token-enc-key",
@@ -65,7 +69,7 @@ const config = {
 config.isProd = config.env === "production";
 config.googleConfigured = Boolean(config.google.clientId && config.google.clientSecret);
 // Drive 백엔드 사용 가능 여부. googleConfigured(OAuth = 메일·캘린더·연락처)와 별개다.
-config.driveConfigured = Boolean(config.driveSaKey && config.driveSharedDriveId);
+config.driveConfigured = Boolean(config.driveSaKey && config.driveSharedDriveId && config.driveRootFolderId);
 
 function isWeakSecret(value, devDefault) {
   const v = String(value || "").trim();
