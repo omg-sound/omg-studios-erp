@@ -188,14 +188,36 @@ router.post("/migrate-drive", requireStaff, asyncHandler(async (req, res) => {
 }));
 // ── 1회성: 개인 드라이브의 omg-studios-manager 폴더를 공유 드라이브로 이관 ──
 // 폴더째 옮기므로 파일 ID·하위 구조·DB(file_id)가 모두 그대로다.
+//
+// 결과를 flash 한 줄로 요약하지 않고 진단 내용을 화면에 그대로 보여준다.
+// 2026-07-25 첫 시도에서 실패했는데 "옮겼습니다"가 떠서 원인을 못 찾았다.
+function diagPage(title, ok, rows) {
+  const li = Object.entries(rows)
+    .map(([k, v]) => `<li><span class="text-muted">${esc(k)}</span> · <span class="font-mono text-xs">${esc(v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v))}</span></li>`)
+    .join("");
+  return `<section class="card ${ok ? "" : "border-danger/40"}">
+    <h2 class="mb-2 text-sm font-semibold ${ok ? "text-success" : "text-danger"}">${ok ? "✅" : "❌"} ${esc(title)}</h2>
+    <ul class="space-y-1 text-sm">${li}</ul>
+    <div class="mt-3"><a class="btn-ghost btn-sm" href="/settings?tab=settings">설정으로 돌아가기</a></div>
+  </section>`;
+}
+
+// 실행 없이 현황만 본다(안전).
+router.get("/shared-drive-check", requireStaff, asyncHandler(async (req, res) => {
+  const { inspect } = require("../lib/shared-drive-migrate");
+  let r;
+  try { r = await inspect(); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
+  res.send(layout({ title: "공유 드라이브 점검", user: req.user, current: "/settings", body: diagPage("공유 드라이브 이관 점검", !!r.ok, r) }));
+}));
+
 router.post("/migrate-shared-drive", requireStaff, asyncHandler(async (req, res) => {
   const { moveToSharedDrive } = require("../lib/shared-drive-migrate");
   let r;
   try { r = await moveToSharedDrive(); }
-  catch (e) { console.warn("[migrate-shared-drive] 실패:", e && e.message); return res.redirect("/settings?tab=settings&flash=shared_drive_failed"); }
-  if (!r.ok) return res.redirect("/settings?tab=settings&flash=shared_drive_failed");
-  logAudit(req.user, "system.drive.move-to-shared", r.alreadyMoved ? "이미 이관됨" : String(r.movedId || ""));
-  res.redirect(`/settings?tab=settings&flash=${r.alreadyMoved ? "shared_drive_already" : "shared_drive_done"}`);
+  catch (e) { r = { ok: false, step: "throw", error: (e && e.message) || String(e) }; }
+  if (!r.ok) console.warn("[migrate-shared-drive] 실패:", JSON.stringify(r));
+  logAudit(req.user, "system.drive.move-to-shared", r.ok ? "이관 완료" : `실패(${r.step || "?"}: ${r.error || "?"})`);
+  res.send(layout({ title: "공유 드라이브 이관", user: req.user, current: "/settings", body: diagPage(r.ok ? "이관 완료" : "이관 실패", !!r.ok, r) }));
 }));
 
 router.post("/studio-logo/delete", requireStaff, (req, res) => {

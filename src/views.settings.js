@@ -252,7 +252,7 @@ function driveStorageSection() {
     ? `<form method="post" action="/settings/migrate-shared-drive" data-confirm="개인 드라이브의 omg-studios-manager 폴더를 공유 드라이브로 옮길까요? 파일 ID는 그대로라 첨부 링크는 유지됩니다."><button class="btn-ghost btn-sm" type="submit">옛 개인 드라이브 폴더 이관</button></form>`
     : "";
   const check = linked
-    ? `<div class="flex flex-wrap gap-2 border-t border-border pt-2"><a class="btn-ghost btn-sm" href="/settings/drive-check">Drive 연결 테스트 (폴더·업로드 확인) ↗</a>${moveOld}</div>`
+    ? `<div class="flex flex-wrap gap-2 border-t border-border pt-2"><a class="btn-ghost btn-sm" href="/settings/drive-check">Drive 연결 테스트 (폴더·업로드 확인) ↗</a><a class="btn-ghost btn-sm" href="/settings/shared-drive-check">이관 점검(실행 없음) ↗</a>${moveOld}</div>`
     : "";
   return `<div class="${SETTING_BLOCK}">
     <div>

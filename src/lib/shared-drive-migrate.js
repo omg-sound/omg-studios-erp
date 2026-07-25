@@ -72,28 +72,62 @@ async function inspect() {
 /**
  * 실제 이관. 폴더 하나를 공유 드라이브 최상위로 옮긴다.
  * 소유권이 개인 → 조직으로 넘어간다(되돌리려면 반대로 옮겨야 한다).
+ *
+ * 성공 판정은 **API 응답이 아니라 이동 후 재조회 결과**로 한다. 2026-07-25 첫 시도에서
+ * 화면에는 "옮겼습니다"가 떴는데 실제로는 폴더가 그대로였다. 응답만 믿으면 실패를
+ * 성공으로 보고하게 되므로, driveId 가 목표 드라이브와 같은지 확인한 뒤에만 성공으로 친다.
  */
 async function moveToSharedDrive() {
-  if (!config.driveSharedDriveId) return { ok: false, error: "SHARED_DRIVE_NOT_CONFIGURED" };
+  if (!config.driveSharedDriveId) return { ok: false, step: "config", error: "SHARED_DRIVE_NOT_CONFIGURED" };
   const drive = oauthDrive();
-  if (!drive) return { ok: false, error: "OAUTH_NOT_LINKED" };
+  if (!drive) return { ok: false, step: "oauth", error: "OAUTH_NOT_LINKED" };
 
-  const src = await findSourceFolder(drive);
-  if (!src) return { ok: true, alreadyMoved: true, movedId: null };
+  let src;
+  try {
+    src = await findSourceFolder(drive);
+  } catch (e) {
+    return { ok: false, step: "find", error: (e && e.message) || String(e) };
+  }
+  // "못 찾음" 을 "이미 이관됨" 으로 뭉뚱그리지 않는다. 앱이 폴더를 못 보는 상황일 수 있다.
+  if (!src) return { ok: false, step: "find", error: "SOURCE_NOT_FOUND", hint: "앱이 개인 드라이브에서 omg-studios-manager 폴더를 보지 못했습니다." };
 
-  const { data } = await drive.files.update({
-    fileId: src.id,
-    addParents: config.driveSharedDriveId,
-    removeParents: (src.parents || []).join(","),
-    fields: "id,name,driveId,parents",
-    supportsAllDrives: true,
-  });
+  let updated;
+  try {
+    const { data } = await drive.files.update({
+      fileId: src.id,
+      addParents: config.driveSharedDriveId,
+      removeParents: (src.parents || []).join(","),
+      fields: "id,name,driveId,parents",
+      supportsAllDrives: true,
+    });
+    updated = data;
+  } catch (e) {
+    return { ok: false, step: "move", error: (e && e.message) || String(e), sourceId: src.id };
+  }
 
+  // 재조회로 실제 안착 확인.
+  let verify = null;
+  try {
+    const { data } = await drive.files.get({
+      fileId: src.id,
+      fields: "id,name,driveId,parents",
+      supportsAllDrives: true,
+    });
+    verify = data;
+  } catch (e) {
+    return { ok: false, step: "verify", error: (e && e.message) || String(e), sourceId: src.id };
+  }
+
+  const landed = verify.driveId === config.driveSharedDriveId;
   return {
-    ok: true,
-    alreadyMoved: false,
-    movedId: data.id,
-    landedInDrive: data.driveId === config.driveSharedDriveId,
+    ok: landed,
+    step: landed ? "done" : "verify",
+    error: landed ? null : "NOT_LANDED",
+    sourceId: src.id,
+    updatedParents: updated.parents || [],
+    verifiedDriveId: verify.driveId || null,
+    verifiedParents: verify.parents || [],
+    targetDriveId: config.driveSharedDriveId,
   };
 }
 
