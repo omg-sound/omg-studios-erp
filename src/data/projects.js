@@ -389,7 +389,9 @@ function hasPostprodSessionNeedingBilling(projectId) {
           AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.project_id = @pid)
         LIMIT 1`
     )
-    .get({ pid: projectId, today: todayYmd() });
+    // SQL이 쓰지 않는 명명 파라미터를 넘기면 SQLite가 거부한다("Unknown named parameter").
+    // 9044122에서 날짜 게이트(s.session_date < @today)를 뺐을 때 today도 같이 빠졌어야 했다.
+    .get({ pid: projectId });
   return !!row;
 }
 

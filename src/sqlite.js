@@ -10,6 +10,16 @@
  */
 
 function openDatabase(filePath) {
+  // DB_DRIVER=node:sqlite 로 폴백 드라이버를 강제할 수 있다.
+  // 운영(Render)은 네이티브 빌드가 안 돼 node:sqlite 로 떨어지는데 로컬·테스트는
+  // better-sqlite3 로 돌아, **드라이버 차이로 생기는 버그가 테스트를 통과해 배포된다.**
+  // 2026-07-26 "Unknown named parameter 'today'" 가 실제로 그렇게 새어나갔다
+  // (better-sqlite3는 SQL이 안 쓰는 명명 파라미터를 무시, node:sqlite는 거부).
+  // 배포 전 `DB_DRIVER=node:sqlite npm test` 로 운영과 같은 드라이버를 한 번 태운다.
+  if (process.env.DB_DRIVER === "node:sqlite") {
+    const { DatabaseSync } = require("node:sqlite");
+    return { driver: "node:sqlite", handle: new DatabaseSync(filePath) };
+  }
   // 1순위: better-sqlite3
   try {
     const Database = require("better-sqlite3");
