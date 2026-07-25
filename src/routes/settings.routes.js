@@ -141,16 +141,7 @@ router.get("/drive-check", requireStaff, asyncHandler(async (req, res) => {
   const driveN = driveFileCount();
   let card;
   try {
-    // ① 중복 루트/하위 폴더 감지·통합 — 가장 오래된 원본을 정본 캐시로(캐시 유실/토큰 변경으로 생긴 빈 중복 방지).
-    const rec = await drive.reconcileRootFolder();
-    const dupTotal = (rec.duplicates || 0) + (rec.subDuplicates || 0);
-    const dupWarn = dupTotal > 0
-      ? `<div class="rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm">
-           <p class="font-medium text-warning">⚠️ 중복 폴더 ${dupTotal}개 감지 — 통합했습니다.${rec.duplicates > 0 ? ` (루트 ${rec.folders.length}개)` : ""}${rec.subDuplicates > 0 ? ` (사업자등록증 등 하위 폴더 중복 ${rec.subDuplicates}개)` : ""}</p>
-           <p class="mt-1 text-muted">가장 <span class="text-fg">오래된 원본 폴더</span>(기존 파일이 든 곳)를 기준으로 통합했습니다. 앞으로 업로드·이관은 원본으로 갑니다. Drive에서 <span class="text-fg">비어 있는 나머지 중복 폴더는 직접 삭제</span>해 주세요.</p>
-         </div>`
-      : "";
-    const f = await drive.checkFolder(); // 통합된 원본 폴더 메타
+    const f = await drive.checkFolder();
     // ② 실제 업로드 파이프라인(첨부 저장 경로) 왕복 검증.
     let probeBadge;
     try { await drive.probeUpload(); probeBadge = '<span class="badge badge-success">업로드 테스트 통과</span>'; }
@@ -158,9 +149,9 @@ router.get("/drive-check", requireStaff, asyncHandler(async (req, res) => {
     const link = f.webViewLink
       ? `<a href="${esc(f.webViewLink)}" target="_blank" rel="noopener" class="text-primary hover:underline">Drive에서 폴더 열기 ↗</a>`
       : `<span class="text-muted">링크 없음(폴더 ID: ${esc(f.id)})</span>`;
-    card = `${dupWarn}<div class="card space-y-2">
-      <div class="flex flex-wrap items-center gap-2"><span class="badge badge-success">폴더 확인됨</span>${probeBadge}${f.created ? '<span class="badge badge-info">방금 생성</span>' : ""}${f.trashed ? '<span class="badge badge-error">휴지통</span>' : ""}</div>
-      <div class="text-sm"><span class="text-muted">폴더명</span> <span class="font-medium">${esc(f.name)}</span> <span class="text-muted">(원본 · 통합 기준)</span></div>
+    card = `<div class="card space-y-2">
+      <div class="flex flex-wrap items-center gap-2"><span class="badge badge-success">폴더 확인됨</span>${probeBadge}${f.trashed ? '<span class="badge badge-error">휴지통</span>' : ""}</div>
+      <div class="text-sm"><span class="text-muted">폴더명</span> <span class="font-medium">${esc(f.name)}</span></div>
       <div class="text-sm"><span class="text-muted">폴더 ID</span> <code class="text-xs">${esc(f.id)}</code></div>
       <div class="text-sm"><span class="text-muted">Drive 저장 파일(앱 기록)</span> ${driveN}개</div>
       <div class="pt-1">${link}</div>
@@ -170,7 +161,7 @@ router.get("/drive-check", requireStaff, asyncHandler(async (req, res) => {
   } catch (e) {
     card = `<div class="card space-y-2"><span class="badge badge-error">점검 실패</span>
       <p class="text-sm text-muted">Drive 폴더를 확인하지 못했습니다: ${esc((e && e.message) || String(e))}</p>
-      <p class="text-xs text-muted">Drive 권한이 만료됐을 수 있습니다 — <a class="text-primary hover:underline" href="/auth/google">구글 계정 재연동</a> 후 다시 시도하세요.</p></div>`;
+      <p class="text-xs text-muted">서비스 계정 설정(GOOGLE_SA_KEY·DRIVE_ERP_DRIVE_ID·DRIVE_ERP_ROOT_FOLDER_ID)이나 공유 드라이브 폴더 권한을 확인하세요.</p></div>`;
   }
   const body = `
     ${pageHeader({ title: "Drive 폴더 점검", desc: "첨부·자료 파일이 저장되는 실제 구글 Drive 폴더", back: { href: "/settings?tab=settings", label: "환경설정" } })}
@@ -186,40 +177,6 @@ router.post("/migrate-drive", requireStaff, asyncHandler(async (req, res) => {
   if (r.failed.length) console.warn("[migrate-drive] failed:", JSON.stringify(r.failed));
   res.redirect(`/settings?tab=settings&flash=${r.failed.length ? "drive_partial" : "drive_done"}`);
 }));
-// ── 1회성: 개인 드라이브의 omg-studios-manager 폴더를 공유 드라이브로 이관 ──
-// 폴더째 옮기므로 파일 ID·하위 구조·DB(file_id)가 모두 그대로다.
-//
-// 결과를 flash 한 줄로 요약하지 않고 진단 내용을 화면에 그대로 보여준다.
-// 2026-07-25 첫 시도에서 실패했는데 "옮겼습니다"가 떠서 원인을 못 찾았다.
-function diagPage(title, ok, rows) {
-  const li = Object.entries(rows)
-    .map(([k, v]) => `<li><span class="text-muted">${esc(k)}</span> · <span class="font-mono text-xs">${esc(v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v))}</span></li>`)
-    .join("");
-  return `<section class="card ${ok ? "" : "border-danger/40"}">
-    <h2 class="mb-2 text-sm font-semibold ${ok ? "text-success" : "text-danger"}">${ok ? "✅" : "❌"} ${esc(title)}</h2>
-    <ul class="space-y-1 text-sm">${li}</ul>
-    <div class="mt-3"><a class="btn-ghost btn-sm" href="/settings?tab=settings">설정으로 돌아가기</a></div>
-  </section>`;
-}
-
-// 실행 없이 현황만 본다(안전).
-router.get("/shared-drive-check", requireStaff, asyncHandler(async (req, res) => {
-  const { inspect } = require("../lib/shared-drive-migrate");
-  let r;
-  try { r = await inspect(); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
-  res.send(layout({ title: "공유 드라이브 점검", user: req.user, current: "/settings", body: diagPage("공유 드라이브 이관 점검", !!r.ok, r) }));
-}));
-
-router.post("/migrate-shared-drive", requireStaff, asyncHandler(async (req, res) => {
-  const { moveToSharedDrive } = require("../lib/shared-drive-migrate");
-  let r;
-  try { r = await moveToSharedDrive(); }
-  catch (e) { r = { ok: false, step: "throw", error: (e && e.message) || String(e) }; }
-  if (!r.ok) console.warn("[migrate-shared-drive] 실패:", JSON.stringify(r));
-  logAudit(req.user, "system.drive.move-to-shared", r.ok ? "이관 완료" : `실패(${r.step || "?"}: ${r.error || "?"})`);
-  res.send(layout({ title: "공유 드라이브 이관", user: req.user, current: "/settings", body: diagPage(r.ok ? "이관 완료" : "이관 실패", !!r.ok, r) }));
-}));
-
 router.post("/studio-logo/delete", requireStaff, (req, res) => {
   setStudioLogo(null);
   res.redirect("/settings?tab=settings&flash=deleted");

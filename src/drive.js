@@ -116,16 +116,6 @@ async function ensureFolder() {
   return config.driveRootFolderId;
 }
 
-/** 예전 인터페이스 유지용 — 공유 드라이브에서는 루트 탐색이 없다. */
-async function listRootFolders() {
-  return [];
-}
-
-/** 예전 인터페이스 유지용 — 중복 루트 개념이 사라져 통합할 것이 없다. */
-async function reconcileRootFolder() {
-  return { folders: [], canonical: config.driveRootFolderId || null, duplicates: 0, subDuplicates: 0 };
-}
-
 /** 루트(또는 지정 부모) 아래 같은 이름의 하위 폴더 목록. 생성일 오름차순(가장 오래된=원본). */
 async function listSubfolders(name, parentId) {
   const drive = driveClient();
@@ -280,9 +270,7 @@ module.exports = {
   getFileMeta,
   checkFolder,
   probeUpload,
-  listRootFolders,
   listSubfolders,
-  reconcileRootFolder,
   uploadFile,
   streamFile,
   deleteFile,
