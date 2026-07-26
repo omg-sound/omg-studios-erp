@@ -5,7 +5,7 @@
 const { config, SESSION_TYPES, RENTAL_SESSION_TYPES, SESSION_STATUS_BADGE, SESSION_TYPE_RATE_KIND, SESSION_SEGMENT_KINDS, SESSION_SEGMENT_LABELS } = require("./config");
 const { esc, formatKRW, emptyState, detailsChevron, explain, dirtyActionRow, personCombo, personComboOptionsScript, personComboCompanyScript, personLabel, dateCombo } = require("./views");
 const { formatYmdShort, ddayLabel, todayYmd, minutesBetween, durationKo, calendarMonthCells } = require("./lib/date");
-const { listRooms, getRoom, listSessionSegments, listSurcharges, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listRateCategories, rateCategoryKind } = require("./data");
+const { listRooms, getRoom, listSessionSegments, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listRateCategories, rateCategoryKind } = require("./data");
 
 /**
  * 룸 목록 보장 — 인자로 받으면 그대로, 아니면 **예약 대상 장소**만 조회(폴백).
@@ -225,21 +225,11 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
         ${timeBox(`seg_${kind}_end`, g && g.end_time, ph2, `data-seg-time aria-label="${esc(SESSION_SEGMENT_LABELS[kind])} 종료"`)}
       </div>`;
   }).join("");
-  // 할증 — 적용 대상은 마스터(surcharges.applies_to)가 정하고, 그 kind를 쓰는 세션 종류에서만 보인다.
-  const surchargeField = listSurcharges()
-    .map((sc) => {
-      const types = sc.applies_to ? SESSION_TYPES.filter((t) => SESSION_TYPE_RATE_KIND[t] === sc.applies_to) : SESSION_TYPES;
-      const on = s.surcharge_key === sc.key;
-      return `<div class="mt-2 border-t border-border pt-2" data-when-type="${esc(types.join(","))}" data-show-when-type>
-        <label class="flex w-fit cursor-pointer items-center gap-2 text-sm">
-          <input type="checkbox" name="surcharge_key" value="${esc(sc.key)}" class="h-4 w-4 rounded border-border text-primary" ${on ? "checked" : ""} data-surcharge-check />
-          ${esc(sc.label)} <span class="text-xs text-muted">(대관비의 ${Math.round(Number(sc.rate) * 100)}%)</span>
-        </label>
-        <input class="input mt-1.5 py-1.5 text-sm" name="surcharge_memo" value="${esc(s.surcharge_memo || "")}" placeholder="할증 사유 (예: 세트 제작·조명 연출 규모)" />
-        <p class="mt-1 text-xs text-muted">자동 판정하지 않습니다 — 스탠드 라이트나 테이블 위 꽃병 같은 간단한 오브제는 대상이 아닙니다.</p>
-      </div>`;
-    })
-    .join("");
+  // 🚫 **할증 입력은 세션 폼에 두지 않는다**(2026-07-26 사용자 결정): 미장센은 스튜디오가 이미
+  // `촬영 (미장센 및 다수 카메라)` **단가 항목**으로 표현해 왔고(600분/150만 = 기본 패키지 + 50%와 동액),
+  // 같은 요금을 두 가지 방법으로 넣을 수 있으면 어느 쪽으로 잡았는지에 따라 금액이 갈린다 → 표현을 하나로 통일.
+  // 할증 **메커니즘은 남겨 둔다**(surcharges 마스터·sessions.surcharge_key/memo·computeCharge의 surcharge 인자) —
+  // 지금은 그 값을 쓰는 입력이 없어 휴면 상태이고, 되살리려면 여기 폼 필드만 다시 두면 된다.
   const segmentBlock = `
       <div class="rounded-lg border border-border bg-bg/40 p-3" ${segmentTypesAttr} data-show-when-type data-segments hidden>
         <div class="mb-2 text-sm font-medium">촬영 구간 <span class="font-normal text-muted">(요금은 세 구간의 합산 시간 기준)</span></div>
@@ -292,7 +282,6 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
       <div class="rounded-lg border border-border bg-bg/40 p-3">
         <div class="mb-2 text-sm font-medium">세션 세부정보</div>
         ${typeRateRow}
-        ${surchargeField}
         ${directorField}
         <input class="input mt-3 py-1.5 text-sm" name="memo" placeholder="메모(선택)" value="${esc(s.memo || "")}" />
       </div>

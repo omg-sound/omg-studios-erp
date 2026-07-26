@@ -1889,13 +1889,16 @@ test("세션 폼 겹침 경고: 구간 span이 점유와 안 겹치면 경고 �
   assert.equal(warn.hidden, true, "10:00–20:00은 21:00–23:00과 안 겹친다");
 });
 
-test("세션 폼: 미장센 할증은 촬영에서만 보인다(적용 대상 kind = 마스터가 정한다)", async () => {
+test("세션 폼: 할증 입력은 제공하지 않는다(미장센은 단가 항목으로 표현 — 2026-07-26 사용자 결정)", async () => {
+  // 같은 요금을 '할증 체크'와 '촬영 (미장센 및 다수 카메라)' 단가 항목 두 방법으로 넣을 수 있으면
+  // 어느 쪽으로 잡았는지에 따라 금액이 갈린다 → 스튜디오가 이미 쓰던 단가 항목 하나로 통일했다.
+  // 메커니즘(surcharges 마스터·computeCharge)은 남아 있고 폼 필드만 없다 — 되살리려면 필드만 다시 둔다.
   const { win, doc } = mountFilmingForm([]);
   await tick();
-  const box = doc.querySelector("[data-surcharge-check]");
-  assert.ok(box, "할증 체크박스 렌더");
-  const block = box.closest("[data-show-when-type]");
-  assert.equal(block.hidden, true, "녹음에는 미장센 할증이 없다");
+  assert.equal(doc.querySelector("[data-surcharge-check]"), null, "할증 체크박스 없음");
+  assert.equal(doc.querySelector('input[name="surcharge_key"]'), null, "할증 제출 필드 없음");
+  assert.equal(doc.querySelector('input[name="surcharge_memo"]'), null, "할증 사유 필드 없음");
   setType(win, doc, "촬영");
-  assert.equal(block.hidden, false);
+  assert.equal(doc.querySelector("[data-surcharge-check]"), null, "촬영에서도 없음");
+  assert.equal(doc.querySelector("[data-segments]").hidden, false, "촬영 구간은 그대로 동작");
 });
