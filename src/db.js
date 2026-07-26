@@ -211,6 +211,32 @@ function init() {
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- 촬영 세션의 구간(2026-07-26 과금 체계 개편) — 반입·설치 / 촬영 / 철수.
+    -- 요금 시간은 이 구간들의 **합산**이고, 룸 점유·캘린더 일정은 세 구간을 아우르는 한 덩어리
+    -- (sessions.start_time = 첫 구간 시작, end_time = 마지막 구간 종료)라 겹침 판정·캘린더 동기화는 무변경이다.
+    CREATE TABLE IF NOT EXISTS session_segments (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      kind       TEXT NOT NULL,                 -- setup | shoot | teardown (config.SESSION_SEGMENT_KINDS)
+      start_time TEXT NOT NULL,                 -- 'HH:MM'
+      end_time   TEXT NOT NULL,                 -- 'HH:MM' (자정 넘김은 end < start)
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- 할증 마스터(2026-07-26) — 요율을 코드에 박지 않고 이 테이블에서 읽는다(미장센 할증 50%).
+    -- sessions.surcharge_key가 이 key를 문자열로 참조(FK 아님 — rate_items.category와 같은 방식).
+    CREATE TABLE IF NOT EXISTS surcharges (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      key        TEXT NOT NULL UNIQUE,          -- 예: mise_en_scene
+      label      TEXT NOT NULL,                 -- 예: 미장센 할증
+      rate       REAL NOT NULL DEFAULT 0,       -- 0.5 = 기본가의 50%
+      applies_to TEXT,                          -- 적용 대상 단가 kind(filming 등). NULL=전체
+      active     INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- 자료 전달 기록(플레이북1 §2.3·§4.3). 파일은 Drive 또는 로컬에 저장, 메타는 여기.
     CREATE TABLE IF NOT EXISTS deliverables (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -415,6 +441,7 @@ function init() {
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_date ON sessions(session_date);
     CREATE INDEX IF NOT EXISTS idx_rooms_active ON rooms(active, sort_order, name);
+    CREATE INDEX IF NOT EXISTS idx_session_segments_session ON session_segments(session_id, sort_order);
     CREATE INDEX IF NOT EXISTS idx_deliverables_project ON deliverables(project_id);
     CREATE INDEX IF NOT EXISTS idx_deliverables_token ON deliverables(access_token);
     CREATE INDEX IF NOT EXISTS idx_invoices_project ON invoices(project_id);
@@ -515,6 +542,21 @@ function init() {
   addColumn("sessions", "end_date", "TEXT"); // 종일 다일(multi-day) 일정의 종료 날짜(NULL=session_date와 같은 날 = 단일일). 종일에서만 의미.
   addColumn("sessions", "location", "TEXT"); // 외부 장소 주소(구글 주소 등). 스튜디오 룸이면 NULL(기본 장소 사용). 외부 장소(rooms.is_external)일 때만 입력.
   addColumn("rooms", "is_external", "INTEGER NOT NULL DEFAULT 0"); // 외부 장소(주소 입력 대상). 세션 폼에서 이 장소 선택 시 주소 필드 노출.
+  // ── 룸 계층·예약 대상(2026-07-26 룸 명칭 체계) ──
+  // Studio A는 Control Room A + Booth A를 합친 상위 단위이고 그 둘은 Studio A의 하위로만 존재한다.
+  // 예약은 최상위 단위로만 잡으므로 하위 공간과 Lounge는 bookable=0(세션 폼 장소 목록에서 제외).
+  // parent_id는 FK 없음(room_id·director_party_id와 같은 ALTER 한계) — 삭제 시 코드가 하위 parent_id를 NULL로 정리.
+  addColumn("rooms", "parent_id", "INTEGER");
+  addColumn("rooms", "bookable", "INTEGER NOT NULL DEFAULT 1");
+  // ── 가격 유형·표시 순서(2026-07-26 과금 체계 개편) ──
+  addColumn("rate_items", "price_type", "TEXT NOT NULL DEFAULT 'fixed'"); // fixed | base | minimum (config.PRICE_TYPES)
+  addColumn("rate_items", "sort_order", "INTEGER NOT NULL DEFAULT 100"); // 분류 안 표시 순서(↑↓ 이동). 기존 항목은 이름순 유지(동일 값 → 이름 tiebreak)
+  addColumn("task_types", "price_type", "TEXT NOT NULL DEFAULT 'fixed'"); // 포스트(믹싱=base·보컬튠=minimum)는 세션이 아니라 작업으로 청구하므로 여기에도 필요
+  // ── 할증·금액 조정 사유(2026-07-26) ──
+  addColumn("sessions", "surcharge_key", "TEXT"); // 적용 할증(surcharges.key). NULL=없음. 자동 판정 안 함(체크박스 — 주관적)
+  addColumn("sessions", "surcharge_memo", "TEXT"); // 할증 사유 메모
+  addColumn("sessions", "billing_memo", "TEXT"); // 금액을 산정치와 다르게 조정했을 때의 사유(청구 화면에서 입력)
+  addColumn("track_tasks", "billing_memo", "TEXT"); // 위와 동일(작업 금액 조정 사유)
   addColumn("session_directors", "party_id", "INTEGER"); // 다대다 디렉터(parties.id, 기존 contact_id 대체)
   addColumn("parties", "group_id", "INTEGER"); // 아티스트(사람)의 소속 그룹(parties.id, kind='group'). 그룹↔멤버 연결
   addColumn("parties", "contact_party_id", "INTEGER"); // 그룹의 담당자(parties.id, 사람 — 멤버 또는 관계자)
@@ -694,6 +736,7 @@ function init() {
     if (!hasRoom) d.prepare("INSERT INTO rooms (name, sort_order, active) VALUES (?, 0, 1)").run("메인 룸");
     setState("rooms_seed_v1", "done");
   }
+  applyPricingRoomsV2();
   // 레거시 마이그레이션은 1회만. 신규 프로젝트(project_type 있음)는 services=NULL이 정상이므로,
   // 매 부팅 재실행되면 memo 추론으로 유령 곡·작업을 주입한다 → admin_state 플래그로 1회 게이트.
   if (!getState("legacy_backfill_v1")) {
@@ -957,6 +1000,115 @@ function seedDefaultCatalogs() {
   if (!hasManager) {
     d.prepare("INSERT INTO project_managers (name, active) VALUES (?, 1)").run("스튜디오 관리자");
   }
+}
+
+/**
+ * 룸 명칭 체계 + 과금 체계 개편 1회 이관(2026-07-26 사용자 지시, 홈페이지와 동일 스펙).
+ *
+ * **id를 보존하는 UPDATE만 한다** — 룸·단가 항목을 지웠다 만들면 `sessions.room_id`·`sessions.rate_item_id`가
+ * 끊겨 기존 예약이 '장소 미지정'이 되고 청구 이력의 근거가 사라진다(그래서 rename + 부족분 INSERT 구조).
+ *
+ * 룸: Studio A(= Control Room A + Booth A의 상위) / Studio B(편집) / Studio C(믹싱) / Lounge(예약 대상 아님).
+ * 금지 표기(Hall·Live Booth·Lobby·Room A/B/C·A룸/B룸/C룸)는 **정확 일치하는 것만** 새 명칭으로 옮긴다.
+ * Hall·Live Booth는 Studio A로 — 라이브 부스에서의 녹음은 규칙상 Studio A 예약이고, 하위 공간(bookable=0)으로
+ * 옮기면 그 룸으로 잡힌 기존 세션이 예약 불가 장소를 참조하게 된다. 모르는 이름은 **손대지 않는다**
+ * (이제 환경설정에서 이름을 고칠 수 있으니 추측 rename보다 사람이 고치는 게 안전하다 — 남은 목록은 로그로).
+ *
+ * 포스트(믹싱·보컬튠)는 rate_items가 아니라 **task_types**에 시드한다 — 이 ERP는 세션(대관)=rate_items,
+ * 곡·콘텐츠 후반작업=task_types로 청구 경로가 갈려 있어서, 포스트를 rate_items에 넣으면 세션 폼에서
+ * 도달할 수 없는 죽은 데이터가 되고 '믹싱'이 두 카탈로그에 동시에 존재하게 된다.
+ */
+function applyPricingRoomsV2() {
+  if (getState("pricing_rooms_v2")) return;
+  const d = db();
+  const skipped = []; // 이름 충돌로 rename을 건너뛴 것(사람이 환경설정에서 정리)
+
+  // ── 룸 ──
+  const roomByName = (name) => d.prepare("SELECT * FROM rooms WHERE name = ?").get(name) || null;
+  // 옛 표기 → 새 명칭. 최상위 단위로만 옮긴다(하위 공간·Lounge는 예약 대상이 아니라 rename 목적지로 부적합).
+  const ROOM_ALIASES = [
+    [["메인 룸", "A룸", "Room A", "Hall", "Live Booth", "라이브 부스"], "Studio A"],
+    [["B룸", "Room B"], "Studio B"],
+    [["C룸", "Room C"], "Studio C"],
+    [["Lobby", "로비"], "Lounge"],
+  ];
+  for (const [aliases, target] of ROOM_ALIASES) {
+    for (const alias of aliases) {
+      const row = roomByName(alias);
+      if (!row) continue;
+      if (roomByName(target)) { skipped.push(`${alias}(→${target} 이미 있음)`); continue; }
+      d.prepare("UPDATE rooms SET name = ? WHERE id = ?").run(target, row.id);
+    }
+  }
+  // 계층·예약 대상 확정. 이름이 이미 있으면 속성만 맞추고(사용자가 만들어 둔 행 재사용), 없으면 새로 만든다.
+  const ROOM_TREE = [
+    { name: "Studio A", parent: null, bookable: 1, sort: 10 },
+    { name: "Control Room A", parent: "Studio A", bookable: 0, sort: 11 }, // 오퍼레이팅·믹싱
+    { name: "Booth A", parent: "Studio A", bookable: 0, sort: 12 },        // 흡음 수음
+    { name: "Studio B", parent: null, bookable: 1, sort: 20 },             // 편집 전용
+    { name: "Studio C", parent: null, bookable: 1, sort: 30 },             // 믹싱 전용
+    { name: "Lounge", parent: null, bookable: 0, sort: 40 },               // 대기·접객(작업 공간 아님)
+  ];
+  for (const r of ROOM_TREE) {
+    const parentId = r.parent ? (roomByName(r.parent) || {}).id || null : null;
+    const cur = roomByName(r.name);
+    if (cur) {
+      d.prepare("UPDATE rooms SET parent_id = ?, bookable = ?, sort_order = ?, active = 1 WHERE id = ?").run(parentId, r.bookable, r.sort, cur.id);
+    } else {
+      d.prepare("INSERT INTO rooms (name, parent_id, bookable, sort_order, active, is_external) VALUES (?, ?, ?, ?, 1, 0)").run(r.name, parentId, r.bookable, r.sort);
+    }
+  }
+
+  // ── 단가 항목(세션 = 녹음·촬영 대관) ──
+  // 초과 요율은 전 서비스 공통 시간당 10만, 1프로 = 210분.
+  // 옛 이름이 있으면 **이름만 바꿔 id를 보존**하고(그 항목으로 잡힌 세션·청구 근거 유지), 없으면 새로 만든다
+  // (rate_items는 db.js 시드 대상이 아니어서 신선 DB엔 아무 항목도 없다 — 운영은 rename, 신규 배포는 insert).
+  const rateByName = (name) => d.prepare("SELECT * FROM rate_items WHERE name = ?").get(name) || null;
+  const RATE_ITEMS = [
+    { legacy: ["보컬 녹음"], name: "솔로 녹음", category: "스튜디오 녹음", base_minutes: 210, base_price: 300000, sort: 10 },
+    { legacy: ["악기+보컬 녹음(그룹)", "악기+보컬 녹음"], name: "드럼 · 합주 녹음", category: "스튜디오 녹음", base_minutes: 210, base_price: 400000, sort: 20 },
+    { legacy: [], name: "기본 패키지", category: "스튜디오 촬영", base_minutes: 600, base_price: 1000000, sort: 10 }, // 반입 2h + 촬영 7h + 철수 1h
+  ];
+  for (const r of RATE_ITEMS) {
+    const cur = rateByName(r.name);
+    const old = cur ? null : r.legacy.map(rateByName).find(Boolean);
+    const target = cur || old;
+    if (target) {
+      d.prepare(
+        `UPDATE rate_items SET name = ?, category = ?, base_minutes = ?, base_price = ?, extra_minutes = 60,
+         extra_price = 100000, price_type = 'fixed', sort_order = ? WHERE id = ?`
+      ).run(r.name, r.category, r.base_minutes, r.base_price, r.sort, target.id);
+      if (old && old.base_price !== r.base_price) skipped.push(`단가 ${old.name} ${old.base_price} → ${r.name} ${r.base_price}`);
+    } else {
+      d.prepare(
+        `INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, price_type, sort_order, active)
+         VALUES (?, ?, ?, ?, 60, 100000, 'fixed', ?, 1)`
+      ).run(r.name, r.category, r.base_minutes, r.base_price, r.sort);
+    }
+  }
+  // 리네임 대상 밖의 기존 항목은 손대지 않는다(사용자가 만든 항목 — price_type DEFAULT 'fixed'가 종전 동작과 같다).
+
+  // ── 포스트(곡·콘텐츠 작업으로 청구) ──
+  // 발행된 청구서는 스냅샷이라 카탈로그 단가를 바꿔도 소급 변동이 없다. 옛 값은 로그로 남긴다.
+  const POST_TYPES = [
+    { key: "Mixing", price: 1000000, price_type: "base" },        // 기준가(작업량에 따라 차등)
+    { key: "Vocal_Tuning", price: 200000, price_type: "minimum" }, // 최소가(작업량에 따라 상향)
+  ];
+  for (const t of POST_TYPES) {
+    const row = d.prepare("SELECT id, label, unit_price FROM task_types WHERE key = ?").get(t.key);
+    if (!row) continue;
+    if (row.unit_price !== t.price) skipped.push(`작업 종류 ${row.label} 단가 ${row.unit_price} → ${t.price}`);
+    d.prepare("UPDATE task_types SET unit_price = ?, price_type = ? WHERE id = ?").run(t.price, t.price_type, row.id);
+  }
+
+  // ── 할증 마스터 ──
+  d.prepare(
+    `INSERT INTO surcharges (key, label, rate, applies_to, active, sort_order)
+     VALUES ('mise_en_scene', '미장센 할증', 0.5, 'filming', 1, 10) ON CONFLICT(key) DO NOTHING`
+  ).run();
+
+  if (skipped.length) console.warn("[migrate pricing_rooms_v2] 사람 확인 필요:", skipped.join(" / "));
+  setState("pricing_rooms_v2", "done");
 }
 
 /** 멱등 컬럼 추가: 이미 있으면 무시(플레이북 §2.8). 드롭된 레거시 테이블(clients/contacts) 대상이면 'no such table'도 무시(무해). */

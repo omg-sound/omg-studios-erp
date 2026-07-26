@@ -140,6 +140,17 @@ const PERFORMANCE_CATEGORIES = ["공연"]; // 항목 예: 플레이백 세션·�
 const RATE_CATEGORIES = [...RECORDING_CATEGORIES, ...FILMING_CATEGORIES, ...PERFORMANCE_CATEGORIES]; // 시드 전용(단가 항목 전체 카테고리)
 // 세션 종류(대관) → 단가 kind. 녹음=recording, 촬영=filming, 공연=performance.
 const SESSION_TYPE_RATE_KIND = { 녹음: "recording", 촬영: "filming", 공연: "performance" };
+// ── 가격 유형(2026-07-26 과금 체계 개편) ──
+// 단가 항목·작업 종류가 '금액을 어떻게 다룰지'를 정한다. 홈페이지 pricing.ts의 PriceType와 같은 세 값.
+//  fixed   = 기본가 잠금(청구 화면에서 못 고침). 초과 시간만 자동 가산 — 녹음·촬영 대관.
+//  base    = 기준가를 자동 입력한 뒤 위아래로 수정 가능 — 믹싱(작업량에 따라 차등).
+//  minimum = 최소가를 자동 입력한 뒤 상향만 — 보컬튠(작업량에 따라 상향).
+const PRICE_TYPES = ["fixed", "base", "minimum"];
+const PRICE_TYPE_LABELS = { fixed: "고정", base: "기준가", minimum: "최소가" };
+// 촬영 세션의 구간(2026-07-26) — 반입·설치 / 촬영 / 철수를 각각 시작·종료 시각으로 입력한다.
+// 룸 점유는 세 구간을 아우르는 한 덩어리(sessions.start_time~end_time)이고, 요금 시간은 구간 합산이다.
+const SESSION_SEGMENT_KINDS = ["setup", "shoot", "teardown"];
+const SESSION_SEGMENT_LABELS = { setup: "반입·설치", shoot: "촬영", teardown: "철수" };
 const CLIENT_KINDS = ["아티스트", "그룹", "소속사/레이블", "제작사", "기타"]; // 그룹=밴드·아이돌 그룹 등 그룹 아티스트(parties.kind='group')
 const COMPANY_ROLES = ["소속사/레이블", "제작사"]; // 업체 역할 다중(겸업: 소속사가 제작도 함). CSV로 clients.roles에 저장
 const DELIVERABLE_KINDS = ["녹음본", "튠본", "믹스", "스템", "마스터", "레퍼런스", "기타"];
@@ -298,6 +309,12 @@ module.exports = {
   PERFORMANCE_CATEGORIES,
   RATE_CATEGORIES,
   SESSION_TYPE_RATE_KIND,
+  PRICE_TYPES,
+  PRICE_TYPE_LABELS,
+  SESSION_SEGMENT_KINDS,
+  SESSION_SEGMENT_LABELS,
+  normalizePriceType: (v) => normalize(v, PRICE_TYPES),
+  normalizeSegmentKind: (v) => normalize(v, SESSION_SEGMENT_KINDS),
   normalizeSessionType: (v) => normalize(v, SESSION_TYPES),
   normalizeSessionStatus: (v) => normalize(v, SESSION_STATUSES),
   normalizeClientKind: (v) => normalize(v, CLIENT_KINDS),
