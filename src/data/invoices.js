@@ -367,7 +367,21 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
   for (const { session, calc, amount } of billSessions) {
     // 형식 = "7월 8일 아티스트명 보컬녹음"(2026-07-08 사용자 요청 — '녹음 세션' 접두·소요시간 제거, 날짜·아티스트·단가 항목명만).
     const desc = [formatYmdShort(session.session_date), project.artist, calc.item.name].filter(Boolean).join(" · ");
-    items.push({ task_id: null, session_id: session.id, track_title: null, task_type: null, description: desc, quantity: 1, unit_price: amount, amount, item_date: session.session_date || null });
+    const base = { task_id: null, session_id: session.id, track_title: null, task_type: null, item_date: session.session_date || null };
+    // 근거를 항목별로 분리 표시(2026-07-26 사용자 지시): 기본가 / 초과 N시간 / 할증을 각각 한 라인으로.
+    // 폼에서 금액을 조정했으면(입력값 ≠ 산정치) 쪼개지 않는다 — 조정된 총액을 되쪼개면 거짓 근거가 된다.
+    const adjusted = amount !== calc.amount || calc.fixed;
+    const lines = adjusted
+      ? [{ label: calc.item.name, amount, detail: session.billing_memo || "조정 금액", quantity: 1, unit_price: amount }]
+      : calc.lines;
+    lines.forEach((ln, i) => {
+      // 첫 라인만 기존 형식(날짜 · 아티스트 · 항목명)을 유지해 목록·PDF·매출 집계가 종전대로 읽힌다.
+      // 뒤 라인은 무엇에 붙는 금액인지 알 수 있게 근거를 그대로 쓴다(예: "초과 시간 · 1시간 30분 초과 → 2시간 × ₩100,000").
+      const description = i === 0
+        ? [desc, ln.detail].filter(Boolean).join(" · ")
+        : [ln.label, ln.detail].filter(Boolean).join(" · ");
+      items.push({ ...base, description, quantity: ln.quantity != null ? ln.quantity : 1, unit_price: ln.unit_price != null ? ln.unit_price : ln.amount, amount: ln.amount });
+    });
   }
   // 날짜순 — 값 없는 라인은 뒤로(조회 listInvoiceItemsForInvoice의 'item_date IS NULL' 뒤 정렬과 통일, 감사 L4). 동일 날짜는 원래 순서 유지(Array#sort 안정 정렬).
   items.sort((a, b) => {

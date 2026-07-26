@@ -4,7 +4,7 @@
 
 const { config, SESSION_TYPES, RENTAL_SESSION_TYPES, SESSION_STATUS_BADGE, SESSION_TYPE_RATE_KIND } = require("./config");
 const { esc, formatKRW, emptyState, detailsChevron, explain, dirtyActionRow, personCombo, personComboOptionsScript, personComboCompanyScript, personLabel, dateCombo } = require("./views");
-const { formatYmdShort, ddayLabel, todayYmd, minutesBetween, calendarMonthCells } = require("./lib/date");
+const { formatYmdShort, ddayLabel, todayYmd, minutesBetween, durationKo, calendarMonthCells } = require("./lib/date");
 const { listRooms, getRoom, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listRateCategories, rateCategoryKind } = require("./data");
 
 /**
@@ -94,8 +94,7 @@ function timeLabel(s) {
 /** 소요 라벨(초기 렌더) — app.js fmtDuration과 동일 표기("7시간"/"3시간 30분"/"설정 안 함"). */
 function fmtDurationKo(mins) {
   if (!(Number(mins) > 0)) return "설정 안 함";
-  const hh = Math.floor(mins / 60), mm = Math.round(mins % 60);
-  return ((hh ? hh + "시간" : "") + (mm ? (hh ? " " : "") + mm + "분" : "")) || "0분";
+  return durationKo(mins) || "0분"; // 표기는 lib/date와 공용(청구 근거 문구와 같은 형식)
 }
 const DURATION_SLIDER_MAX = 960; // 슬라이더 최대(분) = 16시간. Pro 눈금 위치 계산의 기준(app.js SLIDER_MAX와 동일).
 function durationButtons(initMinutes = 0) {

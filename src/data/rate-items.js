@@ -10,6 +10,7 @@ const { db } = require("../db");
 const { listRateCategories } = require("./rate-categories"); // 무순환(rate-categories는 rate-items를 require하지 않음)
 const { normalizePriceType } = require("../config");
 const { parseMoney } = require("../lib/forms");
+const { durationKo } = require("../lib/date");
 
 const parseWon = parseMoney; // 내부 호출명 parseWon 유지(data.js와 동일 별칭)
 
@@ -122,27 +123,79 @@ function getRateItem(id) {
 }
 
 /**
- * 진행 분(minutes)에 대한 자동 산정 금액(3단계에서 사용).
- * - 기준 시간 이내 → 기준가. 초과분은 초과 단위(분)로 올림하여 단위당 과금.
- * - base_minutes=0이면 시간 무관 정액(base_price).
+ * 요금 산정 + **근거 라인**(2026-07-26). 홈페이지 pricing.ts computeCharge를 이식하되
+ * 초과 규칙은 이 ERP의 1Pro 블록 반복을 유지한다(사용자 확정) — 두 구현이 7시간부터 갈렸다:
+ * 630분(3Pro)은 블록 반복이면 90만, '기본가 + 초과 시간당'이면 100만이다. 2026-07-01에
+ * 사용자가 '10.5시간 → 90만'으로 리포트해 고친 규칙이라 그쪽을 지킨다(2Pro 미만은 두 방식이 동일).
+ *
+ * 근거를 한 줄로 뭉치지 않고 라인으로 쪼개 돌려준다 — 청구서에서 "왜 이 금액인지"를 고객이 따라올 수 있어야 한다.
+ * `lines[i] = { label, amount, detail, quantity, unit_price }` (뒤 두 개는 invoice_items 스냅샷용).
+ *
+ * @param minutes 실사용 분. 촬영이면 반입·설치 + 촬영 + 철수를 **합친** 값.
+ * @param surcharge 적용 할증 `{ label, rate }`(rate 0.5 = 50%). 없으면 무시.
  */
-function computeRatePrice(item, minutes) {
-  if (!item) return 0;
+function computeCharge(item, minutes, { surcharge = null } = {}) {
+  if (!item) return { lines: [], total: 0 };
   const m = Math.max(0, Number(minutes) || 0);
   const baseMin = item.base_minutes;
-  // 정액(base_minutes=0) 또는 1Pro(기준시간) 이내 → 기본가.
-  if (baseMin <= 0 || m <= baseMin) return item.base_price;
-  // 기준시간(1Pro)마다 묶어서 계산: 완전한 Pro 블록은 각각 기본가(base_price),
-  // 마지막 1Pro 미만 자투리만 추가요금(extra_minutes 단위 올림)으로 과금.
-  // 예) 1Pro=210분·30만 / 초과 60분·10만 → 630분(3Pro)=90만, 240분=1Pro+30분=40만.
-  const fullPros = Math.floor(m / baseMin);
-  const remainder = m - fullPros * baseMin;
-  let price = fullPros * item.base_price;
-  if (remainder > 0) {
-    const unit = item.extra_minutes > 0 ? item.extra_minutes : 60;
-    price += Math.ceil(remainder / unit) * item.extra_price;
+  const lines = [];
+
+  if (baseMin <= 0) {
+    // 정액(회당) — 시간과 무관. 가격까지 비어 있으면 '금액 미정'(청구 시 입력).
+    lines.push({ label: item.name, amount: item.base_price, detail: "정액(회당)", quantity: 1, unit_price: item.base_price });
+  } else {
+    // 완전한 1Pro 블록마다 기준가. 0분·기준시간 미만도 최소 1Pro로 본다(종전 computeRatePrice와 동일).
+    const fullPros = Math.max(1, Math.floor(m / baseMin));
+    const remainder = m <= baseMin ? 0 : m - fullPros * baseMin;
+    lines.push({
+      label: item.name,
+      amount: fullPros * item.base_price,
+      detail: fullPros > 1 ? `기본 ${durationKo(baseMin)} × ${fullPros}` : `기본 ${durationKo(baseMin)} 포함`,
+      quantity: fullPros,
+      unit_price: item.base_price,
+    });
+    if (remainder > 0) {
+      const unit = item.extra_minutes > 0 ? item.extra_minutes : 60;
+      const n = Math.ceil(remainder / unit); // 3시간 31분을 썼으면 1시간 초과다 — 분 단위로 깎아 주지 않는다.
+      const unitLabel = unit === 60 ? "시간" : `${durationKo(unit)}`;
+      lines.push({
+        label: "초과 시간",
+        amount: n * item.extra_price,
+        detail: `${durationKo(remainder)} 초과 → ${n}${unitLabel} × ${wonText(item.extra_price)}`,
+        quantity: n,
+        unit_price: item.extra_price,
+      });
+    }
   }
-  return price;
+
+  // 할증은 초과분이 아니라 **기본가**에 붙는다(홈페이지와 동일 — 촬영 100만 → 미장센 150만).
+  const rate = surcharge && Number(surcharge.rate) > 0 ? Number(surcharge.rate) : 0;
+  if (rate > 0) {
+    const baseAmount = lines[0].amount;
+    const amount = Math.round(baseAmount * rate);
+    lines.push({
+      label: (surcharge && surcharge.label) || "할증",
+      amount,
+      detail: `기본가의 ${Math.round(rate * 100)}%`,
+      quantity: 1,
+      unit_price: amount,
+    });
+  }
+
+  return { lines, total: lines.reduce((s, l) => s + l.amount, 0) };
+}
+
+/**
+ * 진행 분(minutes)에 대한 자동 산정 금액(합계만).
+ * computeCharge의 total과 **항상 같다**(같은 구현 — 근거 라인이 필요 없는 호출부용 얇은 래퍼).
+ */
+function computeRatePrice(item, minutes) {
+  return computeCharge(item, minutes).total;
+}
+
+/** 근거 문구용 금액 표기(₩1,200,000). 뷰의 formatKRW과 같은 형식이지만 데이터 계층이 views를 참조하지 않게 별도. */
+function wonText(n) {
+  return "₩" + Math.round(Number(n) || 0).toLocaleString("ko-KR");
 }
 
 module.exports = {
@@ -154,4 +207,5 @@ module.exports = {
   moveRateItem,
   deleteRateItem,
   computeRatePrice,
+  computeCharge,
 };

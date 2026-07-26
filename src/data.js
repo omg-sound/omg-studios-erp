@@ -22,6 +22,7 @@ const rooms = require("./data/rooms"); // 룸
 const equipment = require("./data/equipment"); // 장비 대장(보유 자산 목록)
 const rateItems = require("./data/rate-items"); // 단가표
 const rateCategories = require("./data/rate-categories"); // 단가표 분류(2026-07-05 — DB 기반 커스텀 분류)
+const surcharges = require("./data/surcharges"); // 할증 마스터(2026-07-26 — 미장센 할증 등, 요율을 코드에 두지 않기 위해)
 const taskTypes = require("./data/task-types"); // 작업 종류 카탈로그(모듈 캐시 포함)
 const parties = require("./data/parties"); // 당사자(사람·조직·그룹) 통합 마스터 — clients/contacts 대체
 const projects = require("./data/projects"); // 프로젝트
@@ -43,6 +44,7 @@ module.exports = {
   ...equipment, // src/data/equipment.js — 장비 대장
   ...rateItems, // src/data/rate-items.js
   ...rateCategories, // src/data/rate-categories.js
+  ...surcharges, // src/data/surcharges.js
   listTaskTypes, // src/data/task-types.js (7함수, normalizeTaskTypeDb 내부전용 제외)
   activeTaskTypes,
   taskTypeLabel,

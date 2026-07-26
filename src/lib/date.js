@@ -170,4 +170,17 @@ function calendarMonthCells(ym) {
   return cells;
 }
 
-module.exports = { todayYmd, ymd, isValidYmd, daysUntilYmd, ddayLabel, formatYmdShort, formatYmdCombo, cleanTime, timeToMin, minutesBetween, kstDate, kstYmd, kstDateTime, kstHms, utcStampFromKst, calendarMonthCells };
+/**
+ * 분 → "3시간 30분" / "7시간" / "40분". 0 이하면 빈 문자열.
+ * 청구 근거 문구(computeCharge)와 화면 라벨이 같은 표기를 쓰도록 공용화(views.sessions.fmtDurationKo는
+ * 값 없을 때 '설정 안 함'을 보여야 해서 이걸 감싼다).
+ */
+function durationKo(mins) {
+  const m = Math.round(Number(mins) || 0);
+  if (m <= 0) return "";
+  const hh = Math.floor(m / 60);
+  const mm = m % 60;
+  return (hh ? `${hh}시간` : "") + (mm ? (hh ? " " : "") + `${mm}분` : "");
+}
+
+module.exports = { todayYmd, ymd, isValidYmd, daysUntilYmd, ddayLabel, formatYmdShort, formatYmdCombo, cleanTime, timeToMin, minutesBetween, durationKo, kstDate, kstYmd, kstDateTime, kstHms, utcStampFromKst, calendarMonthCells };

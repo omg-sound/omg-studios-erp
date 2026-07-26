@@ -14,11 +14,12 @@
 const { db } = require("../db");
 const { todayYmd, isValidYmd, cleanTime, timeToMin, minutesBetween, calendarMonthCells } = require("../lib/date");
 const { parseMoney } = require("../lib/forms");
-const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES } = require("../config");
+const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES, SESSION_SEGMENT_KINDS, normalizeSegmentKind } = require("../config");
 const { getProjectForUser } = require("./projects"); // 무순환
 const { resolvePersonByName } = require("./parties"); // 무순환 — 디렉터=parties.id(사람)
 const { listRooms } = require("./rooms"); // 무순환
-const { computeRatePrice } = require("./rate-items"); // 무순환
+const { computeRatePrice, computeCharge } = require("./rate-items"); // 무순환
+const { getSurcharge } = require("./surcharges"); // 무순환(할증 마스터 — 요율을 코드에 두지 않기 위해)
 
 /** 프로젝트의 세션 목록(날짜순). 권한 없으면 null. */
 function listSessionsForProject(user, projectId) {
@@ -282,6 +283,92 @@ function sessionAttendeeEmails(session, project) {
   return [...emails];
 }
 
+/**
+ * 세션 구간 목록(정렬 순). 촬영의 반입·설치 / 촬영 / 철수(2026-07-26).
+ * 구간이 없는 세션(대부분)은 빈 배열 — 그때는 시작~종료 span이 곧 요금 시간이다.
+ */
+function listSessionSegments(sessionId) {
+  if (!sessionId) return [];
+  return db()
+    .prepare("SELECT * FROM session_segments WHERE session_id = ? ORDER BY sort_order, id")
+    .all(Number(sessionId));
+}
+
+/**
+ * 세션 구간 통째 교체(폼 제출 = 그 세션 구간의 전체 상태). 시작·종료가 둘 다 있는 구간만 저장한다.
+ * 구간을 하나도 안 넣으면 행을 전부 지운다(= 구간 없는 일반 세션으로 되돌리기).
+ *
+ * 저장 순서는 config.SESSION_SEGMENT_KINDS(반입·설치 → 촬영 → 철수) 고정 — 사람이 칸을 건너뛰어 입력해도
+ * 표시·합산 순서가 흔들리지 않는다.
+ */
+function setSessionSegments(sessionId, segments) {
+  const sid = Number(sessionId);
+  if (!sid) return [];
+  const d = db();
+  const rows = [];
+  for (const kind of SESSION_SEGMENT_KINDS) {
+    const seg = (segments || []).find((s) => s && normalizeSegmentKind(s.kind) === kind && s.kind === kind);
+    if (!seg) continue;
+    const start = cleanTime(seg.start_time);
+    const end = cleanTime(seg.end_time);
+    if (!start || !end) continue; // 한쪽만 채운 구간은 무시(부분 입력 중일 수 있다)
+    rows.push({ kind, start, end });
+  }
+  d.exec("BEGIN IMMEDIATE;");
+  try {
+    d.prepare("DELETE FROM session_segments WHERE session_id = ?").run(sid);
+    const ins = d.prepare("INSERT INTO session_segments (session_id, kind, start_time, end_time, sort_order) VALUES (?, ?, ?, ?, ?)");
+    rows.forEach((r, i) => ins.run(sid, r.kind, r.start, r.end, i * 10));
+    d.exec("COMMIT;");
+  } catch (e) {
+    d.exec("ROLLBACK;");
+    throw e;
+  }
+  return listSessionSegments(sid);
+}
+
+/**
+ * 폼 입력(구간 배열) → setSessionSegments 인자. 이름 규칙: `seg_<kind>_start` / `seg_<kind>_end`.
+ * 구간 입력이 아예 없으면 null을 돌려 **호출부가 구간을 건드리지 않게** 한다(구간을 지원하지 않는
+ * 폼·API가 저장할 때 기존 구간이 조용히 사라지는 것을 막는다).
+ */
+function segmentsFromInput(input = {}) {
+  let any = false;
+  const out = [];
+  for (const kind of SESSION_SEGMENT_KINDS) {
+    const start = input[`seg_${kind}_start`];
+    const end = input[`seg_${kind}_end`];
+    if (start != null || end != null) any = true;
+    out.push({ kind, start_time: start, end_time: end });
+  }
+  return any ? out : null;
+}
+
+/** 구간의 시작~종료 span('HH:MM' 쌍). 구간이 없으면 null. 세션의 점유 시간(캘린더·겹침)을 구간에서 파생할 때 쓴다. */
+function segmentsSpan(segments) {
+  const list = (segments || []).filter((s) => s && s.start_time && s.end_time);
+  if (!list.length) return null;
+  // 자정을 넘기는 구간(end < start)도 다루기 위해 첫 구간 시작을 0분 기준으로 절대 분축에 올린다.
+  const base = timeToMin(list[0].start_time);
+  let cursor = base;
+  let last = base;
+  for (const s of list) {
+    let st = timeToMin(s.start_time);
+    while (st < cursor) st += 1440; // 앞 구간보다 이르면 다음 날로
+    let en = timeToMin(s.end_time);
+    while (en <= st) en += 1440;
+    cursor = st;
+    if (en > last) last = en;
+  }
+  return { start: list[0].start_time, end: minToTime(last % 1440), minutes: last - base };
+}
+
+/** 분(0~1439) → 'HH:MM'. */
+function minToTime(m) {
+  const v = ((Math.round(m) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(v / 60)).padStart(2, "0")}:${String(v % 60).padStart(2, "0")}`;
+}
+
 /** 세션의 담당 디렉터(연락처) 목록. */
 function listSessionDirectors(sessionId) {
   return db()
@@ -304,17 +391,45 @@ function sessionRateAmount(session, itemOverride) {
   // itemOverride: 목록 조회가 rate_items를 한 번만 로드해 넘기는 배치 경로(2026-07-09 감사 — 행당 단건 조회 N+1 제거).
   const item = itemOverride || db().prepare("SELECT * FROM rate_items WHERE id = ?").get(session.rate_item_id);
   if (!item) return null;
-  // 종일 세션은 시간이 없어 시간제 산정 불가 → 1 기준 블록으로 취급(정액 항목=base_price, 시간제 항목=1Pro). 금액은 청구 시 조정.
   // 확정 청구액(billing_amount)이 있으면 단가표 산정 대신 그 값을 쓴다(2026-07-14 — 청구 폼에서 고친 세션
   // 금액이 폼 안에서만 살아 있다가 새로고침하면 사라지던 문제. 작업 total_price 즉시 저장과 대칭).
   const fixed = session.billing_amount != null ? Math.round(session.billing_amount) : null;
-  if (session.all_day) {
-    const mins = item.base_minutes || 0;
-    return { item, minutes: mins, amount: fixed != null ? fixed : computeRatePrice(item, mins), allDay: true, fixed: fixed != null };
-  }
-  const minutes = minutesBetween(session.start_time, session.end_time);
-  if (minutes <= 0) return null;
-  return { item, minutes, amount: fixed != null ? fixed : computeRatePrice(item, minutes), fixed: fixed != null };
+  // 할증(2026-07-26) — 요율은 마스터 테이블에서 읽는다(코드에 박지 않음). 없거나 비활성이면 null.
+  const surcharge = session.surcharge_key ? getSurcharge(session.surcharge_key) : null;
+  // 종일 세션은 시간이 없어 시간제 산정 불가 → 1 기준 블록으로 취급(정액 항목=base_price, 시간제 항목=1Pro). 금액은 청구 시 조정.
+  // 촬영은 구간(반입·설치/촬영/철수) 합산이 요금 시간이다 — 구간이 없으면 시작~종료 span으로 폴백.
+  const allDay = !!session.all_day;
+  const minutes = allDay ? item.base_minutes || 0 : sessionBillableMinutes(session);
+  if (!allDay && minutes <= 0) return null;
+  const charge = computeCharge(item, minutes, { surcharge });
+  // 금액을 사람이 조정했으면 근거 라인을 쪼개지 않는다 — 조정된 총액을 기본가·초과로 되쪼개면 거짓 근거가 된다.
+  const lines = fixed != null
+    ? [{ label: item.name, amount: fixed, detail: "조정 금액", quantity: 1, unit_price: fixed }]
+    : charge.lines;
+  return {
+    item,
+    minutes,
+    amount: fixed != null ? fixed : charge.total,
+    computed: charge.total, // 산정치(조정 여부 판정·청구 폼 되돌리기 안내용)
+    lines,
+    surcharge,
+    fixed: fixed != null,
+    ...(allDay ? { allDay: true } : {}),
+  };
+}
+
+/**
+ * 요금 산정의 기준이 되는 분(2026-07-26). 촬영처럼 구간(session_segments)이 등록된 세션은
+ * **구간 합산**이고(반입·설치 + 촬영 + 철수), 구간이 없으면 종전대로 시작~종료 span이다.
+ * 룸 점유·캘린더는 span(sessions.start_time~end_time)을 그대로 쓴다 — 구간 사이에 빈 시간이 있어도
+ * 그 방은 계속 잡혀 있으므로 점유는 아우르는 한 덩어리이고, 요금만 실제 쓴 구간의 합으로 센다.
+ */
+function sessionBillableMinutes(session) {
+  if (!session) return 0;
+  if (session.all_day) return 0;
+  const segs = listSessionSegments(session.id);
+  if (segs.length) return segs.reduce((sum, g) => sum + minutesBetween(g.start_time, g.end_time), 0);
+  return minutesBetween(session.start_time, session.end_time);
 }
 
 /**
@@ -622,6 +737,11 @@ module.exports = {
   setSessionEngineerPayout,
   busySessionRanges,
   sessionRateAmount,
+  sessionBillableMinutes,
+  listSessionSegments,
+  setSessionSegments,
+  segmentsFromInput,
+  segmentsSpan,
   createSession,
   updateSession,
   setSessionEventId,

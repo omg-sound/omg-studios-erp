@@ -218,7 +218,7 @@ function revenueForPayer(id, period) {
 function attachWorkSummary(invoices) {
   if (!invoices.length) return;
   const ids = invoices.map((r) => Number(r.id));
-  const rows = db().prepare(`SELECT ii.invoice_id, ii.id AS item_id, ii.item_date,
+  const rows = db().prepare(`SELECT ii.invoice_id, ii.id AS item_id, ii.item_date, ii.task_id, ii.session_id,
       t.task_type, tr.title AS track_title, NULLIF(tr.artist, '') AS track_artist,
       s.session_type, s.session_date
     FROM invoice_items ii
@@ -229,16 +229,20 @@ function attachWorkSummary(invoices) {
     ORDER BY ii.invoice_id, (ii.item_date IS NULL), ii.item_date, ii.id`).all(...ids);
   const byInvoice = new Map();
   rows.forEach((r) => {
+    // 항목 수는 **라인 수가 아니라 일(작업·세션) 수**로 센다(2026-07-26): 한 세션의 근거를
+    // 기본가·초과·할증 라인으로 쪼개면서 라인이 늘었는데, 그걸 그대로 세면 세션 하나가 '3개 항목'이 돼
+    // 매출 상세가 아티스트·세부 대신 개수만 보여준다(청구서 단위 금액은 이 값과 무관하므로 표시 문제만).
+    const key = r.task_id ? `t${r.task_id}` : r.session_id ? `s${r.session_id}` : `i${r.item_id}`;
     const cur = byInvoice.get(r.invoice_id);
-    if (cur) { cur.count += 1; return; } // 첫 라인만 종류·세부로 쓴다(정렬이 항목 날짜순이라 첫 라인 = 가장 이른 항목)
-    byInvoice.set(r.invoice_id, { first: r, count: 1 });
+    if (cur) { cur.keys.add(key); return; } // 첫 라인만 종류·세부로 쓴다(정렬이 항목 날짜순이라 첫 라인 = 가장 이른 항목)
+    byInvoice.set(r.invoice_id, { first: r, keys: new Set([key]) });
   });
   const { taskTypeLabel } = require("../data"); // 지연 require(순환 회피)
   invoices.forEach((inv) => {
     const g = byInvoice.get(inv.id);
     if (!g) { inv.work_kind = ""; inv.work_detail = ""; inv.item_count = 0; return; }
     const f = g.first;
-    inv.item_count = g.count;
+    inv.item_count = g.keys.size;
     if (f.task_type) { inv.work_kind = taskTypeLabel(f.task_type); inv.work_detail = f.track_title || ""; if (f.track_artist) inv.artist = f.track_artist; }
     else if (f.session_type) { inv.work_kind = f.session_type; inv.work_detail = f.session_date || ""; }
     else { inv.work_kind = ""; inv.work_detail = ""; }
