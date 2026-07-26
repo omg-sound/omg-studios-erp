@@ -11,6 +11,8 @@ const {
   deleteRoom,
   createRateItem,
   updateRateItem,
+  setRateItemActive,
+  moveRateItem,
   deleteRateItem,
   createRateCategory,
   updateRateCategory,
@@ -378,6 +380,18 @@ router.post("/rate-items/:id", requireStaff, (req, res) => {
   } catch (e) {
     if (!["RATE_NAME_REQUIRED", "RATE_PRICE_REQUIRED"].includes(e.message)) throw e; // 이름·가격 누락은 조용히 생성 안 함
   }
+  res.redirect("/settings?tab=content&flash=saved");
+});
+
+// 표시 순서 이동(같은 분류 안에서 위/아래) — 분류·작업 종류와 같은 ↑↓(2026-07-26, 이전엔 이름순 강제).
+router.post("/rate-items/:id/move", requireStaff, (req, res) => {
+  moveRateItem(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
+  res.redirect("/settings?tab=content");
+});
+
+// 활성/비활성 토글(2026-07-26) — active 컬럼은 있었는데 라우트가 없어 한 번 비활성이 되면 되살릴 수 없었다.
+router.post("/rate-items/:id/active", requireStaff, (req, res) => {
+  setRateItemActive(Number(req.params.id), req.body.active === "1");
   res.redirect("/settings?tab=content&flash=saved");
 });
 

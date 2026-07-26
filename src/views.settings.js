@@ -4,7 +4,7 @@
 
 const { db } = require("./db");
 const { isChief } = require("./auth");
-const { config, ROLES, ROLE_LABELS, BILLING_TYPES, BILLING_TYPE_LABELS, RECORDING_CATEGORIES } = require("./config");
+const { config, ROLES, ROLE_LABELS, BILLING_TYPES, BILLING_TYPE_LABELS, RECORDING_CATEGORIES, PRICE_TYPES, PRICE_TYPE_LABELS } = require("./config");
 const {
   listProjectManagers,
   listRooms,
@@ -179,7 +179,7 @@ function contentTab() {
       <section class="card space-y-4">
         <div>
           <h2 class="font-display text-lg font-semibold">단가표 · 녹음/촬영 종류</h2>
-          ${explain(`대관 세션(녹음·촬영)의 시간제 단가 항목을 분류(스튜디오/로케이션 녹음·촬영)별로 추가합니다. 세션 폼의 '단가 항목'에 세션 종류(녹음/촬영)에 맞춰 분류로 묶여 표시됩니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금. <b>기준 시간을 비우면 정액(회당)</b> — 시간과 무관하게 1회 = 기준 가격이며, 가격까지 비우면 <b>금액 미정</b>(플레이백 세션처럼 회당 가격이 매번 다른 항목 — 청구 생성 시 금액을 입력해 확정).`)}
+          ${explain(`대관 세션(녹음·촬영)의 시간제 단가 항목을 분류(스튜디오/로케이션 녹음·촬영)별로 추가합니다. 세션 폼의 '단가 항목'에 세션 종류(녹음/촬영)에 맞춰 분류로 묶여 표시됩니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금. <b>기준 시간을 비우면 정액(회당)</b> — 시간과 무관하게 1회 = 기준 가격이며, 가격까지 비우면 <b>금액 미정</b>(플레이백 세션처럼 회당 가격이 매번 다른 항목 — 청구 생성 시 금액을 입력해 확정).<br /><b>가격 유형</b>은 청구 화면에서 금액칸을 어떻게 다룰지 정합니다 — <b>고정</b>은 기본가를 잠그고 초과 시간만 자동 가산(녹음·촬영 대관), <b>기준가</b>는 산정치를 넣어 주되 위아래로 고칠 수 있고, <b>최소가</b>는 그 아래로 못 내립니다. <b>↑↓</b>로 분류 안 표시 순서를 바꾸고, 잠시 안 쓰는 항목은 삭제 대신 <b>비활성</b>으로 두면(세션 폼에서만 숨음) 나중에 되살릴 수 있습니다.`)}
         </div>
         <form method="post" action="/settings/rate-items" class="space-y-2 rounded-lg border border-border bg-bg p-3">
           <div class="grid gap-2 sm:grid-cols-2">
@@ -203,6 +203,10 @@ function contentTab() {
               <label class="label mb-0.5 text-xs">초과 단가(원)</label>
               <input class="input py-1.5 text-sm" name="extra_price" inputmode="numeric" placeholder="예: 100000" />
             </div>
+            <div>
+              <label class="label mb-0.5 text-xs">가격 유형</label>
+              <select class="input py-1.5 text-sm" name="price_type">${priceTypeOptions("fixed")}</select>
+            </div>
           </div>
           <button class="btn-primary btn-sm" type="submit">단가 항목 추가</button>
         </form>
@@ -213,7 +217,7 @@ function contentTab() {
       <section class="card space-y-4">
         <div>
           <h2 class="font-display text-lg font-semibold">작업 종류 <span class="text-sm font-normal text-muted">(곡·콘텐츠 후반작업)</span></h2>
-          ${explain(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가·과금을 관리합니다. '빠른추가'를 켜면 곡·콘텐츠의 빠른 추가 버튼에 노출됩니다.`)}
+          ${explain(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가·과금을 관리합니다. '빠른추가'를 켜면 곡·콘텐츠의 빠른 추가 버튼에 노출됩니다. <b>포스트(믹싱·보컬튠)는 시간이 아니라 작업량으로 산정</b>하므로 여기서 관리합니다 — 믹싱은 <b>기준가</b>(작업량에 따라 차등), 보컬튠은 <b>최소가</b>(작업량에 따라 상향)로 두면 청구 화면이 그 금액을 넣어 주고 수정 범위를 그에 맞게 제한합니다.`)}
         </div>
         <form method="post" action="/settings/task-types" class="space-y-2 rounded-lg border border-border bg-bg p-3">
           <input class="input py-1.5 text-sm w-full" name="label" placeholder="작업 종류명 (예: 보컬튠)" required />
@@ -222,6 +226,7 @@ function contentTab() {
               ${BILLING_TYPES.map((b) => `<option value="${esc(b)}">${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
             </select>
             <input class="input py-1.5 text-sm" name="unit_price" inputmode="numeric" placeholder="기본 단가(원)" />
+            <select class="input py-1.5 text-sm" name="price_type" aria-label="가격 유형">${priceTypeOptions("fixed")}</select>
           </div>
           <label class="flex items-center gap-2 text-sm text-muted"><input type="checkbox" name="is_quick" value="1" /> 곡·콘텐츠 '빠른 추가' 버튼에 노출</label>
           <button class="btn-primary btn-sm" type="submit">작업 종류 추가</button>
@@ -607,6 +612,19 @@ function hourLabel(minutes) {
   return m ? `${h}시간 ${m}분` : `${h}시간`;
 }
 
+/** 가격 유형 select 옵션(고정·기준가·최소가). 단가 항목·작업 종류 공용. */
+function priceTypeOptions(current) {
+  const cur = PRICE_TYPES.includes(current) ? current : "fixed";
+  return PRICE_TYPES.map((k) => `<option value="${k}" ${k === cur ? "selected" : ""}>${esc(PRICE_TYPE_LABELS[k] || k)}</option>`).join("");
+}
+
+/** 가격 유형 배지 — 청구 화면 동작(금액 잠금/수정 가능)을 목록에서 바로 읽히게. 고정은 기본값이라 배지 없음. */
+function priceTypeBadge(priceType) {
+  if (priceType === "base") return `<span class="badge badge-info">기준가</span>`;
+  if (priceType === "minimum") return `<span class="badge badge-warning">최소가</span>`;
+  return "";
+}
+
 function rateItemRow(r) {
   const baseHours = r.base_minutes ? r.base_minutes / 60 : "";
   const extraHours = r.extra_minutes ? r.extra_minutes / 60 : 1;
@@ -618,9 +636,13 @@ function rateItemRow(r) {
     <div class="rounded-lg border border-border bg-bg p-3 ${r.active ? "" : "opacity-60"}">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2"><span class="font-medium">${esc(r.name)}</span><span class="badge bg-bg text-muted">${esc(cat)}</span>${r.active ? "" : '<span class="text-xs text-muted">(비활성)</span>'}</div>
+          <div class="flex flex-wrap items-center gap-2"><span class="font-medium">${esc(r.name)}</span><span class="badge bg-bg text-muted">${esc(cat)}</span>${priceTypeBadge(r.price_type)}${r.active ? "" : '<span class="text-xs text-muted">(비활성)</span>'}</div>
           <div class="mt-0.5 text-xs text-muted">${summary}</div>
         </div>
+        <span class="flex shrink-0 gap-1">
+          <form method="post" action="/settings/rate-items/${r.id}/move"><input type="hidden" name="dir" value="up" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="위로 이동">↑</button></form>
+          <form method="post" action="/settings/rate-items/${r.id}/move"><input type="hidden" name="dir" value="down" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="아래로 이동">↓</button></form>
+        </span>
       </div>
       <details class="group mt-2 border-t border-border pt-2">
         <summary class="flex cursor-pointer list-none items-center justify-end gap-1 text-xs text-muted hover:text-fg">수정 ${detailsChevron()}</summary>
@@ -634,15 +656,22 @@ function rateItemRow(r) {
             <div><label class="label mb-0.5 text-xs">기준 가격(원)</label><input class="input py-1.5 text-sm" name="base_price" inputmode="numeric" value="${esc(String(r.base_price || ""))}" /></div>
             <div><label class="label mb-0.5 text-xs">초과 단위(시간)</label><input class="input py-1.5 text-sm" name="extra_hours" inputmode="decimal" value="${esc(String(extraHours))}" /></div>
             <div><label class="label mb-0.5 text-xs">초과 단가(원)</label><input class="input py-1.5 text-sm" name="extra_price" inputmode="numeric" value="${esc(String(r.extra_price || ""))}" /></div>
+            <div><label class="label mb-0.5 text-xs">가격 유형</label><select class="input py-1.5 text-sm" name="price_type">${priceTypeOptions(r.price_type)}</select></div>
           </div>
           <div class="flex items-center gap-2">
             <button class="btn-primary btn-xs transition" type="submit" data-dirty-save>저장</button>
             <span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span>
           </div>
         </form>
-        <form method="post" action="/settings/rate-items/${r.id}/delete" data-confirm="'${esc(r.name)}' 단가 항목을 삭제할까요? 이미 발행된 청구서는 금액이 따로 저장돼 그대로 남지만, 이 항목으로 잡힌 세션은 단가 항목이 비워져 청구할 수 없게 됩니다." class="mt-2">
-          <button class="btn-ghost btn-xs text-danger" type="submit">삭제</button>
-        </form>
+        <div class="mt-2 flex items-center gap-2">
+          <form method="post" action="/settings/rate-items/${r.id}/active">
+            <input type="hidden" name="active" value="${r.active ? "0" : "1"}" />
+            <button class="btn-ghost btn-xs" type="submit">${r.active ? "비활성으로" : "다시 활성으로"}</button>
+          </form>
+          <form method="post" action="/settings/rate-items/${r.id}/delete" data-confirm="'${esc(r.name)}' 단가 항목을 삭제할까요? 이미 발행된 청구서는 금액이 따로 저장돼 그대로 남지만, 이 항목으로 잡힌 세션은 단가 항목이 비워져 청구할 수 없게 됩니다. 잠시 안 쓰는 것뿐이면 '비활성으로'를 쓰세요.">
+            <button class="btn-ghost btn-xs text-danger" type="submit">삭제</button>
+          </form>
+        </div>
       </details>
     </div>`;
 }
@@ -657,6 +686,7 @@ function taskTypeRow(t) {
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-medium">${esc(t.label)}</span>
+            ${priceTypeBadge(t.price_type)}
             ${t.is_quick ? '<span class="badge bg-primary/10 text-primary">빠른추가</span>' : ""}
           </div>
           <div class="mt-0.5 text-xs text-muted">${esc(billLabel)} · ${priceLabel}</div>
@@ -675,6 +705,7 @@ function taskTypeRow(t) {
               ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
             </select>
             <input class="input py-1.5 text-sm" name="unit_price" inputmode="numeric" value="${esc(String(t.unit_price || ""))}" placeholder="기본 단가(원)" />
+            <select class="input py-1.5 text-sm" name="price_type" aria-label="가격 유형">${priceTypeOptions(t.price_type)}</select>
           </div>
           <label class="flex items-center gap-2 text-sm text-muted"><input type="checkbox" name="is_quick" value="1" ${t.is_quick ? "checked" : ""} /> 빠른 추가 노출</label>
           <div class="flex items-center gap-2">

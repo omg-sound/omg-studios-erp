@@ -12,7 +12,7 @@
 
 const crypto = require("crypto");
 const { db } = require("../db");
-const { normalizeBillingType } = require("../config");
+const { normalizeBillingType, normalizePriceType } = require("../config");
 const { parseMoney } = require("../lib/forms");
 
 const parseWon = parseMoney; // 내부 호출명 parseWon 유지(data.js와 동일 별칭)
@@ -59,6 +59,9 @@ function taskTypeFields(input) {
     label: String(input.label || "").trim(),
     task_group: "Post_Production", // 분류 개념 폐기 — 곡·콘텐츠 작업은 모두 후반작업(task_group은 레거시 컬럼으로만 보존)
     billing_type: normalizeBillingType(input.billing_type),
+    // 가격 유형(2026-07-26) — 포스트는 시간이 아니라 작업량으로 산정하므로 금액을 어떻게 다룰지가 항목마다 다르다.
+    // base=기준가(믹싱, 위아래 조정) · minimum=최소가(보컬튠, 상향만) · fixed=고정.
+    price_type: normalizePriceType(input.price_type),
     unit_price: parseWon(input.unit_price),
     is_quick: input.is_quick ? 1 : 0,
     sort_order: Number.isFinite(Number(input.sort_order)) ? Number(input.sort_order) : 100,
@@ -70,8 +73,8 @@ function createTaskType(input = {}) {
   const key = `tt_${crypto.randomBytes(5).toString("hex")}`; // 안정 불투명 key(라벨 변경에도 불변)
   db()
     .prepare(
-      `INSERT INTO task_types (key, label, task_group, billing_type, unit_price, is_quick, sort_order, active)
-       VALUES (@key,@label,@task_group,@billing_type,@unit_price,@is_quick,@sort_order,1)`
+      `INSERT INTO task_types (key, label, task_group, billing_type, price_type, unit_price, is_quick, sort_order, active)
+       VALUES (@key,@label,@task_group,@billing_type,@price_type,@unit_price,@is_quick,@sort_order,1)`
     )
     .run({ key, ...f });
   invalidateTaskTypeCache();
@@ -82,7 +85,7 @@ function updateTaskType(id, input = {}) {
   db()
     .prepare(
       `UPDATE task_types SET label=@label, task_group=@task_group, billing_type=@billing_type,
-       unit_price=@unit_price, is_quick=@is_quick, sort_order=@sort_order WHERE id=@id`
+       price_type=@price_type, unit_price=@unit_price, is_quick=@is_quick, sort_order=@sort_order WHERE id=@id`
     )
     .run({ id, ...f });
   invalidateTaskTypeCache();

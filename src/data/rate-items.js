@@ -8,6 +8,7 @@
 
 const { db } = require("../db");
 const { listRateCategories } = require("./rate-categories"); // 무순환(rate-categories는 rate-items를 require하지 않음)
+const { normalizePriceType } = require("../config");
 const { parseMoney } = require("../lib/forms");
 
 const parseWon = parseMoney; // 내부 호출명 parseWon 유지(data.js와 동일 별칭)
@@ -33,15 +34,22 @@ function rateFields(input) {
     base_price: parseWon(input.base_price),
     extra_minutes: parseHoursToMinutes(input.extra_hours) || 60,
     extra_price: parseWon(input.extra_price),
+    // 가격 유형(2026-07-26) — 청구 화면이 금액칸을 잠글지 결정한다.
+    // fixed=기본가 잠금(초과 시간만 자동 가산) · base=기준가 자동 입력 후 수정 가능 · minimum=최소가 자동 입력 후 상향.
+    price_type: normalizePriceType(input.price_type),
   };
 }
 
+/**
+ * 단가 항목 목록. 정렬은 **분류 안 표시 순서**(sort_order → 이름) — 이전엔 이름 가나다순 강제라
+ * 순서를 바꿀 수 없었다(바로 옆 rate_categories·task_types에는 ↑↓가 있어 일관성이 깨져 있었다).
+ */
 function listRateItems({ includeInactive = false } = {}) {
   return db()
     .prepare(
       `SELECT * FROM rate_items
        ${includeInactive ? "" : "WHERE active = 1"}
-       ORDER BY active DESC, name COLLATE NOCASE`
+       ORDER BY active DESC, sort_order ASC, name COLLATE NOCASE`
     )
     .all();
 }
@@ -53,10 +61,10 @@ function createRateItem(input = {}) {
   if (f.base_minutes > 0 && !f.base_price && !f.extra_price) throw new Error("RATE_PRICE_REQUIRED");
   const info = db()
     .prepare(
-      `INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active)
-       VALUES (@name,@category,@base_minutes,@base_price,@extra_minutes,@extra_price,1)`
+      `INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, price_type, sort_order, active)
+       VALUES (@name,@category,@base_minutes,@base_price,@extra_minutes,@extra_price,@price_type,900,1)`
     )
-    .run(f);
+    .run(f); // 새 항목은 분류 맨 뒤(이후 ↑↓로 이동)
   return db().prepare("SELECT * FROM rate_items WHERE id = ?").get(info.lastInsertRowid);
 }
 
@@ -68,10 +76,39 @@ function updateRateItem(id, input = {}) {
   db()
     .prepare(
       `UPDATE rate_items SET name=@name, category=@category, base_minutes=@base_minutes, base_price=@base_price,
-       extra_minutes=@extra_minutes, extra_price=@extra_price WHERE id=@id`
+       extra_minutes=@extra_minutes, extra_price=@extra_price, price_type=@price_type WHERE id=@id`
     )
     .run({ id, ...f });
   return db().prepare("SELECT * FROM rate_items WHERE id = ?").get(id);
+}
+
+/**
+ * 활성/비활성 토글(2026-07-26) — active 컬럼은 처음부터 있었는데 UI·라우트가 없어서
+ * 한 번 비활성이 되면 되살릴 방법이 없었다(세션 폼 옵션에서 사라지고 관리 화면에서도 손댈 수 없었다).
+ * 비활성 항목은 세션 폼 단가 select에서 빠지지만 그 항목으로 발행된 청구서는 스냅샷이라 그대로 남는다.
+ */
+function setRateItemActive(id, active) {
+  db().prepare("UPDATE rate_items SET active = ? WHERE id = ?").run(active ? 1 : 0, Number(id));
+  return db().prepare("SELECT * FROM rate_items WHERE id = ?").get(Number(id)) || null;
+}
+
+/**
+ * 표시 순서 이동(**같은 분류 안에서** 위/아래 한 칸) — moveRateCategory/moveTaskType과 같은 방식.
+ * 현재 표시 순서를 물질화해 이웃과 교환하고 sort_order를 10 간격 재부여(기본값 중복 상태에서도 결정적).
+ * 분류 경계를 넘지 않는다 — 관리 화면이 분류별 접이식 목록이라 분류를 넘는 이동은 화면에서 사라지는 것처럼 보인다.
+ */
+function moveRateItem(id, dir) {
+  const cur = db().prepare("SELECT * FROM rate_items WHERE id = ?").get(Number(id));
+  if (!cur) return;
+  const rows = db()
+    .prepare("SELECT id FROM rate_items WHERE category = ? ORDER BY active DESC, sort_order ASC, name COLLATE NOCASE")
+    .all(cur.category);
+  const i = rows.findIndex((r) => r.id === cur.id);
+  const j = dir === "up" ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= rows.length) return;
+  [rows[i], rows[j]] = [rows[j], rows[i]];
+  const upd = db().prepare("UPDATE rate_items SET sort_order = ? WHERE id = ?");
+  rows.forEach((r, idx) => upd.run((idx + 1) * 10, r.id));
 }
 
 function deleteRateItem(id) {
@@ -113,6 +150,8 @@ module.exports = {
   getRateItem,
   createRateItem,
   updateRateItem,
+  setRateItemActive,
+  moveRateItem,
   deleteRateItem,
   computeRatePrice,
 };
