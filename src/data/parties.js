@@ -63,15 +63,6 @@ function getParty(id) {
   return withLegacy(db().prepare("SELECT * FROM parties WHERE id = ?").get(Number(id)) || null);
 }
 
-/** kind별 개수(탭 배지). person/company/group + artist(교차). */
-function partyKindCounts() {
-  const rows = db().prepare("SELECT kind, COUNT(*) AS n FROM parties GROUP BY kind").all();
-  const map = { person: 0, company: 0, group: 0 };
-  for (const r of rows) map[r.kind] = r.n;
-  map.artist = db().prepare("SELECT COUNT(*) AS n FROM parties WHERE is_artist = 1").get().n;
-  return map;
-}
-
 // ── 생성/수정/삭제 ──
 
 /** 사람(person) 생성. 성·이름 미지정 시 표시명에서 한국식 자동 분리. activity_name(=nickname 별칭) 있으면 is_artist=1. */
@@ -132,13 +123,6 @@ function createGroup(b = {}) {
     contact_party_id: b.contact_party_id ? Number(b.contact_party_id) : null, // 담당자(멤버/관계자 사람)
   });
   return info.lastInsertRowid;
-}
-
-/** kind에 맞춰 생성 디스패치. */
-function createParty(b = {}) {
-  if (b.kind === "company") return createCompany(b);
-  if (b.kind === "group") return createGroup(b);
-  return createPerson(b);
 }
 
 /**
@@ -825,12 +809,6 @@ function listClients({ kind } = {}) {
   return db().prepare("SELECT * FROM parties WHERE kind IN ('company','group') OR is_artist = 1 ORDER BY " + hangulFirstOrder("name")).all().map(withLegacy);
 }
 
-/** 거래처 kind 카운트(탭 배지) — 레거시 라벨 키 포함. */
-function clientKindCounts() {
-  const c = partyKindCounts();
-  return { "소속사/레이블": c.company, "제작사": 0, "아티스트": c.artist, "기타": 0, company: c.company, group: c.group, artist: c.artist };
-}
-
 /** 콤보 옵션: 담당자(사람) — {id, name, phone, email, current_client(현재 소속)}. */
 function contactOptions() {
   return db()
@@ -1029,8 +1007,6 @@ module.exports = {
   formatPhone,
   listParties,
   getParty,
-  partyKindCounts,
-  createParty,
   createPerson,
   createCompany,
   createGroup,
@@ -1075,7 +1051,6 @@ module.exports = {
   listContacts,
   listAssociates,
   listClients,
-  clientKindCounts,
   contactOptions,
   clientOptions,
   listArtistsForAgency,

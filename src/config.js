@@ -122,7 +122,6 @@ const PROJECT_TYPES = [
   { key: "session", label: "세션", menuLabel: "세션 프로젝트 만들기", hint: "고객 방문 · 예약 · 실시간 작업" },
   { key: "task", label: "작업", menuLabel: "작업 프로젝트 만들기", hint: "예약 없이 항목 단위로 진행" },
 ];
-const PROJECT_TYPE_LABELS = Object.fromEntries(PROJECT_TYPES.map((t) => [t.key, t.label]));
 const PROJECT_TYPE_KEYS = PROJECT_TYPES.map((t) => t.key);
 
 const PROJECT_SERVICES = [
@@ -137,7 +136,6 @@ const PROJECT_SERVICES = [
 const RECORDING_CATEGORIES = ["스튜디오 녹음", "로케이션 녹음"];
 const FILMING_CATEGORIES = ["스튜디오 촬영"]; // 로케이션 촬영은 미사용(사용자 결정)
 const PERFORMANCE_CATEGORIES = ["공연"]; // 항목 예: 플레이백 세션·라이브 믹스
-const RATE_CATEGORIES = [...RECORDING_CATEGORIES, ...FILMING_CATEGORIES, ...PERFORMANCE_CATEGORIES]; // 시드 전용(단가 항목 전체 카테고리)
 // 세션 종류(대관) → 단가 kind. 녹음=recording, 촬영=filming, 공연=performance.
 const SESSION_TYPE_RATE_KIND = { 녹음: "recording", 촬영: "filming", 공연: "performance" };
 // ── 가격 유형(2026-07-26 과금 체계 개편) ──
@@ -151,12 +149,8 @@ const PRICE_TYPE_LABELS = { fixed: "고정", base: "기준가", minimum: "최소
 // 룸 점유는 세 구간을 아우르는 한 덩어리(sessions.start_time~end_time)이고, 요금 시간은 구간 합산이다.
 const SESSION_SEGMENT_KINDS = ["setup", "shoot", "teardown"];
 const SESSION_SEGMENT_LABELS = { setup: "반입·설치", shoot: "촬영", teardown: "철수" };
-const CLIENT_KINDS = ["아티스트", "그룹", "소속사/레이블", "제작사", "기타"]; // 그룹=밴드·아이돌 그룹 등 그룹 아티스트(parties.kind='group')
 const COMPANY_ROLES = ["소속사/레이블", "제작사"]; // 업체 역할 다중(겸업: 소속사가 제작도 함). CSV로 clients.roles에 저장
 const DELIVERABLE_KINDS = ["녹음본", "튠본", "믹스", "스템", "마스터", "레퍼런스", "기타"];
-// 청구서(bill) 발행 상태 — 계산서·입금 진행과 별개 축(2026-07-01 분리).
-const INVOICE_STATUSES = ["미발행", "발행"];
-const INVOICE_STATUS_LABELS = { 미발행: "청구서 미발행", 발행: "청구서 발행" };
 // 계산서(세금계산서)·입금 상태 — 청구서 발행과 독립적으로 진행(자유 선택). '입금완료'는 완납 처리와 연동.
 const TAX_STATUSES = ["계산서 미발행", "계산서 발행", "입금완료"];
 // 청구 PDF 문서 제목 — 발행 시 골라서(내용 동일, 제목·일부 문구만 분기).
@@ -169,10 +163,6 @@ function docNumberWithType(baseNumber, docType) {
   return String(baseNumber).replace(/^(OMG|INV)-/, "OMG-" + code);
 }
 const TRACK_CONTENT_TYPES = ["Music", "Video_Post"];
-const TRACK_CONTENT_TYPE_LABELS = {
-  Music: "음악",
-  Video_Post: "영상 후시/포스트",
-};
 // 작업 종류: DB 카탈로그(task_types)의 시드 데이터. 부팅 시 1회 시드 후로는 DB가 단일 진실원천.
 // billing=기본 과금, price=기본 단가(원), quick=곡·콘텐츠 '빠른 추가' 버튼 노출.
 const TASK_TYPES = [
@@ -188,7 +178,6 @@ const TASK_TYPES = [
 ];
 // 작업 종류 분류(그룹) — 구조적 상수(요약·빠른버튼 그룹핑). 카탈로그 행이 이를 참조.
 const TASK_GROUPS = ["Recording", "Post_Production", "Mix_Master", "Video_Audio"];
-const TASK_GROUP_LABELS = { Recording: "녹음", Post_Production: "후반 작업", Mix_Master: "믹스·마스터", Video_Audio: "영상 오디오" };
 const BILLING_TYPES = ["Time_Charge", "Fixed_Per_Track"];
 const BILLING_TYPE_LABELS = {
   Time_Charge: "시간 과금",
@@ -203,31 +192,13 @@ const RENTAL_SESSION_TYPES = ["녹음", "촬영", "공연"];
 // 세션만 마치고 작업을 안 만들면 청구할 게 없어 보여 완료로 샜다(2026-07-24) → unbilled_cnt에서 '청구 미착수' 신호로 쓴다.
 const POSTPROD_SESSION_TYPES = ["믹싱", "마스터링"];
 const SESSION_STATUSES = ["예정", "완료", "취소"];
-// 세션 시간 슬롯(30분 단위). 범위별 생성기.
-function timeSlots(startMin, endMin, step = 30) {
-  const out = [];
-  for (let m = startMin; m <= endMin; m += step) {
-    out.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
-  }
-  return out;
-}
 // (SESSION_TIME_SLOTS 제거 2026-07-23 — 겹침 경고가 슬롯 근사에서 구간 비교(busySessionRanges)로 바뀌며 소비처 소멸.
 //  12:00~23:30 창이 오전 세션을 경고 사각지대로 만들던 원인이라, 시간대 창 자체를 없앤 것이 수정의 일부다.)
-// 예약 그리드 기본 노출(14:00~18:30) — 그 외 시간은 '직접입력' 버튼으로.
-const SESSION_START_SLOTS = timeSlots(14 * 60, 18 * 60 + 30);
 const SESSION_STATUS_BADGE = {
   예정: "bg-primary/10 text-primary",
   완료: "bg-success/10 text-success",
   취소: "bg-muted/10 text-muted",
 };
-
-// 아티스트 활동 형태(2026-07-16 사용자 요청) — 솔로/그룹/솔로+그룹 3택. person 아티스트 수동 필드(parties.activity_form).
-const ARTIST_ACTIVITY_FORMS = [
-  { value: "solo", label: "솔로" },
-  { value: "group", label: "그룹" },
-  { value: "both", label: "솔로+그룹" },
-];
-const ARTIST_ACTIVITY_FORM_LABELS = Object.fromEntries(ARTIST_ACTIVITY_FORMS.map((f) => [f.value, f.label]));
 
 // 작업 상태 = 대기/완료 2단계('진행중' 개념 폐기 — 사용자 결정 2026-07-03). 레거시 In_Progress는 normalize·마이그레이션으로 Pending 처리.
 const TASK_STATUSES = ["Pending", "Completed"];
@@ -259,7 +230,6 @@ function normalize(value, allowed, fallback) {
   return allowed.includes(v) ? v : fallback !== undefined ? fallback : allowed[0];
 }
 
-const PROJECT_SERVICE_KEYS = PROJECT_SERVICES.map((s) => s.key);
 const PROJECT_SERVICE_LABELS = Object.fromEntries(PROJECT_SERVICES.map((s) => [s.key, s.label]));
 
 module.exports = {
@@ -268,17 +238,12 @@ module.exports = {
   ROLE_LABELS,
   normalizeRole: (v) => normalize(v, ROLES, "staff"),
   PROJECT_TYPES,
-  PROJECT_TYPE_LABELS,
   PROJECT_TYPE_KEYS,
   normalizeProjectType: (v) => normalize(v, PROJECT_TYPE_KEYS, "session"),
   PROJECT_SERVICES,
-  PROJECT_SERVICE_KEYS,
   PROJECT_SERVICE_LABELS,
-  CLIENT_KINDS,
   COMPANY_ROLES,
   DELIVERABLE_KINDS,
-  INVOICE_STATUSES,
-  INVOICE_STATUS_LABELS,
   TAX_STATUSES,
   normalizeTaxStatus: (v) => normalize(v, TAX_STATUSES, "계산서 미발행"),
   DOC_TYPES,
@@ -286,42 +251,31 @@ module.exports = {
   normalizeDocType: (v) => normalize(v, DOC_TYPES, "거래명세서"),
   INVOICE_STATUS_BADGE,
   TRACK_CONTENT_TYPES,
-  TRACK_CONTENT_TYPE_LABELS,
   TASK_TYPES,
   TASK_GROUPS,
-  TASK_GROUP_LABELS,
   BILLING_TYPES,
   BILLING_TYPE_LABELS,
   TASK_STATUSES,
   TASK_STATUS_LABELS,
   TASK_STATUS_BADGE,
-  ARTIST_ACTIVITY_FORMS,
-  ARTIST_ACTIVITY_FORM_LABELS,
   SESSION_TYPES,
   RENTAL_SESSION_TYPES,
   POSTPROD_SESSION_TYPES,
   SESSION_STATUSES,
   SESSION_STATUS_BADGE,
-  SESSION_START_SLOTS,
-  timeSlots,
   RECORDING_CATEGORIES,
   FILMING_CATEGORIES,
   PERFORMANCE_CATEGORIES,
-  RATE_CATEGORIES,
   SESSION_TYPE_RATE_KIND,
   PRICE_TYPES,
   PRICE_TYPE_LABELS,
   SESSION_SEGMENT_KINDS,
   SESSION_SEGMENT_LABELS,
   normalizePriceType: (v) => normalize(v, PRICE_TYPES),
-  normalizeSegmentKind: (v) => normalize(v, SESSION_SEGMENT_KINDS),
   normalizeSessionType: (v) => normalize(v, SESSION_TYPES),
   normalizeSessionStatus: (v) => normalize(v, SESSION_STATUSES),
-  normalizeClientKind: (v) => normalize(v, CLIENT_KINDS),
   normalizeDeliverableKind: (v) => normalize(v, DELIVERABLE_KINDS),
-  normalizeInvoiceStatus: (v) => normalize(v, INVOICE_STATUSES),
   normalizeTrackContentType: (v) => normalize(v, TRACK_CONTENT_TYPES),
-  normalizeTaskGroup: (v) => normalize(v, TASK_GROUPS),
   normalizeBillingType: (v) => normalize(v, BILLING_TYPES),
   normalizeTaskStatus: (v) => normalize(v, TASK_STATUSES),
   normalize,

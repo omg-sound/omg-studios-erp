@@ -20,7 +20,6 @@ const { asyncHandler } = require("../lib/async");
 const { logAudit } = require("../lib/audit"); // 파괴적·재무 액션 기록(fail-safe)
 const { buildUpload, decodeName, detectMimeFromFile } = require("../lib/attachments"); // 첨부 보안 로직 공용(2026-07-09 통합)
 const { formatBizNo } = require("../lib/forms");
-const { stripTrailingTitle } = require("../lib/korean-name");
 const { safePath } = require("../lib/nav"); // ?return= 복귀 경로 검증(공용)
 const { layout, pageHeader, esc, personLabel, personName, flashBanner, emptyState, errorPage, tabBar, searchBox, fileViewerPage } = require("../views");
 const { FILE_KINDS, fileKindLabel, clientFilesBlock, clientForm, clientReadView, clientEditPane } = require("../views.clients");
@@ -287,12 +286,10 @@ router.post("/:id", (req, res) => {
   const id = Number(req.params.id);
   const c = getParty(id);
   if (!c) return res.status(404).send(errorPage({ code: 404, title: "업체·그룹을 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-  const isFetch = req.get("X-Requested-With") === "fetch"; // 자동저장(AJAX)
   const b = req.body;
   const name = String(b.party_name != null ? b.party_name : b.name || "").trim(); // 폼 필드=party_name(Chrome name= 자동완성 회피 — 함정 #19·#21)
   const typeLabel = c.kind === "group" ? "그룹" : "업체"; // 오류 재렌더용 표시 라벨(2026-07-17)
   if (!name) {
-    if (isFetch) return res.status(400).json({ ok: false, error: "이름을 입력하세요." });
     const files = listClientFiles(id);
     return res.send(layout({ title: `${typeLabel} 수정`, user: req.user, current: "/clients", body: clientForm({ ...c, ...b, _err: "이름을 입력하세요." }, true, files, "", true, listContacts({}), listClients({}).filter((x) => x.kind === "company"), false, true) }));
   }
@@ -314,8 +311,7 @@ router.post("/:id", (req, res) => {
   if (c.kind !== "company" && b.agency_company !== undefined) setPartyAgency(id, String(b.agency_company).trim() ? ensureCompanyParty(b.agency_company, "소속사/레이블") : null); // 아티스트·그룹 소속사 콤보(이름→party, 비우면 해제)
   if (c.kind === "company") linkClientContact(id, b); // 업체만 담당자 연락처 연동
   if (c.kind === "company") setCompanyOwners(id, resolveOwnerIds(b)); // 대표자 칩(공동대표) — 호칭·소속·레거시 컬럼 동기화. 빈 목록이면 대표 전원 해제
-  if (isFetch) return res.json({ ok: true }); // 자동저장 — 페이지 유지
-  res.redirect(`/clients/${id}?flash=saved`); // 수동 저장(noscript): 상세로 복귀
+  res.redirect(`/clients/${id}?flash=saved`); // 저장 후 읽기 뷰로 복귀
 });
 
 // ── 삭제(강제: 연결된 프로젝트·청구서·사용자의 client_id는 SET NULL으로 자동 해제) ──

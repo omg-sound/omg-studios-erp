@@ -4,7 +4,7 @@
 
 const { INVOICE_STATUS_BADGE, DOC_TYPES, docNumberWithType } = require("./config");
 const { esc, formatKRW, emptyState, detailsChevron, copyable, personLabel } = require("./views");
-const { balanceOf, payStatusOf, isOverdue, invoiceIsSettled } = require("./data");
+const { balanceOf, isOverdue, invoiceIsSettled } = require("./data");
 const { formatYmdShort } = require("./lib/date"); // todayYmd·ddayLabel 미사용(입금일·마감일 개념 제거, 2026-07-05)
 
 /**

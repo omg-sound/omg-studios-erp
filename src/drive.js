@@ -17,7 +17,6 @@
 const { google } = require("googleapis");
 const { config } = require("./config");
 const { getState, setState, encrypt, decrypt } = require("./db");
-const { oauthClient } = require("./auth");
 
 const STATE_REFRESH_TOKEN = "drive_refresh_token"; // 암호화 저장
 const STATE_FOLDER_PREFIX = "drive_folder_"; // kind별 folder_id 캐시
@@ -210,11 +209,6 @@ async function backupToDrive(filePath, { keep = 14 } = {}) {
   return { ok: true, fileId: up.id, pruned };
 }
 
-/** 저장 루트 id(= omg-studios-erp 폴더). 점검용. */
-function getFolderId() {
-  return config.driveRootFolderId || null;
-}
-
 /** Drive 파일/폴더 메타(존재 확인·바로가기 링크). 없으면(404 등) 예외. */
 async function getFileMeta(fileId) {
   const drive = driveClient();
@@ -266,7 +260,6 @@ module.exports = {
   driveClient,
   ensureFolder,
   ensureSubfolder,
-  getFolderId,
   getFileMeta,
   checkFolder,
   probeUpload,

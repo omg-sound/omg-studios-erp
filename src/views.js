@@ -758,7 +758,7 @@ function personCombo({ idField = "contact_id", nameField = "contact_name", selec
 /** personCombo 공유 옵션 스크립트 — 같은 옵션을 여러 콤보가 optionsRef로 참조(중복 임베드 제거). 페이지당 1회 렌더. */
 function personComboOptionsScript(id, options) {
   const jopts = (options || []).map((o) => ({ id: o.id, name: o.name, alt: o.activity_name || o.alt || "", honorific: o.honorific || "", phone: o.phone || "", email: o.email || "", company: o.current_client || o.company || "", job_title: o.current_title || o.job_title || "", group: o.group_name || o.group || "" }));
-  return `<script type="application/json" id="${esc(id)}" data-pc-shared-options>${JSON.stringify(jopts).replace(/</g, "\\u003c")}</script>`;
+  return `<script type="application/json" id="${esc(id)}">${JSON.stringify(jopts).replace(/</g, "\\u003c")}</script>`;
 }
 
 /** personCombo 모달 '회사' 콤보 공유 옵션 스크립트 — companyOptionsRef로 참조(페이지당 1회, 세션 목록처럼 콤보가 많을 때). */
@@ -843,7 +843,7 @@ function payerCombo({ selectedId = null, clientOptions = [], contactOptions = []
  */
 function fileViewerPage({ title, rawUrl, pdf = false }) {
   const body = pdf
-    ? `<iframe src="${esc(rawUrl)}#view=FitH" title="${esc(title)}" data-viewer-pdf class="h-screen w-screen border-0"></iframe>`
+    ? `<iframe src="${esc(rawUrl)}#view=FitH" title="${esc(title)}" class="h-screen w-screen border-0"></iframe>`
     : `<img src="${esc(rawUrl)}" alt="${esc(title)}" data-viewer-img class="h-screen w-screen object-contain" /><script src="/js/viewer.js?v=${ASSET_VERSION}" defer></script>`;
   return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />

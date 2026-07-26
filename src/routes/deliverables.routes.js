@@ -12,7 +12,6 @@ const { db } = require("../db");
 const { requireStaff, isStaffOrChief } = require("../auth");
 const {
   getProjectForUser,
-  listDeliverablesForProject,
   getDeliverableForUser,
   getDeliverableByToken,
   recentDeliverables,
@@ -21,7 +20,7 @@ const storage = require("../storage");
 const { activeBackend } = storage;
 const { asyncHandler } = require("../lib/async");
 const { layout, pageHeader, esc, formatBytes, emptyState, dateCombo } = require("../views");
-const { deliverablesSection, deliverableRow, linkStatus } = require("../views.deliverables");
+const { linkStatus } = require("../views.deliverables");
 const { todayYmd, isValidYmd, formatYmdShort, kstYmd } = require("../lib/date");
 
 const router = express.Router();

@@ -11,7 +11,6 @@ const {
   oauthClient,
   touchLastLogin,
   VIEWAS_COOKIE,
-  requireChief,
   findUserByEmail,
 } = require("../auth");
 const { saveRefreshToken, setDriveAccountEmail } = require("../drive");

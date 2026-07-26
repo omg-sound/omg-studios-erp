@@ -158,13 +158,6 @@ function setSessionDirectors(sessionId, ids) {
   d.prepare("UPDATE sessions SET director_party_id = ? WHERE id = ?").run(ids[0] || null, sessionId);
 }
 
-/** 세션 담당 엔지니어(다대다, 2026-07-05): engineer_ids[](담당자 마스터 id, 반복 select) → 유효 id 배열(중복 제거).
- *  디렉터와 달리 자유 텍스트 등록이 없다(담당자 마스터에서만 선택) — 존재하지 않는(삭제된) id만 걸러내고,
- *  비활성 담당자는 유지(기존 배정 보존 — validRoomId와 동일 철학: 목록에 안 보여도 이미 배정된 건 안 지운다). */
-function resolveEngineerIds(input) {
-  return resolveEngineerAssignments(input).map((a) => a.id);
-}
-
 /**
  * 세션 담당 엔지니어 배정 + 외주 지급단가(2026-07-06 사용자 상담 — track_tasks와 동일 구조로 세션도 정산).
  * engineer_ids[]/engineer_rates[]를 같은 인덱스로 페어링(폼의 반복 행과 1:1), 유효 id만·중복 제거(첫 값 유지).

@@ -3,7 +3,7 @@
 const express = require("express");
 const { db } = require("../db");
 const { requireChief, requireStaff, isChief, syncUserToManager, findUserById } = require("../auth");
-const { normalizeRole, config } = require("../config");
+const { normalizeRole } = require("../config");
 const {
   createRoom,
   updateRoom,
@@ -53,7 +53,7 @@ const {
   isBootstrapChief,
 } = require("../views.settings");
 const { asyncHandler } = require("../lib/async");
-const { logAudit, listAudit } = require("../lib/audit"); // 파괴적·재무 액션 기록·열람(fail-safe)
+const { logAudit } = require("../lib/audit"); // 파괴적·재무 액션 기록(fail-safe)
 const multer = require("multer");
 const drive = require("../drive");
 const { migrateLocalFilesToDrive, driveFileCount } = require("../lib/storage-migrate");
@@ -481,14 +481,11 @@ router.post("/task-types", requireStaff, (req, res) => {
 });
 
 router.post("/task-types/:id", requireStaff, (req, res) => {
-  const isFetch = req.get("X-Requested-With") === "fetch"; // 자동저장(AJAX)
   try {
     updateTaskType(Number(req.params.id), req.body);
   } catch (e) {
     if (e.message !== "TASK_TYPE_LABEL_REQUIRED") throw e;
-    if (isFetch) return res.status(400).json({ ok: false, error: "이름을 입력하세요." });
   }
-  if (isFetch) return res.json({ ok: true });
   res.redirect("/settings?tab=content&flash=saved");
 });
 

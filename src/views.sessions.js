@@ -35,7 +35,7 @@ function roomSelect(rooms, currentId) {
     opts.push(`<option value="${r.id}" data-external="${r.is_external ? 1 : 0}" ${String(r.id) === auto ? "selected" : ""}>${esc(r.name)}</option>`);
   }
   opts.push(`<option value="" data-external="0" ${auto === "" ? "selected" : ""}>장소 미지정</option>`); // 맨 아래
-  return `<select class="input py-1.5 text-sm" name="room_id" data-room-select>${opts.join("")}</select>`;
+  return `<select class="input py-1.5 text-sm" name="room_id">${opts.join("")}</select>`;
 }
 
 /** 담당자 마스터 선택지. 현재값이 목록에 없으면 보존용으로 추가. 예약 담당자·담당 엔지니어 공용. */
@@ -114,7 +114,7 @@ function durationButtons(initMinutes = 0) {
     <div data-duration-group data-pro-default="${pro}">
       <div class="relative">
         <input type="range" min="0" max="${DURATION_SLIDER_MAX}" step="30" value="${Math.min(m, DURATION_SLIDER_MAX)}" class="w-full cursor-pointer accent-primary" data-duration-slider aria-label="소요 시간" />
-        <div class="relative mt-1 flex h-8 flex-wrap items-center gap-1.5 sm:block" data-duration-ticks data-show-when="rec">${tickBtn(1)}${tickBtn(2)}${tickBtn(3)}${tickBtn(4)}</div>
+        <div class="relative mt-1 flex h-8 flex-wrap items-center gap-1.5 sm:block" data-show-when="rec">${tickBtn(1)}${tickBtn(2)}${tickBtn(3)}${tickBtn(4)}</div>
       </div>
       <input type="hidden" name="custom_hours" value="${hours}" data-custom-hours />
       <input type="hidden" name="duration_mode" value="custom" />
@@ -122,10 +122,9 @@ function durationButtons(initMinutes = 0) {
 }
 
 /**
- * '녹음 종류' select — 단가표 항목(rate_items)을 분류(스튜디오/로케이션 녹음)로 묶는다. data-minutes로 1Pro 계산.
- * required=true면 data-rate-required(녹음 폼: 선택해야 시작 시간 입력 가능). 편집·믹스 폼은 false.
+ * '녹음 종류' 옵션 HTML — 단가표 항목(rate_items)을 분류(스튜디오/로케이션 녹음)로 묶는다. data-minutes로 1Pro 계산.
+ * 세션 종류에 따라 녹음/촬영 항목만 넘겨 렌더 — app.js가 종류 변경 시 이 옵션을 통째로 교체.
  */
-/** 단가 항목 옵션 HTML(미지정 + 카테고리별 optgroup). 세션 종류에 따라 녹음/촬영 항목만 넘겨 렌더 — app.js가 종류 변경 시 이 옵션을 통째로 교체. */
 function rateOptionsHtml(rateItems, currentId) {
   const catOrder = listRateCategories().map((c) => c.name); // DB 순서(kind→sort_order→이름) — 2026-07-05 config 하드코딩에서 전환
   const groups = {};
@@ -136,9 +135,6 @@ function rateOptionsHtml(rateItems, currentId) {
   const cats = [...catOrder.filter((c) => groups[c]), ...Object.keys(groups).filter((c) => !catOrder.includes(c))];
   const opt = (r) => `<option value="${r.id}" data-minutes="${Number(r.base_minutes) || 0}" ${String(r.id) === String(currentId || "") ? "selected" : ""}>${esc(r.name)}</option>`;
   return `<option value="" data-minutes="0">미지정</option>` + cats.map((c) => `<optgroup label="${esc(c)}">${groups[c].map(opt).join("")}</optgroup>`).join("");
-}
-function rateSelectGrouped(rateItems, currentId, required = false) {
-  return `<select class="input py-1.5 text-sm" name="rate_item_id" data-rate-select ${required ? "data-rate-required" : ""}>${rateOptionsHtml(rateItems, currentId)}</select>`;
 }
 
 /**
@@ -250,7 +246,7 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
   //  md 미만은 소스 순서대로 세로 스택(시간 → 세부정보 → 사람).
   return `
     <input type="hidden" name="status" value="${esc(s.status || "예정")}" />
-    <div class="space-y-3" data-time-block>
+    <div class="space-y-3">
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5" ${segmentTypesAttr} data-hide-when-type>
         <!-- 줄바꿈 단위 = 시작(날짜+시간) / 종료(–+시간+날짜) 두 덩어리. 폭이 좁아 접히더라도 종료 시간과 종료 날짜가
              떨어지지 않게 한 묶음으로 둔다(2026-07-14 사용자 리포트 — 종료 날짜만 다음 줄로 가 연관이 끊겨 보이던 것). -->
@@ -611,7 +607,7 @@ function sessionCardModal(s, { canEdit = false } = {}) {
   // 그래서 바깥 클릭 닫기는 레이어가 아니라 document 리스너가 맡고, 레이어는 좌표계 역할만 한다.
   // `data-modal`도 뗐다 — 그게 붙으면 스크롤 잠금 옵저버가 배경을 얼려, 통과시키려고 만든 상호작용을 다시 막는다(✕는 app.js가 직접 배선).
   return `
-    <div data-session-modal class="pointer-events-none fixed inset-0 z-50">
+    <div class="pointer-events-none fixed inset-0 z-50">
       <div class="card pointer-events-auto absolute w-[21rem] max-w-[calc(100vw-2rem)] shadow-xl" data-session-pop role="dialog" aria-label="세션 상세" tabindex="-1">
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0">

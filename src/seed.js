@@ -12,7 +12,7 @@ const pathm = require("path");
 const crypto = require("crypto");
 const { config } = require("./config");
 const { init, db } = require("./db");
-const { todayYmd, ymd } = require("./lib/date");
+const { ymd } = require("./lib/date");
 const data = require("./data"); // 당사자(party) 함수 — 데모도 파티 모델로 시드
 
 init();

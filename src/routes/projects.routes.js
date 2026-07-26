@@ -4,8 +4,6 @@ const express = require("express");
 const { db } = require("../db");
 const { requireAuth, requireEditor, requireBilling, requireChief, canEdit, canBill, isChief, isStaffOrChief } = require("../auth");
 const {
-  TASK_STATUS_LABELS,
-  TASK_STATUS_BADGE,
   normalizeProjectType,
   normalizeDocType,
   docNumberWithType,
@@ -28,7 +26,6 @@ const {
   getParty,
   listProjectManagers,
   listRateItems,
-  taskTypeLabel,
   listDeliverablesForProject,
   listInvoicesForProject,
   listInvoiceItemsForInvoice,
@@ -488,10 +485,8 @@ router.post("/:id", requireEditor, (req, res) => {
   const exists = db().prepare("SELECT id FROM projects WHERE id = ?").get(id);
   if (!exists) return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
   const b = req.body;
-  const isFetch = req.get("X-Requested-With") === "fetch"; // 자동저장(AJAX)
   const title = String(b.title || "").trim();
   if (!title) {
-    if (isFetch) return res.status(400).json({ ok: false, error: "프로젝트 명을 입력하세요." });
     const p = getProjectForUser(req.user, id);
     return renderProjectDetail(req, res, p, { ...b, id }, "프로젝트 명을 입력하세요.");
   }
@@ -528,7 +523,6 @@ router.post("/:id", requireEditor, (req, res) => {
     d.exec("ROLLBACK;");
     throw e;
   }
-  if (isFetch) return res.json({ ok: true });
   res.redirect(`/projects/${id}?flash=saved`);
 });
 
@@ -586,17 +580,6 @@ router.post("/tasks/:taskId", requireEditor, (req, res) => {
   try {
     const task = updateTask(req.user, Number(req.params.taskId), req.body);
     if (!task) return res.status(404).send(errorPage({ code: 404, title: "작업을 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-    if (req.get("X-Requested-With") === "fetch") {
-      // 자동저장(AJAX): 리다이렉트 대신 갱신된 헤더값 JSON 반환(종류 라벨·담당 엔지니어·금액).
-      return res.json({
-        ok: true,
-        amount: task.is_invoiced && task.total_price ? formatKRW(task.total_price) : "",
-        typeLabel: taskTypeLabel(task.task_type),
-        engineerName: task.engineer_name || "",
-        statusLabel: TASK_STATUS_LABELS[task.status] || task.status,
-        statusCls: TASK_STATUS_BADGE[task.status] || "bg-muted/10 text-muted",
-      });
-    }
     res.redirect(`/projects/${task.project_id}?tab=tracks&flash=saved`);
   } catch (e) {
     if (e.message === "TASK_LOCKED") return res.status(400).send(errorPage({ code: 400, title: "수정 불가", message: "이미 청구된 작업은 수정할 수 없습니다.", user: req.user }));

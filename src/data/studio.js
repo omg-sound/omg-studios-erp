@@ -8,9 +8,8 @@
  */
 
 const { getState, setState } = require("../db");
-const { cleanTime, timeToMin } = require("../lib/date");
+const { cleanTime } = require("../lib/date");
 const { formatPhone, formatBizNo } = require("../lib/format");
-const { timeSlots, SESSION_START_SLOTS } = require("../config");
 
 // ── 공급자(스튜디오) 세금정보 — admin_state 평문(비밀 아님, studio_location과 동급) ──
 const STUDIO_INFO_KEYS = ["studio_biz_name", "studio_biz_no", "studio_owner_name", "studio_address", "studio_biz_type", "studio_biz_item", "studio_tel"];
@@ -74,14 +73,6 @@ function setDefaultBooker(name) {
   setState("default_booker", String(name || "").trim() || null);
 }
 
-/** 운영시간 기반 30분 시작 슬롯 배열(예약 그리드). 무효/역전 범위면 기본 그리드(SESSION_START_SLOTS). */
-function studioStartSlots() {
-  const { start, end } = getStudioHours();
-  const sm = timeToMin(start), em = timeToMin(end);
-  if (sm == null || em == null || em < sm) return [...SESSION_START_SLOTS];
-  return timeSlots(sm, em);
-}
-
 module.exports = {
   getStudioInfo,
   setStudioInfo,
@@ -93,5 +84,4 @@ module.exports = {
   setProMinutes,
   getDefaultBooker,
   setDefaultBooker,
-  studioStartSlots,
 };

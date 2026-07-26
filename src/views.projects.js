@@ -631,10 +631,10 @@ function taskRow(task, { isAdmin, managers = [], open = false } = {}) {
   const status = TASK_STATUS_LABELS[task.status] || task.status;
   const statusCls = TASK_STATUS_BADGE[task.status] || "bg-muted/10 text-muted";
   // 금액은 청구 탭에서 확정 — 작업 행엔 청구된 작업의 확정액만 표시(미청구는 숨김, '기록만' 일관).
-  const amount = `<span class="text-sm font-semibold" data-row-amount>${task.is_invoiced && task.total_price ? formatKRW(task.total_price) : ""}</span>`;
-  // 종류·담당은 작업 종류/엔지니어 변경 시 자동저장이 즉시 갱신(data-row-type/data-row-engineer).
-  const title = `<span class="min-w-0 truncate text-sm"><span class="font-medium" data-row-type>${esc(label)}</span><span class="text-xs text-muted" data-row-engineer>${task.engineer_name ? " · " + esc(task.engineer_name) : ""}</span></span>`;
-  const statusBadge = `<span class="badge ${statusCls}" data-row-status>${esc(status)}</span>`;
+  const amount = `<span class="text-sm font-semibold">${task.is_invoiced && task.total_price ? formatKRW(task.total_price) : ""}</span>`;
+  // 종류·담당은 '작업 저장' 후 서버 재렌더로 갱신된다(자동저장은 2026-07-01 명시 저장 버튼으로 전환).
+  const title = `<span class="min-w-0 truncate text-sm"><span class="font-medium">${esc(label)}</span><span class="text-xs text-muted">${task.engineer_name ? " · " + esc(task.engineer_name) : ""}</span></span>`;
+  const statusBadge = `<span class="badge ${statusCls}">${esc(status)}</span>`;
 
   // 비관리자/청구된 작업: 편집 불가 → 단순 행(접기 없음).
   if (!isAdmin || task.is_invoiced) {
