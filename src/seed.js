@@ -152,7 +152,7 @@ function ensureSampleDeliverable() {
 }
 ensureSampleDeliverable();
 
-// 샘플 인보이스(2축 다양화: 청구서 발행미납/연체부분납/입금완료/미발행). taxStatus 기본 '계산서 미발행'.
+// 샘플 인보이스(2축 다양화: 청구서 발행미납/부분납/입금완료/미발행). taxStatus 기본 '계산서 미발행'.
 function ensureInvoice(title, projectLike, clientName, amount, paid, status, issuedOffset, dueOffset, taxStatus = "계산서 미발행") {
   if (d.prepare("SELECT id FROM invoices WHERE title = ?").get(title)) return;
   const proj = projectLike ? d.prepare("SELECT id FROM projects WHERE title LIKE ?").get(projectLike) : null;
@@ -181,7 +181,7 @@ function ensureInvoice(title, projectLike, clientName, amount, paid, status, iss
 }
 
 ensureInvoice("루나 1집 믹싱비", "루나 1집%", "아티스트 루나", 2500000, 0, "발행", -2, 10);
-ensureInvoice("루나 어쿠스틱 싱글 녹음비", "루나 - 어쿠스틱%", "아티스트 루나", 800000, 400000, "발행", -20, -3, "계산서 발행"); // 연체 부분납
+ensureInvoice("루나 어쿠스틱 싱글 녹음비", "루나 - 어쿠스틱%", "아티스트 루나", 800000, 400000, "발행", -20, -3, "계산서 발행"); // 부분납
 ensureInvoice("블루노트 컴필 마스터링비", "블루노트 컴필%", "블루노트 레코즈", 4200000, 4200000, "발행", -20, -5, "입금완료");
 ensureInvoice("루나 리믹스 EP 작업비", "루나 - 리믹스%", "아티스트 루나", 1800000, 1800000, "발행", -8, 0, "입금완료");
 ensureInvoice("MADE 광고 BGM 견적", "MADE - 자동차%", "MADE 광고대행", 1500000, 0, "미발행", null, null);

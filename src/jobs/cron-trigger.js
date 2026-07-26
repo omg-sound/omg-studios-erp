@@ -28,11 +28,11 @@
       headers: { Authorization: `Bearer ${token}` },
     });
     const text = await res.text();
-    // 응답 본문에는 연체 고객명·잔액·백업 절대경로가 들어 있다 → 로그에는 비민감 요약만 남긴다.
+    // 응답 본문에는 백업 절대경로가 들어 있다 → 로그에는 비민감 요약만 남긴다.
     let summary = "";
     try {
       const j = JSON.parse(text);
-      summary = `ok=${j.ok} overdue=${j.overdue ? j.overdue.count : "?"}` + (j.backupError ? ` backupError=${j.backupError}` : "");
+      summary = `ok=${j.ok}` + (j.backupError ? ` backupError=${j.backupError}` : "");
     } catch (_e) {
       summary = text.slice(0, 200); // JSON이 아니면(에러 페이지 등) 앞부분만
     }

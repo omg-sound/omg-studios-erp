@@ -4,7 +4,7 @@
 
 const { INVOICE_STATUS_BADGE, DOC_TYPES, docNumberWithType } = require("./config");
 const { esc, formatKRW, emptyState, detailsChevron, copyable, personLabel } = require("./views");
-const { balanceOf, isOverdue, invoiceIsSettled } = require("./data");
+const { balanceOf, invoiceIsSettled } = require("./data");
 const { formatYmdShort } = require("./lib/date"); // todayYmd·ddayLabel 미사용(입금일·마감일 개념 제거, 2026-07-05)
 
 /**
@@ -52,16 +52,15 @@ function payerInfoCard(client, contacts = [], hasBizFile = false, { compact = fa
   return `<div class="card mt-3"><div class="text-sm">${inner}</div></div>`;
 }
 
-/** 계산서·입금 축 표시 라벨(연체/부분납 파생 반영). */
+/** 계산서·입금 축 표시 라벨(부분납 파생 반영). */
 function displayStatus(inv) {
-  if (isOverdue(inv)) return "연체";
   if ((inv.paid_amount || 0) > 0 && balanceOf(inv) > 0) return "부분납";
   return inv.tax_status || "계산서 미발행";
 }
 
-/** 상태 정렬용 순위(미발행<발행<부분납<입금완료<연체) — 청구 목록 헤더 클릭 정렬(data-sort-value). */
+/** 상태 정렬용 순위(미발행<발행<부분납<입금완료) — 청구 목록 헤더 클릭 정렬(data-sort-value). */
 function statusRank(inv) {
-  return { "계산서 미발행": 0, "계산서 발행": 1, "부분납": 2, "입금완료": 3, "연체": 4 }[displayStatus(inv)] ?? 0;
+  return { "계산서 미발행": 0, "계산서 발행": 1, "부분납": 2, "입금완료": 3 }[displayStatus(inv)] ?? 0;
 }
 
 /** 청구처 유형에 따른 세무 문서명 — 개인(person)=현금영수증, 그 외(업체·그룹·미지정)=계산서. tax_status DB값(계산서 …)은 그대로, 표시만 치환. */
@@ -69,7 +68,7 @@ function taxDocOf(inv) {
   return inv && inv.payer_kind === "person" ? "현금영수증" : "계산서";
 }
 
-/** 계산서·입금 배지 — (계산서|현금영수증) 미발행 / 발행 / 입금완료(+연체·부분납 파생). */
+/** 계산서·입금 배지 — (계산서|현금영수증) 미발행 / 발행 / 입금완료(+부분납 파생). */
 function taxBadge(inv) {
   const label = displayStatus(inv).replace("계산서", taxDocOf(inv)); // 개인이면 '계산서'→'현금영수증' 표시
   if (label === "계산서 발행" || label === "현금영수증 발행") return `<span class="badge-info">${esc(label)}</span>`;
@@ -83,9 +82,9 @@ function invoiceBadge(inv) {
 }
 
 /** 목록 표 상태 컬럼용 **짧은** 배지(2026-07-16 사용자 요청 '입금·발행으로 줄이자' — 좁은 열 폭 절약):
- *  계산서/현금영수증 미발행→미발행 · 발행→발행 · 입금완료→입금(+연체·부분납은 그대로). 색은 full 기준 유지. */
+ *  계산서/현금영수증 미발행→미발행 · 발행→발행 · 입금완료→입금(부분납은 그대로). 색은 full 기준 유지. */
 function taxBadgeShort(inv) {
-  const full = displayStatus(inv); // 계산서 미발행 / 계산서 발행 / 입금완료 / 연체 / 부분납
+  const full = displayStatus(inv); // 계산서 미발행 / 계산서 발행 / 입금완료 / 부분납
   const short = full === "입금완료" ? "입금" : full.replace(/^계산서 /, "");
   if (full === "계산서 발행") return `<span class="badge-info">${esc(short)}</span>`;
   const cls = INVOICE_STATUS_BADGE[full] || "bg-muted/10 text-muted";

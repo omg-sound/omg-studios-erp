@@ -13,7 +13,6 @@ const {
   listTaskTypes,
   getStudioInfo,
   getStudioLogo,
-  getStudioHours,
   getProMinutes,
   getDefaultBooker,
 } = require("./data");
@@ -397,27 +396,15 @@ function roomRow(r, depth = 0, tops = []) {
     </div>`;
 }
 
-/** 운영시간(예약 그리드 시간 범위) — admin_state 기반. setStudioHours로 저장. */
-function studioHoursSection() {
-  const { start, end } = getStudioHours();
+/**
+ * 기본 세션 시간 — 녹음 외 세션의 소요시간 슬라이더 기본값(getProMinutes).
+ * (옛 '운영시간'[예약 시작 그리드 범위] 폼은 2026-07-27 제거 — 그리드가 날짜·시간 콤보로 바뀐 뒤
+ *  저장값을 읽는 화면·검증이 하나도 없어, 바꿔도 아무 일이 없는 설정이었다.)
+ */
+function sessionDurationSection() {
   return `
     <div class="${SETTING_BLOCK}">
-      <div>
-        <h2 class="text-sm font-semibold">운영시간 <span class="text-xs font-normal text-muted">(예약 시작 그리드 범위)</span></h2>
-        ${explain(`세션 예약 폼의 '시작 시간 그리드'에 표시되는 시간 범위입니다(30분 단위). 그리드 바깥 시각은 '직접입력'으로 예약할 수 있습니다.`)}
-      </div>
-      <form method="post" action="/settings/studio-hours" class="flex flex-wrap items-end gap-2">
-        <div>
-          <label class="label-sm">그리드 시작</label>
-          <input class="input py-1.5 text-sm" name="hours_start" value="${esc(start)}" placeholder="14:00" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" required />
-        </div>
-        <div>
-          <label class="label-sm">그리드 종료</label>
-          <input class="input py-1.5 text-sm" name="hours_end" value="${esc(end)}" placeholder="18:30" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" required />
-        </div>
-        <button class="btn-primary btn-sm shrink-0" type="submit">저장</button>
-      </form>
-      <form method="post" action="/settings/pro-minutes" class="flex flex-wrap items-end gap-2 border-t border-border pt-4">
+      <form method="post" action="/settings/pro-minutes" class="flex flex-wrap items-end gap-2">
         <div>
           <label class="label-sm">기본 세션 시간 <span class="font-normal text-muted">(녹음 외 세션[믹싱·마스터링·기타]의 소요시간 슬라이더 기본값)</span></label>
           <input class="input w-28 py-1.5 text-sm" name="pro_hours" type="number" step="0.5" min="0.5" value="${esc(String(getProMinutes() / 60))}" placeholder="3.5" />
@@ -488,7 +475,7 @@ function studioInfoSection() {
     </div>`;
 }
 
-/** 알림 채널(웹훅) — 연체·청구 발행·자료 공유 팀 알림. URL은 암호화 저장. */
+/** 알림 채널(웹훅) — 청구 발행·자료 공유 팀 알림. URL은 암호화 저장. */
 function alertWebhookSection(chief = true) {
   const url = alerts.getConfiguredWebhook();
   const envNote = alerts.envWebhookActive()
@@ -507,7 +494,7 @@ function alertWebhookSection(chief = true) {
     <div class="${SETTING_BLOCK}">
       <div>
         <h2 class="text-sm font-semibold">알림 (웹훅)</h2>
-        ${explain(`연체·청구 발행·자료 공유 시 Slack/Discord 등으로 팀 알림을 보냅니다. Incoming Webhook URL을 넣으세요(비우면 알림 끔). 저장 시 암호화됩니다.`)}
+        ${explain(`청구 발행·자료 공유 시 Slack/Discord 등으로 팀 알림을 보냅니다. Incoming Webhook URL을 넣으세요(비우면 알림 끔). 저장 시 암호화됩니다.`)}
         ${envNote}
       </div>
       ${controls}
@@ -909,7 +896,7 @@ module.exports = {
   driveStorageSection,
   studioCalendarSection,
   roomsSection,
-  studioHoursSection,
+  sessionDurationSection,
   defaultBookerSection,
   studioInfoSection,
   alertWebhookSection,

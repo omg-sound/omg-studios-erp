@@ -686,8 +686,10 @@ function init() {
     d.exec("INSERT OR IGNORE INTO project_contacts (project_id, party_id) SELECT id, contact_party_id FROM projects WHERE contact_party_id IS NOT NULL");
     setState("project_contacts_backfill_v1", "done");
   }
-  // 청구 마감일 개념 삭제(2026-07-05 사용자 결정): 기존 due_date 값을 비워 연체 파생(isOverdue)·D-day 표시를 자연 소멸.
-  // 컬럼은 레거시 잔존(입력·표시 UI 전부 제거 — 신규 청구는 항상 NULL). 연체 인프라(배지·대시보드 배너·cron)는 무발동 잔존.
+  // 청구 마감일 개념 삭제(2026-07-05 사용자 결정): 기존 due_date 값을 비워 연체 파생·D-day 표시를 자연 소멸.
+  // 컬럼은 레거시 잔존(입력·표시 UI 전부 제거 — 신규 청구는 항상 NULL).
+  // 연체 인프라(파생·배지·대시보드 배너·cron 스캔·웹훅 알림)는 2026-07-27 제거 — 미수 에이징·독촉이
+  // 범위 밖으로 확정(2026-07-23)돼 되살릴 후보가 아니고, 남겨두면 '연체 기능이 있나'를 매번 재확인해야 했다.
   if (!getState("invoice_due_date_drop_v1")) {
     d.exec("UPDATE invoices SET due_date = NULL WHERE due_date IS NOT NULL");
     setState("invoice_due_date_drop_v1", "done");

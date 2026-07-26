@@ -95,10 +95,10 @@ function validateConfig() {
     if (!config.googleConfigured) {
       errors.push("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required for production admin login");
     }
-    // 백업/연체 cron 인증 토큰. 미설정 시 백업이 조용히 비활성(404)되므로 프로덕션에서 강제.
+    // 백업 cron 인증 토큰. 미설정 시 백업이 조용히 비활성(404)되므로 프로덕션에서 강제.
     // (다른 시크릿과 동일한 강도 가드 — render.yaml은 web·cron 양쪽에 같은 값을 sync:false로 받는다.)
     if (isWeakSecret(config.backupToken, "")) {
-      errors.push("BACKUP_TOKEN must be set to a strong random value (>=32 chars) in production (백업/연체 cron 인증; 예: openssl rand -hex 32)");
+      errors.push("BACKUP_TOKEN must be set to a strong random value (>=32 chars) in production (백업 cron 인증; 예: openssl rand -hex 32)");
     }
   }
 
@@ -211,7 +211,7 @@ const TASK_STATUS_BADGE = {
   Completed: "bg-success/10 text-success",
 };
 
-// 인보이스 상태 배지 색. '연체'는 코드에서 파생(별도 상태 아님).
+// 인보이스 상태 배지 색. '부분납'은 코드에서 파생(별도 상태 아님).
 const INVOICE_STATUS_BADGE = {
   미발행: "bg-muted/10 text-muted",
   "청구서 미발행": "bg-muted/10 text-muted",
@@ -220,7 +220,6 @@ const INVOICE_STATUS_BADGE = {
   "계산서 미발행": "bg-muted/10 text-muted",
   "계산서 발행": "bg-info/10 text-info",
   입금완료: "bg-success/10 text-success",
-  연체: "bg-danger/10 text-danger",
   부분납: "bg-warning/10 text-warning",
 };
 

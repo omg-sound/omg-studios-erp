@@ -24,7 +24,6 @@ const {
   deleteTaskType,
   setStudioInfo,
   setStudioLogo,
-  setStudioHours,
   setProMinutes,
   setDefaultBooker,
   syncManagerToParty,
@@ -42,7 +41,7 @@ const {
   driveStorageSection,
   studioCalendarSection,
   roomsSection,
-  studioHoursSection,
+  sessionDurationSection,
   defaultBookerSection,
   studioInfoSection,
   alertWebhookSection,
@@ -90,7 +89,7 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
     // 환경설정 = 성격별 4그룹(2026-07-09 관리 개선 — 8개 섹션 한 줄 스크롤이라 찾기 어렵던 것):
     // 스튜디오 운영 / 구글 연동 / 문서·청구 / 알림. 상단 앵커 네비로 점프.
     const groups = [
-      { id: "ops", label: "스튜디오 운영", html: roomsSection() + studioHoursSection() + defaultBookerSection() },
+      { id: "ops", label: "스튜디오 운영", html: roomsSection() + sessionDurationSection() + defaultBookerSection() },
       { id: "google", label: "구글 연동", html: (await studioCalendarSection(isChief(req.user))) + driveStorageSection() + googleContactsSection(isChief(req.user)) },
       { id: "docs", label: "문서 · 청구", html: studioInfoSection() },
       { id: "alerts", label: "알림", html: alertWebhookSection(isChief(req.user)) + alertEmailSection(isChief(req.user)) },
@@ -222,12 +221,6 @@ router.post("/studio-location", requireStaff, (req, res) => {
 router.post("/pro-minutes", requireStaff, (req, res) => {
   const hours = parseFloat(req.body.pro_hours);
   setProMinutes(Number.isFinite(hours) && hours > 0 ? Math.round(hours * 60) : null);
-  res.redirect("/settings?tab=settings&flash=saved");
-});
-
-// ── 운영시간(예약 그리드 범위) 저장 ──
-router.post("/studio-hours", requireStaff, (req, res) => {
-  setStudioHours(req.body.hours_start, req.body.hours_end);
   res.redirect("/settings?tab=settings&flash=saved");
 });
 

@@ -46,14 +46,6 @@ router.get("/", requireAuth, (req, res) => {
   };
 
   const inv = s.invoices; // 청구권자(치프/대표)만 존재, staff는 null
-  const overdueBanner =
-    inv && inv.overdueCount > 0
-      ? `<a href="/invoices?f=연체" class="card mb-4 flex items-center justify-between border-danger/40 bg-danger/5">
-           <span class="flex items-center gap-2 text-sm font-medium text-danger"><span class="inline-block h-2 w-2 rounded-full bg-danger"></span>연체 ${inv.overdueCount}건</span>
-           <span class="text-sm font-bold text-danger">${formatKRW(inv.overdueAmount)}</span>
-         </a>`
-      : "";
-
   const cardItems = [];
   if (s.canInvoice) {
     cardItems.push(moneyCard("미수금", inv.receivable, true, "발행·미입금 잔금", "/invoices?filter=done"));
@@ -153,7 +145,6 @@ router.get("/", requireAuth, (req, res) => {
       desc: s.canInvoice ? "스튜디오 전체 현황" : "스튜디오 현황",
       action: canEdit(user) ? '<a href="/projects/new" class="btn-primary">+ 새 프로젝트</a>' : "",
     })}
-    ${overdueBanner}
     ${cards}
     ${myTodoCard}
     <div class="card mt-4">

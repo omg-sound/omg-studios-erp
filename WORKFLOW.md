@@ -106,7 +106,7 @@ DEV_LOGIN=1 npm run dev     # build:css 후 서버 (http://localhost:3000)
 | `task_types` | **작업 종류 카탈로그**(곡·콘텐츠 후반작업). config `TASK_TYPES` 1회 시드 후 DB 단일 출처. `track_tasks.task_type`이 key 보관(FK 아님), 라벨/그룹은 data.js 캐시. 삭제-only |
 | `project_service_items` | 레거시(구 services JSON 라벨 호환). 관리 UI 폐기(작업 종류 카탈로그가 대체), 테이블만 잔존 |
 | `deliverables` | 자료 전달(Drive/로컬, 토큰 공개링크) |
-| `admin_state` | drive folder_id·refresh token(암호화)·테마·studio_calendar_id·studio_location·**studio_hours(운영시간)**·studio_biz_*·studio_logo·alert_webhook_url |
+| `admin_state` | drive folder_id·refresh token(암호화)·테마·studio_calendar_id·studio_location·studio_biz_*·studio_logo·alert_webhook_url |
 
 > 도메인 상수(역할·상태·작업종류)는 `src/config.js`가 단일 진실원천. **DB CHECK 제약 금지**(마이그레이션 지옥 회피).
 
@@ -121,7 +121,7 @@ src/
   db.js                  스키마 · 멱등 마이그레이션 · AES-256-GCM 암호화
   auth.js                JWT 세션 · 권한 술어/미들웨어 · Google OAuth(논스+쿠키 대조) · 화이트리스트
   data.js                데이터 헬퍼(전 직원 전체 열람, 청구는 canInvoice 분기). listRooms/createRoom/deleteRoom. sessionAmountsByProject. 스튜디오 설정은 data/studio.js 재export
-  data/studio.js         스튜디오(공급자) 설정 도메인(분리 착수 1차): getStudioInfo/getStudioLogo/**getStudioHours/setStudioHours**/getProMinutes/getDefaultBooker(운영시간·PDF 세금정보·기본값)
+  data/studio.js         스튜디오(공급자) 설정 도메인(분리 착수 1차): getStudioInfo/getStudioLogo/getProMinutes/getDefaultBooker(PDF 세금정보·기본 세션 시간·기본 예약담당자)
   notify.js              알림 디스패치 — 웹훅(SSRF 방어) + **이메일(dispatchEmail — invoice_issued만, 웹훅과 독립)** · SIGTERM 드레인(fail-safe)
   mailer.js              청구 발행 알림 메일 — 지메일 API(스튜디오 계정 토큰 재사용) · 수신 주소(admin_state) · 청구처·항목·합계 본문(fail-safe)
   views.js               레이아웃 · **사이드바 그룹화**(운영/청구/관리, 권한별 NAV) · flashBanner · tabBar/filterChips/projectTypeBadge/**listGroup/listRow/emptyState** 헬퍼 · **테마 토글**
@@ -140,13 +140,13 @@ src/
     sessions.routes.js   전역 일정(/sessions, **목록 검색·예정 세션 1클릭 완료**) + 세션 CRUD(룸별 겹침·취소 캘린더 동기화·상태잠금)
     clients.routes.js    클라이언트 CRUD + 분류 탭(filterChips) + 상세(진행 프로젝트·청구 히스토리) (치프)
     workers.routes.js    외주 작업자 목록·추가·삭제 + 상세(작업 히스토리·정산 지급 토글, worker_rate 기준) (치프)
-    settings.routes.js   사용자·담당자(외주 안내링크)·작업종류·환경설정(**운영시간 studio-hours**·룸 CRUD·로고 매직바이트) 관리 (치프)
+    settings.routes.js   사용자·담당자(외주 안내링크)·작업종류·환경설정(기본 세션 시간 pro-minutes·룸 CRUD·로고 매직바이트) 관리 (치프)
     deliverables.routes.js  업로드·토큰링크·다운로드
     api.routes.js        REST blueprint
-    maintenance.routes.js  /internal/cron/* (BACKUP_TOKEN 게이트, 백업+연체 스캔)
+    maintenance.routes.js  /internal/cron/daily (BACKUP_TOKEN 게이트, 백업+Drive 사본+감사 보존)
   jobs/cron-trigger.js   Render cron 진입점(내장 fetch로 web 트리거, 의존성 0)
   lib/date.js · lib/forms.js   날짜·폼 파서
-  lib/maintenance.js     VACUUM INTO 백업 + 14일 prune + 연체 요약
+  lib/maintenance.js     VACUUM INTO 백업 + 14일 prune + Drive 오프사이트 + 첨부 스냅샷
   storage.js · drive.js  스토리지 추상화(Drive↔로컬 폴백, 스트림 조기종료 FD 정리)
 public/js/app.js         최소 JS(드로어·복사·자동제출·삭제확인·flash 배너·aria-expanded). CSP: 인라인 스크립트 0
 public/css/src.css       Tailwind 소스. **Pretendard** 한글폰트 연결, **쿨톤 `--color-info`**(badge-info), 수동 **테마 토글**(`html[data-theme]`), muted #6E6A5F(AA 5.15:1), badge 변형 5종, btn-xs, focus-visible 링

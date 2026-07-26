@@ -69,9 +69,9 @@ DEV_LOGIN=1 npm start
 
 ## 배포 (Render)
 
-`render.yaml` Blueprint = **web(SQLite on Disk) + 일일 백업/연체 cron**. `DB_PATH`는 영속 Disk(`/var/data/app.db`),
+`render.yaml` Blueprint = **web(SQLite on Disk) + 일일 백업 cron**. `DB_PATH`는 영속 Disk(`/var/data/app.db`),
 업로드·백업도 같은 디스크(`/var/data/uploads`·`/var/data/backups`).
 
 - cron(`omg-studios-cron`)은 매일 03:00 KST에 web의 `POST /internal/cron/daily`를 `BACKUP_TOKEN`으로 트리거 →
-  `VACUUM INTO` 백업(최근 14일 유지) + 연체 인보이스 스캔.
+  `VACUUM INTO` 백업(최근 14일 유지) + Drive 오프사이트 사본 + 첨부 스냅샷 + 감사 로그 보존.
 - **단계별 절차(git·시크릿·OAuth·검증)는 [`DEPLOY.md`](./DEPLOY.md) 참조.**

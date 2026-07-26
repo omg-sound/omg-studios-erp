@@ -29,7 +29,7 @@ test("invoice_issued만 이메일로 라우팅(다른 이벤트는 웹훅 전용
   try {
     await notify.notify({ type: "invoice_issued", title: "[청구 발행] OMG-1", invoice: { id: 1, invoice_number: "OMG-1", amount: 100 } });
     await notify.notify({ type: "deliverable_shared", title: "[자료 공유] x" });
-    await notify.notify({ type: "overdue", title: "[연체] x" });
+    await notify.notify({ type: "unknown_event", title: "[기타] x" }); // 모르는 타입도 웹훅 전용
     assert.strictEqual(calls.length, 1, "invoice_issued 1건만");
     assert.strictEqual(calls[0].invoice_number, "OMG-1");
   } finally { restore(); }

@@ -1,6 +1,6 @@
 # OMG Studios ERP — Render 배포 런북
 
-> Render Blueprint(`render.yaml`)로 **web(SQLite on Disk) + 일일 백업/연체 cron**을 배포한다.
+> Render Blueprint(`render.yaml`)로 **web(SQLite on Disk) + 일일 백업 cron**을 배포한다.
 > 코드·설정은 배포 준비 완료 상태다. 아래는 **사람이 직접 하는 단계**(계정·시크릿·OAuth)까지 포함한 절차다.
 > 설계 배경은 [`CLAUDE.md`](./CLAUDE.md), 작업 이어가기는 [`WORKFLOW.md`](./WORKFLOW.md) 참조.
 
@@ -189,7 +189,6 @@ curl -fsS -X POST \
 # → {"ok":true,"overdue":{...},"backup":{"file":"/var/data/backups/app-YYYY-MM-DD.db",...}}
 ```
 
-- 연체만 확인(부수효과 없음): `GET /internal/cron/overdue` (같은 토큰).
 - Render 대시보드 → cron 서비스 → **Trigger Run**으로 스케줄 실행을 즉시 테스트할 수도 있다.
 
 ---
@@ -218,7 +217,6 @@ curl -fsS -X POST \
 
 - **백업**: 매일 03:00 KST에 `VACUUM INTO`로 `/var/data/backups/app-YYYY-MM-DD.db` 생성, **최근 14일분 유지**(자동 정리).
   - 디스크 백업은 Render Disk 안에 있다. 디스크 자체 유실 대비가 필요하면 후속으로 Drive/S3 오프사이트 업로드를 cron에 추가.
-- **연체 리마인더**: 현재는 연체 인보이스를 집계·로그·JSON으로 노출한다(발행+마감경과+잔금). 메일/웹훅 발송은 후속(선택) TODO.
 - **무중단 배포 주의**: Disk가 붙은 web 서비스는 Render의 zero-downtime deploy가 비활성(데이터 정합성). 배포 시 짧은 다운타임 발생 — 내부 도구라 허용.
 - **시크릿 회전**: `BACKUP_TOKEN`을 바꾸면 web·cron 양쪽을 같이 갱신.
 

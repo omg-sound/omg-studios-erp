@@ -127,11 +127,6 @@ function payStatusOf(inv) {
   return "부분납";
 }
 
-/** 연체: 발행 상태 + 마감 경과 + 잔금 존재. */
-function isOverdue(inv) {
-  return inv.status === "발행" && !!inv.due_date && todayYmd() > inv.due_date && balanceOf(inv) > 0;
-}
-
 // ── 입금 이력(payments) ── invoices.paid_amount는 SUM(payments.amount) 파생 캐시. 모든 add/delete가 recomputePaid로 동기화한다.
 
 /** 청구 1건의 입금 이력(입금일 오름차순). */
@@ -552,8 +547,8 @@ function invoiceItemsByInvoiceIds(ids) {
   return by;
 }
 
-/** 인보이스 목록(치프 전용 라우트에서 사용). 필터(status/overdue/clientId)는 옵션. */
-function listInvoices(_user, { status, overdue, clientId } = {}) {
+/** 인보이스 목록(치프 전용 라우트에서 사용). 필터(status/clientId)는 옵션. */
+function listInvoices(_user, { status, clientId } = {}) {
   const where = [];
   const params = {};
   if (status) {
@@ -573,9 +568,7 @@ function listInvoices(_user, { status, overdue, clientId } = {}) {
     LEFT JOIN parties c ON c.id = i.payer_id
     ${where.length ? "WHERE " + where.join(" AND ") : ""}
     ORDER BY COALESCE(i.issued_date, '') DESC, i.created_at DESC`; // 기본 = 발행일 최신순(2026-07-05 사용자 결정), 동일 발행일은 생성순
-  let rows = db().prepare(sql).all(params);
-  if (overdue) rows = rows.filter(isOverdue); // 연체는 파생값이라 코드에서 필터
-  return rows;
+  return db().prepare(sql).all(params);
 }
 
 /** 전역 검색용 — 청구번호·청구처명·제목·아티스트 매칭(발행일 최신순). 93건 규모라 JS 필터로 충분(clients/suggest와 동일 패턴). */
@@ -600,7 +593,7 @@ function getInvoiceForUser(_user, id) {
   return row || null;
 }
 
-/** 인보이스 요약 통계(미수금·이번 달 발행·연체). */
+/** 인보이스 요약 통계(미수금·이번 달 발행). */
 function invoiceStats(_user) {
   // 권한은 호출부(dashboard showInvoices)가 게이트 — listInvoices와 동일하게 user 미사용.
   // 합계는 SQL 집계로(2026-07-09 감사 — 이전엔 전건 로드 후 JS reduce, 청구 누적 시 대시보드 렌더마다 전 행 순회).
@@ -614,10 +607,7 @@ function invoiceStats(_user) {
        FROM invoices`
     )
     .get(month);
-  // 연체는 due_date 파생(isOverdue) — 마감일 개념 삭제(2026-07-05 백필)로 사실상 0건, 파생 로직이라 코드 필터 유지.
-  const overdue = db().prepare("SELECT amount, paid_amount, status, due_date FROM invoices WHERE due_date IS NOT NULL AND status = '발행'").all().filter(isOverdue);
-  const overdueAmount = overdue.reduce((s, i) => s + balanceOf(i), 0);
-  return { receivable: agg.receivable, thisMonthIssued: agg.thisMonthIssued, overdueCount: overdue.length, overdueAmount, total: agg.total };
+  return { receivable: agg.receivable, thisMonthIssued: agg.thisMonthIssued, total: agg.total };
 }
 
 /** 프로젝트의 인보이스 목록(권한 검사). 권한 없으면 null. */
@@ -639,7 +629,6 @@ module.exports = {
   balanceOf,
   invoiceTaxTab,
   payStatusOf,
-  isOverdue,
   listUnbilledTasksForProject,
   listBillableSessionsForProject,
   isSessionInvoiced,

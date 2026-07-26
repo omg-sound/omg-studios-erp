@@ -8,7 +8,6 @@
  */
 
 const { getState, setState } = require("../db");
-const { cleanTime } = require("../lib/date");
 const { formatPhone, formatBizNo } = require("../lib/format");
 
 // ── 공급자(스튜디오) 세금정보 — admin_state 평문(비밀 아님, studio_location과 동급) ──
@@ -35,22 +34,8 @@ function setStudioLogo(dataUri) {
   setState("studio_logo", dataUri ? String(dataUri) : null);
 }
 
-// ── 스튜디오 운영시간(예약 그리드 범위) — admin_state 평문. 환경설정에서 조정(UI는 다른 레인) ──
-const DEFAULT_STUDIO_HOURS = { start: "14:00", end: "18:30" }; // 기존 SESSION_START_SLOTS와 동일 기본값
-
-/** 예약 그리드 시작/종료 시각('HH:MM'). 미설정/무효면 기본값. */
-function getStudioHours() {
-  return {
-    start: cleanTime(getState("studio_hours_start")) || DEFAULT_STUDIO_HOURS.start,
-    end: cleanTime(getState("studio_hours_end")) || DEFAULT_STUDIO_HOURS.end,
-  };
-}
-
-/** 운영시간 저장(형식 검증만; 무효값은 null로 → 기본값 폴백). */
-function setStudioHours(start, end) {
-  setState("studio_hours_start", cleanTime(start) || null);
-  setState("studio_hours_end", cleanTime(end) || null);
-}
+// (옛 '운영시간'[studio_hours_start/end]은 2026-07-27 제거 — 예약 시작 그리드가 날짜·시간 콤보로
+//  바뀐 뒤 읽는 곳이 없어 저장·표시만 되는 설정이었다. admin_state 행은 지우지 않았다.)
 
 // ── 기본 세션 시간(분) — 녹음 외 세션(믹싱·마스터링·기타)의 소요시간 슬라이더 기본값 ──
 const DEFAULT_PRO_MINUTES = 210; // 3시간 30분
@@ -78,8 +63,6 @@ module.exports = {
   setStudioInfo,
   getStudioLogo,
   setStudioLogo,
-  getStudioHours,
-  setStudioHours,
   getProMinutes,
   setProMinutes,
   getDefaultBooker,

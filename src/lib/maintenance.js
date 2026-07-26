@@ -5,8 +5,6 @@ const path = require("path");
 const { db } = require("../db");
 const { config } = require("../config");
 const { todayYmd } = require("./date");
-const { listInvoices, balanceOf } = require("../data");
-const { notifyAsync } = require("../notify");
 const drive = require("../drive");
 
 // 백업 디렉터리: DB와 같은 (영속) 디스크. 프로덕션 /var/data/backups, 로컬 ./data/backups.
@@ -15,25 +13,6 @@ function backupDir() {
 }
 
 const KEEP_BACKUPS = 14; // 최근 14일분 유지(일일 cron 기준 2주)
-
-/**
- * 연체 인보이스 요약(발행 + 마감 경과 + 잔금 존재). 단일 진실원천인 data.isOverdue 필터 재사용.
- * 알림 채널(메일/웹훅)은 후속 TODO이며 현재는 집계·로그·JSON 응답으로 노출한다.
- */
-function overdueSummary() {
-  const rows = listInvoices(null, { overdue: true });
-  const items = rows.map((i) => ({
-    id: i.id,
-    title: i.title,
-    invoice_number: i.invoice_number || null,
-    client_name: i.client_name || null,
-    project_title: i.project_title || null,
-    due_date: i.due_date,
-    balance: balanceOf(i),
-  }));
-  const totalDue = items.reduce((sum, i) => sum + i.balance, 0);
-  return { count: items.length, totalDue, items };
-}
 
 /**
  * SQLite 온라인 백업. VACUUM INTO는 잠금/WAL과 무관하게 일관된 스냅샷 단일 파일을 만든다.
@@ -111,9 +90,8 @@ function pruneOldBackups(dir, keep) {
 }
 
 /**
- * 일일 유지보수: DB 백업 + 연체 스캔. cron이 HTTP로 트리거(maintenance.routes).
- * 백업(내구성 핵심)을 먼저, 그리고 두 작업을 각자 try/catch로 격리한다 → 한쪽 실패가 다른 쪽을
- * 막지 않는다(연체 읽기 오류로 백업이 건너뛰는 우선순위 역전 방지). ok는 백업 성공 기준.
+ * 일일 유지보수: DB 백업(+ Drive 오프사이트·첨부 스냅샷) + 감사 로그 보존. cron이 HTTP로 트리거(maintenance.routes).
+ * 백업(내구성 핵심)을 먼저 하고 각 작업을 try/catch로 격리한다 → 한쪽 실패가 다른 쪽을 막지 않는다. ok는 백업 성공 기준.
  */
 async function runDailyMaintenance(opts = {}) {
   const ranAt = new Date().toISOString();
@@ -131,7 +109,7 @@ async function runDailyMaintenance(opts = {}) {
   } catch (e) {
     driveBackup = { ok: false, error: e && e.message ? e.message : String(e) };
   }
-  // 첨부 파일 스냅샷(DB 백업과 별개·격리). 실패해도 DB 백업/연체엔 영향 없음.
+  // 첨부 파일 스냅샷(DB 백업과 별개·격리). 실패해도 DB 백업엔 영향 없음.
   let uploadsBackup = null;
   let uploadsBackupError = null;
   try {
@@ -139,34 +117,14 @@ async function runDailyMaintenance(opts = {}) {
   } catch (e) {
     uploadsBackupError = e && e.message ? e.message : String(e);
   }
-  let overdue = null;
-  let overdueError = null;
-  try {
-    overdue = overdueSummary();
-  } catch (e) {
-    overdueError = e && e.message ? e.message : String(e);
-  }
-  // 연체가 있으면 팀 알림(fail-safe·비차단). 미설정이면 조용히 skip.
-  if (overdue && overdue.count > 0) {
-    notifyAsync({
-      type: "overdue",
-      title: `[연체] 미수 인보이스 ${overdue.count}건`,
-      text: `미수금 합계 ${overdue.totalDue.toLocaleString("ko-KR")}원`,
-      fields: overdue.items.slice(0, 5).map((i) => ({
-        label: i.invoice_number || i.title,
-        value: `${i.balance.toLocaleString("ko-KR")}원${i.client_name ? " · " + i.client_name : ""} (마감 ${i.due_date})`,
-      })),
-    });
-  }
   // 감사 로그 보존(180일·최대 2만 건) — 무한 증가로 DB·백업이 커지는 것 방지(2026-07-09 스케일 점검). fail-safe.
   let auditPruned = 0;
   try { auditPruned = require("./audit").pruneAudit().pruned; } catch (_e) { /* 비차단 */ }
-  return { ok: !backupError, ranAt, backup, backupError, driveBackup, uploadsBackup, uploadsBackupError, overdue, overdueError, auditPruned };
+  return { ok: !backupError, ranAt, backup, backupError, driveBackup, uploadsBackup, uploadsBackupError, auditPruned };
 }
 
 module.exports = {
   runDailyMaintenance,
-  overdueSummary,
   backupDatabase,
   backupUploads,
   pruneOldBackups,
