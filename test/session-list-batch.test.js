@@ -4,8 +4,8 @@
 //
 // 이 경로에서 N+1이 두 번 생겼다:
 //  ① 2026-07-09 감사 L9 — 행마다 rate_items를 단건 조회 → `withBilling`이 1회 로드하도록 고침.
-//  ② 2026-07-26 촬영 구간·할증 도입 — `sessionRateAmount`가 행마다 `listSessionSegments`+
-//     `getSurcharge`를 부르며 되살아났다(실측 200행에 307쿼리 = 행당 1.5).
+//  ② 2026-07-26 촬영 구간 도입 — `sessionRateAmount`가 행마다 `listSessionSegments`를
+//     부르며 되살아났다(실측 200행에 307쿼리 = 행당 1.5).
 // 정책(CLAUDE.md 함정 #21): 같은 실수 클래스가 2번 나오면 '조심'이 아니라 기계 검사로 승격한다.
 // 그래서 여기서는 **절대 시간이 아니라 쿼리 수의 스케일링**을 본다(느린 머신에서도 결정적).
 
@@ -17,7 +17,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 
 const { init, db } = require("../src/db");
-const { listSessionsForProject, upcomingSessions } = require("../src/data");
+const { listSessionsForProject, upcomingSessions, createRateItem } = require("../src/data");
 
 init();
 
@@ -26,21 +26,23 @@ test.after(() => cleanupDb(process.env.DB_PATH, db()));
 const CHIEF = { id: 1, role: "chief", email: "chief@omg.test" };
 const rateId = (name) => db().prepare("SELECT id FROM rate_items WHERE name = ?").get(name).id;
 
-/** 세션 N개를 시드한다. 절반은 구간 3개 + 할증이 걸린 촬영(가장 비싼 경로). */
+// 촬영 단가 항목은 이 테스트가 직접 만든다('기본 패키지'는 2026-07-27 폐기).
+const PKG = createRateItem({ rate_name: "촬영 10시간", category: "스튜디오 촬영", base_hours: "10", base_price: "1000000", extra_hours: "1", extra_price: "100000" }).id;
+
+/** 세션 N개를 시드한다. 절반은 구간 3개가 달린 촬영(가장 비싼 경로). */
 function seedProject(n) {
   const d = db();
   const solo = rateId("솔로 녹음");
-  const pkg = rateId("기본 패키지");
   const pj = Number(d.prepare("INSERT INTO projects (title, artist, project_type, rate) VALUES ('배치', '루나', 'session', 0)").run().lastInsertRowid);
   const ins = d.prepare(
-    `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id, surcharge_key)
-     VALUES (?, ?, ?, '10:00', ?, '완료', ?, ?)`
+    `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)
+     VALUES (?, ?, ?, '10:00', ?, '완료', ?)`
   );
   const seg = d.prepare("INSERT INTO session_segments (session_id, kind, start_time, end_time, sort_order) VALUES (?, ?, ?, ?, ?)");
   for (let i = 0; i < n; i++) {
     const filming = i % 2 === 1;
     const day = String(10 + (i % 18)).padStart(2, "0");
-    const id = Number(ins.run(pj, filming ? "촬영" : "녹음", `2099-08-${day}`, filming ? "20:00" : "13:30", filming ? pkg : solo, filming ? "mise_en_scene" : null).lastInsertRowid);
+    const id = Number(ins.run(pj, filming ? "촬영" : "녹음", `2099-08-${day}`, filming ? "20:00" : "13:30", filming ? PKG : solo).lastInsertRowid);
     if (filming) {
       seg.run(id, "setup", "10:00", "12:00", 0);
       seg.run(id, "shoot", "12:00", "19:00", 10);
@@ -96,7 +98,7 @@ test("전역 다가오는 세션 목록도 상수 쿼리", () => {
   assert.ok(b.runs <= 8, `쿼리 ${b.runs}회 — 상한 8 초과`);
 });
 
-test("배치 경로가 단건 경로와 같은 금액을 낸다(구간 합산·할증 반영)", () => {
+test("배치 경로가 단건 경로와 같은 금액을 낸다(구간 합산 반영)", () => {
   // 배치로 주입한 구간·할증이 단건 조회 결과와 어긋나면 목록 금액만 조용히 틀려진다.
   const pj = seedProject(4);
   const rows = listSessionsForProject(CHIEF, pj).rows;
@@ -105,10 +107,9 @@ test("배치 경로가 단건 경로와 같은 금액을 낸다(구간 합산·�
     const single = sessionRateAmount(db().prepare("SELECT * FROM sessions WHERE id = ?").get(row.id));
     assert.equal(row.billing.amount, single.amount, `세션 ${row.id} 금액 불일치(배치 ${row.billing.amount} vs 단건 ${single.amount})`);
     assert.equal(row.billing.minutes, single.minutes, `세션 ${row.id} 요금 시간 불일치`);
-    assert.equal(!!row.billing.surcharge, !!single.surcharge, `세션 ${row.id} 할증 반영 불일치`);
   }
-  // 촬영 행은 구간 합산(600분) + 할증이 실제로 걸려 있어야 이 테스트가 의미가 있다.
+  // 촬영 행은 구간 합산(600분)이 실제로 반영돼야 이 테스트가 의미가 있다.
   const filming = rows.find((r) => r.session_type === "촬영");
   assert.equal(filming.billing.minutes, 600, "구간 합산이 배치 경로에서도 동작");
-  assert.equal(filming.billing.amount, 1500000, "기본 패키지 100만 + 미장센 50%");
+  assert.equal(filming.billing.amount, 1000000, "600분 = 기본 이내 → 기본가");
 });

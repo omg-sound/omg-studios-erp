@@ -14,7 +14,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 
 const { init, db } = require("../src/db");
-const { computeCharge, computeRatePrice, getSurcharge, listSurcharges } = require("../src/data");
+const { computeCharge, computeRatePrice } = require("../src/data");
 
 init();
 
@@ -25,7 +25,7 @@ const PKG = { name: "기본 패키지", base_minutes: 600, base_price: 1000000, 
 const FLAT = { name: "플레이백 세션", base_minutes: 0, base_price: 500000, extra_minutes: 60, extra_price: 0 };
 
 const labels = (r) => r.lines.map((l) => l.label);
-const total = (item, m, opt) => computeCharge(item, m, opt).total;
+const total = (item, m) => computeCharge(item, m).total;
 
 test("1프로 이내는 기준가 — 0분·미달도 최소 1프로", () => {
   assert.equal(total(SOLO, 0), 300000);
@@ -78,38 +78,6 @@ test("촬영 기본 패키지: 총 10시간 100만, 초과 시간당 10만", () 
   assert.equal(total(PKG, 690), 1200000, "1.5h 초과 → 2시간 가산");
 });
 
-test("미장센 할증: 대관비의 50%가 기본가에 붙는다(100만 → 150만)", () => {
-  const s = getSurcharge("mise_en_scene");
-  assert.ok(s, "할증 마스터 없음");
-  const r = computeCharge(PKG, 600, { surcharge: s });
-  assert.deepEqual(labels(r), ["기본 패키지", "미장센 할증"]);
-  assert.equal(r.total, 1500000);
-  assert.equal(r.lines[1].amount, 500000);
-  assert.equal(r.lines[1].detail, "기본가의 50%");
-});
-
-test("할증은 초과분이 아니라 기본가에만 붙는다", () => {
-  const s = getSurcharge("mise_en_scene");
-  const r = computeCharge(PKG, 690, { surcharge: s });
-  assert.equal(r.total, 1700000, "100만 + 초과 20만 + 할증 50만(초과분에는 안 붙음)");
-  assert.equal(r.lines.find((l) => l.label === "미장센 할증").amount, 500000);
-});
-
-test("할증 요율은 코드가 아니라 마스터 테이블에서 온다", () => {
-  db().prepare("UPDATE surcharges SET rate = 0.3 WHERE key = 'mise_en_scene'").run();
-  assert.equal(computeCharge(PKG, 600, { surcharge: getSurcharge("mise_en_scene") }).total, 1300000);
-  db().prepare("UPDATE surcharges SET rate = 0.5 WHERE key = 'mise_en_scene'").run();
-  // 비활성 할증은 조회되지 않는다(적용 안 됨).
-  db().prepare("UPDATE surcharges SET active = 0 WHERE key = 'mise_en_scene'").run();
-  assert.equal(getSurcharge("mise_en_scene"), null);
-  db().prepare("UPDATE surcharges SET active = 1 WHERE key = 'mise_en_scene'").run();
-});
-
-test("할증 목록은 적용 대상(kind)으로 걸러진다", () => {
-  assert.ok(listSurcharges({ appliesTo: "filming" }).some((s) => s.key === "mise_en_scene"));
-  assert.ok(!listSurcharges({ appliesTo: "recording" }).some((s) => s.key === "mise_en_scene"), "녹음에는 미장센 할증이 없다");
-});
-
 test("computeRatePrice는 computeCharge.total과 항상 같다(기존 호출부 호환)", () => {
   for (const item of [SOLO, PKG, FLAT]) {
     for (const m of [0, 1, 59, 60, 209, 210, 211, 419, 420, 600, 630, 700, 1000]) {
@@ -128,11 +96,9 @@ test("금액 0인 초과·할증 라인은 만들지 않는다(0원 라인이 �
   const r = computeCharge(noExtra, 300);
   assert.deepEqual(labels(r), ["기준만 있는 항목"], "청구할 게 없는 초과 라인은 안 만든다");
   assert.equal(r.total, 300000);
-  // 할증도 마찬가지 — 기본가가 0이면 할증 금액도 0이라 라인이 의미 없다.
-  const free = { name: "무료 항목", base_minutes: 0, base_price: 0, extra_minutes: 60, extra_price: 0 };
-  const withSur = computeCharge(free, 60, { surcharge: { label: "미장센 할증", rate: 0.5 } });
-  assert.deepEqual(labels(withSur), ["무료 항목"], "0원 할증 라인 없음");
   // 기본가 라인은 0원이어도 남는다 — '금액 미정'(청구 시 입력) 흐름이 이 라인에 걸려 있다.
-  assert.equal(withSur.lines.length, 1);
-  assert.equal(withSur.lines[0].amount, 0);
+  const free = { name: "무료 항목", base_minutes: 0, base_price: 0, extra_minutes: 60, extra_price: 0 };
+  const r2 = computeCharge(free, 60);
+  assert.equal(r2.lines.length, 1);
+  assert.equal(r2.lines[0].amount, 0);
 });

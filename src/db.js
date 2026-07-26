@@ -224,19 +224,6 @@ function init() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    -- 할증 마스터(2026-07-26) — 요율을 코드에 박지 않고 이 테이블에서 읽는다(미장센 할증 50%).
-    -- sessions.surcharge_key가 이 key를 문자열로 참조(FK 아님 — rate_items.category와 같은 방식).
-    CREATE TABLE IF NOT EXISTS surcharges (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      key        TEXT NOT NULL UNIQUE,          -- 예: mise_en_scene
-      label      TEXT NOT NULL,                 -- 예: 미장센 할증
-      rate       REAL NOT NULL DEFAULT 0,       -- 0.5 = 기본가의 50%
-      applies_to TEXT,                          -- 적용 대상 단가 kind(filming 등). NULL=전체
-      active     INTEGER NOT NULL DEFAULT 1,
-      sort_order INTEGER NOT NULL DEFAULT 100,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
     -- 자료 전달 기록(플레이북1 §2.3·§4.3). 파일은 Drive 또는 로컬에 저장, 메타는 여기.
     CREATE TABLE IF NOT EXISTS deliverables (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -552,9 +539,11 @@ function init() {
   addColumn("rate_items", "price_type", "TEXT NOT NULL DEFAULT 'fixed'"); // fixed | base | minimum (config.PRICE_TYPES)
   addColumn("rate_items", "sort_order", "INTEGER NOT NULL DEFAULT 100"); // 분류 안 표시 순서(↑↓ 이동). 기존 항목은 이름순 유지(동일 값 → 이름 tiebreak)
   addColumn("task_types", "price_type", "TEXT NOT NULL DEFAULT 'fixed'"); // 포스트(믹싱=base·보컬튠=minimum)는 세션이 아니라 작업으로 청구하므로 여기에도 필요
-  // ── 할증·금액 조정 사유(2026-07-26) ──
-  addColumn("sessions", "surcharge_key", "TEXT"); // 적용 할증(surcharges.key). NULL=없음. 자동 판정 안 함(체크박스 — 주관적)
-  addColumn("sessions", "surcharge_memo", "TEXT"); // 할증 사유 메모
+  // ── 금액 조정 사유(2026-07-26) ──
+  // sessions.surcharge_key/surcharge_memo는 **레거시**(2026-07-27 할증 개념 폐기 — 읽는 코드 없음).
+  // 컬럼은 남긴다(sessions는 큰 테이블이고 DROP COLUMN은 이득 없이 위험만 있다 — director_contact_id와 같은 취급).
+  addColumn("sessions", "surcharge_key", "TEXT");
+  addColumn("sessions", "surcharge_memo", "TEXT");
   addColumn("sessions", "billing_memo", "TEXT"); // 금액을 산정치와 다르게 조정했을 때의 사유(청구 화면에서 입력)
   addColumn("track_tasks", "billing_memo", "TEXT"); // 위와 동일(작업 금액 조정 사유)
   addColumn("session_directors", "party_id", "INTEGER"); // 다대다 디렉터(parties.id, 기존 contact_id 대체)
@@ -737,6 +726,12 @@ function init() {
     setState("rooms_seed_v1", "done");
   }
   applyPricingRoomsV2();
+  // 할증 개념 폐기(2026-07-27 사용자 결정 — 미장센은 단가 항목으로 표현). 마스터 테이블 제거.
+  // sessions.surcharge_key/memo 컬럼은 레거시로 남기고(읽는 코드 없음) 참조 세션도 없다(제거 전 0건 확인).
+  if (!getState("surcharges_drop_v1")) {
+    d.exec("DROP TABLE IF EXISTS surcharges");
+    setState("surcharges_drop_v1", "done");
+  }
   // 레거시 마이그레이션은 1회만. 신규 프로젝트(project_type 있음)는 services=NULL이 정상이므로,
   // 매 부팅 재실행되면 memo 추론으로 유령 곡·작업을 주입한다 → admin_state 플래그로 1회 게이트.
   if (!getState("legacy_backfill_v1")) {
@@ -1067,7 +1062,6 @@ function applyPricingRoomsV2() {
   const RATE_ITEMS = [
     { legacy: ["보컬 녹음"], name: "솔로 녹음", category: "스튜디오 녹음", base_minutes: 210, base_price: 300000, sort: 10 },
     { legacy: ["악기+보컬 녹음(그룹)", "악기+보컬 녹음"], name: "드럼 · 합주 녹음", category: "스튜디오 녹음", base_minutes: 210, base_price: 400000, sort: 20 },
-    { legacy: [], name: "기본 패키지", category: "스튜디오 촬영", base_minutes: 600, base_price: 1000000, sort: 10 }, // 반입 2h + 촬영 7h + 철수 1h
   ];
   for (const r of RATE_ITEMS) {
     const cur = rateByName(r.name);
@@ -1100,12 +1094,6 @@ function applyPricingRoomsV2() {
     if (row.unit_price !== t.price) skipped.push(`작업 종류 ${row.label} 단가 ${row.unit_price} → ${t.price}`);
     d.prepare("UPDATE task_types SET unit_price = ?, price_type = ? WHERE id = ?").run(t.price, t.price_type, row.id);
   }
-
-  // ── 할증 마스터 ──
-  d.prepare(
-    `INSERT INTO surcharges (key, label, rate, applies_to, active, sort_order)
-     VALUES ('mise_en_scene', '미장센 할증', 0.5, 'filming', 1, 10) ON CONFLICT(key) DO NOTHING`
-  ).run();
 
   if (skipped.length) console.warn("[migrate pricing_rooms_v2] 사람 확인 필요:", skipped.join(" / "));
   setState("pricing_rooms_v2", "done");

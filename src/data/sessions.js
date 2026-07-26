@@ -19,7 +19,6 @@ const { getProjectForUser } = require("./projects"); // 무순환
 const { resolvePersonByName } = require("./parties"); // 무순환 — 디렉터=parties.id(사람)
 const { listRooms } = require("./rooms"); // 무순환
 const { computeRatePrice, computeCharge } = require("./rate-items"); // 무순환
-const { getSurcharge, listSurcharges } = require("./surcharges"); // 무순환(할증 마스터 — 요율을 코드에 두지 않기 위해)
 
 /** 프로젝트의 세션 목록(날짜순). 권한 없으면 null. */
 function listSessionsForProject(user, projectId) {
@@ -106,8 +105,6 @@ function sessionFields(input) {
   const { isExternalRoom } = require("./rooms"); // 무순환(rooms는 sessions를 require하지 않음)
   // 외부 장소(is_external)일 때만 주소(location) 저장 — 스튜디오 룸이면 null(기본 장소 사용).
   const location = roomId && isExternalRoom(roomId) ? String(input.location || "").trim() || null : null;
-  // 할증 key는 마스터에 실제로 있고 활성인 것만 받는다(폼이 보낸 문자열을 그대로 믿지 않는다).
-  const surchargeKey = input.surcharge_key && getSurcharge(input.surcharge_key) ? String(input.surcharge_key) : null;
   // 담당 디렉터·담당 엔지니어는 다대다(session_directors·session_engineers)로 별도 처리 — 여기선 레거시 컬럼 자리만 null(caller가 첫 명으로 채움).
   return {
     session_type: normalizeSessionType(input.session_type),
@@ -123,10 +120,6 @@ function sessionFields(input) {
     room_id: roomId,
     location,
     director_party_id: null,
-    // 할증(2026-07-26) — 체크박스 + 사유 메모. 자동 판정은 하지 않는다(주관적).
-    // 체크가 없으면 사유도 지운다(할증이 없는데 사유만 남으면 왜 남았는지 알 수 없다).
-    surcharge_key: surchargeKey,
-    surcharge_memo: surchargeKey ? String(input.surcharge_memo || "").trim() || null : null,
     memo: String(input.memo || "").trim() || null,
   };
 }
@@ -397,19 +390,13 @@ function sessionRateAmount(session, itemOverride, batch = {}) {
   // 확정 청구액(billing_amount)이 있으면 단가표 산정 대신 그 값을 쓴다(2026-07-14 — 청구 폼에서 고친 세션
   // 금액이 폼 안에서만 살아 있다가 새로고침하면 사라지던 문제. 작업 total_price 즉시 저장과 대칭).
   const fixed = session.billing_amount != null ? Math.round(session.billing_amount) : null;
-  // 할증(2026-07-26) — 요율은 마스터 테이블에서 읽는다(코드에 박지 않음). 없거나 비활성이면 null.
-  // batch.surcharges/segments: 목록 조회가 1회 로드해 넘기는 배치 경로(행당 단건 조회 N+1 제거 — withBilling 참조).
-  const surcharge = !session.surcharge_key
-    ? null
-    : batch.surcharges
-      ? batch.surcharges.get(session.surcharge_key) || null
-      : getSurcharge(session.surcharge_key);
+  // batch.segments: 목록 조회가 1회 로드해 넘기는 배치 경로(행당 단건 조회 N+1 제거 — withBilling 참조).
   // 종일 세션은 시간이 없어 시간제 산정 불가 → 1 기준 블록으로 취급(정액 항목=base_price, 시간제 항목=1Pro). 금액은 청구 시 조정.
   // 촬영은 구간(반입·설치/촬영/철수) 합산이 요금 시간이다 — 구간이 없으면 시작~종료 span으로 폴백.
   const allDay = !!session.all_day;
   const minutes = allDay ? item.base_minutes || 0 : sessionBillableMinutes(session, batch.segments ? batch.segments.get(session.id) || [] : undefined);
   if (!allDay && minutes <= 0) return null;
-  const charge = computeCharge(item, minutes, { surcharge });
+  const charge = computeCharge(item, minutes);
   // 금액을 사람이 조정했으면 근거 라인을 쪼개지 않는다 — 조정된 총액을 기본가·초과로 되쪼개면 거짓 근거가 된다.
   const lines = fixed != null
     ? [{ label: item.name, amount: fixed, detail: "조정 금액", quantity: 1, unit_price: fixed }]
@@ -420,7 +407,6 @@ function sessionRateAmount(session, itemOverride, batch = {}) {
     amount: fixed != null ? fixed : charge.total,
     computed: charge.total, // 산정치(조정 여부 판정·청구 폼 되돌리기 안내용)
     lines,
-    surcharge,
     fixed: fixed != null,
     ...(allDay ? { allDay: true } : {}),
   };
@@ -558,8 +544,8 @@ function createSession(user, projectId, input = {}) {
   try {
     const info = d
       .prepare(
-        `INSERT INTO sessions (project_id, session_type, session_date, all_day, end_date, start_time, end_time, booker_name, engineer_name, status, rate_item_id, room_id, location, director_party_id, surcharge_key, surcharge_memo, memo)
-         VALUES (@project_id, @session_type, @session_date, @all_day, @end_date, @start_time, @end_time, @booker_name, @engineer_name, @status, @rate_item_id, @room_id, @location, @director_party_id, @surcharge_key, @surcharge_memo, @memo)`
+        `INSERT INTO sessions (project_id, session_type, session_date, all_day, end_date, start_time, end_time, booker_name, engineer_name, status, rate_item_id, room_id, location, director_party_id, memo)
+         VALUES (@project_id, @session_type, @session_date, @all_day, @end_date, @start_time, @end_time, @booker_name, @engineer_name, @status, @rate_item_id, @room_id, @location, @director_party_id, @memo)`
       )
       .run({ project_id: project.id, ...f });
     newId = info.lastInsertRowid;
@@ -596,7 +582,7 @@ function updateSession(user, sessionId, input = {}) {
         `UPDATE sessions SET session_type=@session_type, session_date=@session_date, all_day=@all_day, end_date=@end_date, start_time=@start_time,
          end_time=@end_time, booker_name=@booker_name, engineer_name=@engineer_name, status=@status,
          rate_item_id=@rate_item_id, room_id=@room_id, location=@location, director_party_id=@director_party_id,
-         surcharge_key=@surcharge_key, surcharge_memo=@surcharge_memo, memo=@memo WHERE id=@id`
+         memo=@memo WHERE id=@id`
       )
       .run({ id: s.id, ...f });
     setSessionDirectors(s.id, directorIds); // 다대다 디렉터 교체
@@ -656,14 +642,13 @@ function deleteSession(user, sessionId) {
 /** rate_items를 1회 로드해 행별 billing을 계산하는 mapper — 목록 .map(sessionRateAmount) N+1 제거(2026-07-09 감사). */
 /**
  * 행별 billing 계산 mapper — rate_items를 1회 로드(N+1 제거, 2026-07-09 감사 L9).
- * `ids`(그 목록의 세션 id)를 주면 **구간·할증도 1회씩 배치 로드**한다(2026-07-27 메인터넌스 —
- * 촬영 구간·할증 도입이 행당 `listSessionSegments`+`getSurcharge` 단건 조회를 되살려 놨다: 실측 행당 1.5쿼리).
+ * `ids`(그 목록의 세션 id)를 주면 **구간도 1회 배치 로드**한다(2026-07-27 메인터넌스 —
+ * 촬영 구간 도입이 행당 `listSessionSegments` 단건 조회를 되살려 놨다: 실측 행당 1.5쿼리).
  * ids 없이 쓰면 종전처럼 행당 조회로 폴백(단건 경로).
  */
 function withBilling(ids) {
   const items = rateItemsById();
   let segments;
-  let surcharges;
   if (Array.isArray(ids) && ids.length) {
     segments = new Map();
     const ph = ids.map(() => "?").join(",");
@@ -671,12 +656,11 @@ function withBilling(ids) {
       if (!segments.has(r.session_id)) segments.set(r.session_id, []);
       segments.get(r.session_id).push(r);
     }
-    surcharges = new Map(listSurcharges().map((sc) => [sc.key, sc])); // 활성만(소형 테이블)
   }
-  return (row) => ({ ...row, billing: sessionRateAmount(row, items.get(row.rate_item_id), { segments, surcharges }) });
+  return (row) => ({ ...row, billing: sessionRateAmount(row, items.get(row.rate_item_id), { segments }) });
 }
 
-/** 행 배열에 billing 부착 — 그 목록의 id로 구간·할증까지 배치 로드. 목록 조회 공용. */
+/** 행 배열에 billing 부착 — 그 목록의 id로 구간까지 배치 로드. 목록 조회 공용. */
 function attachBilling(rows) {
   return rows.map(withBilling(rows.map((r) => r.id)));
 }

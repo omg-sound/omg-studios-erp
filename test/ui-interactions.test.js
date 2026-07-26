@@ -1815,7 +1815,7 @@ function mountFilmingForm(busy) {
   const rooms = [{ id: 1, name: "Studio A", is_external: 0 }];
   const rateItems = [
     { id: 1, name: "솔로 녹음", category: "스튜디오 녹음", base_minutes: 210, base_price: 300000, extra_minutes: 60, extra_price: 100000 },
-    { id: 2, name: "기본 패키지", category: "스튜디오 촬영", base_minutes: 600, base_price: 1000000, extra_minutes: 60, extra_price: 100000 },
+    { id: 2, name: "촬영 패키지", category: "스튜디오 촬영", base_minutes: 600, base_price: 1000000, extra_minutes: 60, extra_price: 100000 },
   ];
   const html = `<form data-session-form>${sessionBookingFields({ session_date: "2026-03-05", session_type: "녹음" }, [], rateItems, rooms, "")}<input type="hidden" data-override-conflict name="override_conflict" /></form>`;
   return mountDom(html, {
@@ -1889,10 +1889,9 @@ test("세션 폼 겹침 경고: 구간 span이 점유와 안 겹치면 경고 �
   assert.equal(warn.hidden, true, "10:00–20:00은 21:00–23:00과 안 겹친다");
 });
 
-test("세션 폼: 할증 입력은 제공하지 않는다(미장센은 단가 항목으로 표현 — 2026-07-26 사용자 결정)", async () => {
-  // 같은 요금을 '할증 체크'와 '촬영 (미장센 및 다수 카메라)' 단가 항목 두 방법으로 넣을 수 있으면
-  // 어느 쪽으로 잡았는지에 따라 금액이 갈린다 → 스튜디오가 이미 쓰던 단가 항목 하나로 통일했다.
-  // 메커니즘(surcharges 마스터·computeCharge)은 남아 있고 폼 필드만 없다 — 되살리려면 필드만 다시 둔다.
+test("세션 폼: 할증 입력은 없다(할증 개념 폐기 — 가산은 단가 항목으로 표현, 2026-07-27)", async () => {
+  // 같은 요금을 '할증'과 '단가 항목' 두 경로로 넣을 수 있으면 어느 쪽으로 잡았는지에 따라 금액이 갈린다.
+  // 미장센처럼 가산이 필요한 건 '촬영 (미장센 및 다수 카메라)'처럼 단가 항목 자체로 표현한다.
   const { win, doc } = mountFilmingForm([]);
   await tick();
   assert.equal(doc.querySelector("[data-surcharge-check]"), null, "할증 체크박스 없음");

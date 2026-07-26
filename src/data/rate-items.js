@@ -130,11 +130,11 @@ function getRateItem(id) {
  *
  * 근거를 한 줄로 뭉치지 않고 라인으로 쪼개 돌려준다 — 청구서에서 "왜 이 금액인지"를 고객이 따라올 수 있어야 한다.
  * `lines[i] = { label, amount, detail, quantity, unit_price }` (뒤 두 개는 invoice_items 스냅샷용).
+ * (할증 개념은 2026-07-27 폐기 — 미장센은 별도 단가 항목으로 표현한다.)
  *
  * @param minutes 실사용 분. 촬영이면 반입·설치 + 촬영 + 철수를 **합친** 값.
- * @param surcharge 적용 할증 `{ label, rate }`(rate 0.5 = 50%). 없으면 무시.
  */
-function computeCharge(item, minutes, { surcharge = null } = {}) {
+function computeCharge(item, minutes) {
   if (!item) return { lines: [], total: 0 };
   const m = Math.max(0, Number(minutes) || 0);
   const baseMin = item.base_minutes;
@@ -172,21 +172,6 @@ function computeCharge(item, minutes, { surcharge = null } = {}) {
           unit_price: item.extra_price,
         });
       }
-    }
-  }
-
-  // 할증은 초과분이 아니라 **기본가**에 붙는다(홈페이지와 동일 — 촬영 100만 → 미장센 150만).
-  const rate = surcharge && Number(surcharge.rate) > 0 ? Number(surcharge.rate) : 0;
-  if (rate > 0) {
-    const amount = Math.round(lines[0].amount * rate);
-    if (amount > 0) { // 위와 같은 이유 — 기본가가 0이면 할증도 0이라 라인이 의미 없다
-      lines.push({
-        label: (surcharge && surcharge.label) || "할증",
-        amount,
-        detail: `기본가의 ${Math.round(rate * 100)}%`,
-        quantity: 1,
-        unit_price: amount,
-      });
     }
   }
 

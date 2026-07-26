@@ -67,10 +67,11 @@ test("순서 이동: 같은 분류 안에서 이웃과 교환, 경계에서는 �
 });
 
 test("순서 이동은 분류 경계를 넘지 않는다(촬영 항목이 녹음으로 섞이지 않게)", () => {
-  const pkg = listRateItems({ includeInactive: true }).find((r) => r.name === "기본 패키지");
+  const pkg = createRateItem({ rate_name: "촬영 항목", category: "스튜디오 촬영", base_hours: "10", base_price: "1000000" });
   moveRateItem(pkg.id, "up");
   assert.equal(getRateItem(pkg.id).category, "스튜디오 촬영", "이동 후에도 분류 불변");
-  assert.ok(!inCat("스튜디오 녹음").includes("기본 패키지"));
+  assert.ok(!inCat("스튜디오 녹음").includes("촬영 항목"));
+  deleteRateItem(pkg.id);
 });
 
 test("활성 토글: 비활성 → 다시 활성으로 되살릴 수 있다", () => {

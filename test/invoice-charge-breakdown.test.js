@@ -33,16 +33,16 @@ const rateId = (name) => db().prepare("SELECT id FROM rate_items WHERE name = ?"
 
 let seq = 0;
 /** 프로젝트 + 완료 대관 세션 1건. minutes는 start~end로 표현. */
-function seedSession({ type = "녹음", rate = "솔로 녹음", start = "14:00", end = "18:00", surcharge = null } = {}) {
+function seedSession({ type = "녹음", rate = "솔로 녹음", start = "14:00", end = "18:00" } = {}) {
   seq += 1;
   const pj = db().prepare("INSERT INTO projects (title, artist, project_type, rate) VALUES (?, '루나', 'session', 0)").run(`근거${seq}`);
   const projectId = Number(pj.lastInsertRowid);
   const s = db()
     .prepare(
-      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id, surcharge_key)
-       VALUES (?, ?, '2026-08-10', ?, ?, '완료', ?, ?)`
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)
+       VALUES (?, ?, '2026-08-10', ?, ?, '완료', ?)`
     )
-    .run(projectId, type, start, end, rateId(rate), surcharge);
+    .run(projectId, type, start, end, rateId(rate));
   return { projectId, sessionId: Number(s.lastInsertRowid) };
 }
 
@@ -73,17 +73,6 @@ test("초과가 있으면 기본가·초과 시간이 각각 한 라인 — 합�
   // 모든 라인이 같은 세션을 가리켜야 잠금·복원·정렬이 성립한다.
   assert.ok(items.every((i) => i.session_id === sessionId), "라인 전부 session_id 스냅샷");
   assert.ok(items.every((i) => i.item_date === "2026-08-10"), "정렬 날짜도 동일");
-});
-
-test("미장센 할증이 걸리면 할증도 별도 라인(촬영 100만 → 150만)", () => {
-  const { projectId, sessionId } = seedSession({ type: "촬영", rate: "기본 패키지", start: "10:00", end: "20:00", surcharge: "mise_en_scene" });
-  const inv = createInvoiceFromTasks(CHIEF, { projectId, clientId: PAYER, sessionIds: [sessionId], issueDate: "2026-08-10" });
-  const items = listInvoiceItemsForInvoice(CHIEF, inv.id).rows;
-  assert.equal(items.length, 2);
-  assert.equal(items[0].amount, 1000000);
-  assert.match(items[1].description, /미장센 할증 · 기본가의 50%/);
-  assert.equal(items[1].amount, 500000);
-  assert.equal(inv.amount - inv.tax_amount, 1500000);
 });
 
 test("금액을 조정하면 라인을 쪼개지 않는다(조정 총액을 되쪼개면 거짓 근거)", () => {

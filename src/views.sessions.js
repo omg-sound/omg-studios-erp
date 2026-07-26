@@ -225,11 +225,8 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
         ${timeBox(`seg_${kind}_end`, g && g.end_time, ph2, `data-seg-time aria-label="${esc(SESSION_SEGMENT_LABELS[kind])} 종료"`)}
       </div>`;
   }).join("");
-  // 🚫 **할증 입력은 세션 폼에 두지 않는다**(2026-07-26 사용자 결정): 미장센은 스튜디오가 이미
-  // `촬영 (미장센 및 다수 카메라)` **단가 항목**으로 표현해 왔고(600분/150만 = 기본 패키지 + 50%와 동액),
-  // 같은 요금을 두 가지 방법으로 넣을 수 있으면 어느 쪽으로 잡았는지에 따라 금액이 갈린다 → 표현을 하나로 통일.
-  // 할증 **메커니즘은 남겨 둔다**(surcharges 마스터·sessions.surcharge_key/memo·computeCharge의 surcharge 인자) —
-  // 지금은 그 값을 쓰는 입력이 없어 휴면 상태이고, 되살리려면 여기 폼 필드만 다시 두면 된다.
+  // 🚫 **할증 개념 없음**(2026-07-27 사용자 결정 — 폐기): 미장센 같은 가산은 `촬영 (미장센 및 다수 카메라)`처럼
+  // **단가 항목 자체로** 표현한다. 같은 요금을 '할증'과 '단가 항목' 두 경로로 넣을 수 있으면 금액이 갈리기 때문.
   const segmentBlock = `
       <div class="rounded-lg border border-border bg-bg/40 p-3" ${segmentTypesAttr} data-show-when-type data-segments hidden>
         <div class="mb-2 text-sm font-medium">촬영 구간 <span class="font-normal text-muted">(요금은 세 구간의 합산 시간 기준)</span></div>
@@ -361,15 +358,10 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
     : s.billing && s.billing.amount > 0
       ? `<span class="whitespace-nowrap text-success">예상 청구액 ${formatKRW(s.billing.amount)}</span>`
       : `<span class="whitespace-nowrap text-muted">청구액 미정 <span class="text-muted/70">(청구 시 입력)</span></span>`;
-  // 할증이 걸린 세션은 금액 근거가 단가표만으로 설명되지 않으므로 표시한다(왜 이 금액인지 행에서 읽히게).
-  const surchargeChunk = s.billing && s.billing.surcharge
-    ? `<span class="whitespace-nowrap text-warning">${esc(s.billing.surcharge.label)} +${Math.round(Number(s.billing.surcharge.rate) * 100)}%</span>`
-    : "";
   const billLine = s.billing
     ? `<div class="mt-1 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 break-keep text-xs tabular">
          ${amountChunk}
          <span class="break-keep text-muted">${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}</span>
-         ${surchargeChunk}
          ${billStatusChunk}
        </div>`
     : "";
@@ -587,10 +579,9 @@ function sessionCardModal(s, { canEdit = false } = {}) {
   // 촬영 구간 — 팝오버의 시간 줄은 점유 전체(반입~철수)라, 그 안이 어떻게 쪼개졌는지 여기서 보여준다.
   const segs = listSessionSegments(s.id);
   if (segs.length) lines.push(segs.map((g) => `${esc(SESSION_SEGMENT_LABELS[g.kind] || g.kind)} ${esc(g.start_time)}–${esc(g.end_time)}`).join(" · "));
-  if (s.surcharge_memo) lines.push(`할증 사유 ${esc(s.surcharge_memo)}`);
   if (s.memo) lines.push(esc(s.memo));
   const bill = s.billing
-    ? `${s.billing.fixed ? `확정 청구액 ${formatKRW(s.billing.amount)}` : s.billing.amount > 0 ? `예상 청구액 ${formatKRW(s.billing.amount)}` : "청구액 미정"} · ${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}${s.billing.surcharge ? ` · ${esc(s.billing.surcharge.label)} +${Math.round(Number(s.billing.surcharge.rate) * 100)}%` : ""}`
+    ? `${s.billing.fixed ? `확정 청구액 ${formatKRW(s.billing.amount)}` : s.billing.amount > 0 ? `예상 청구액 ${formatKRW(s.billing.amount)}` : "청구액 미정"} · ${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}`
     : "";
   const isDone = s.status === "완료";
   const canToggle = canEdit && (s.status === "예정" || s.status === "완료");

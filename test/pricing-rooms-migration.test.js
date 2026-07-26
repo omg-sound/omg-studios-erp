@@ -76,16 +76,6 @@ test("단가: 드럼 · 합주 녹음 = 40만(35만에서 갱신, id 보존)", (
   assert.ok(!rate("악기+보컬 녹음(그룹)"), "옛 이름이 남아 있으면 중복");
 });
 
-test("단가: 촬영 기본 패키지 = 총 10시간 100만 / 초과 60분 10만", () => {
-  const r = rate("기본 패키지");
-  assert.ok(r, "기본 패키지 없음");
-  assert.equal(r.category, "스튜디오 촬영");
-  assert.equal(r.base_minutes, 600, "반입 2h + 촬영 7h + 철수 1h");
-  assert.equal(r.base_price, 1000000);
-  assert.equal(r.extra_price, 100000);
-  assert.equal(r.price_type, "fixed");
-});
-
 test("포스트는 rate_items가 아니라 task_types에 있다(믹싱=기준가·보컬튠=최소가)", () => {
   const t = (key) => db().prepare("SELECT * FROM task_types WHERE key = ?").get(key);
   assert.equal(t("Mixing").unit_price, 1000000);
@@ -97,13 +87,11 @@ test("포스트는 rate_items가 아니라 task_types에 있다(믹싱=기준가
   assert.ok(!rate("보컬튠"), "보컬튠이 단가표에도 있으면 카탈로그가 두 벌");
 });
 
-test("할증 마스터: 미장센 50% — 요율이 코드가 아니라 테이블에 있다", () => {
-  const s = db().prepare("SELECT * FROM surcharges WHERE key = 'mise_en_scene'").get();
-  assert.ok(s, "미장센 할증 없음");
-  assert.equal(s.label, "미장센 할증");
-  assert.equal(s.rate, 0.5);
-  assert.equal(s.applies_to, "filming");
-  assert.equal(s.active, 1);
+test("할증 개념은 없다 — 마스터 테이블도 남기지 않는다(2026-07-27 폐기)", () => {
+  const t = db().prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='surcharges'").get();
+  assert.equal(t, undefined, "surcharges 테이블이 있으면 폐기가 안 된 것");
+  // 촬영 가산은 단가 항목 자체로 표현한다(운영의 '촬영 (미장센 및 다수 카메라)') — 시드는 하지 않는다.
+  assert.ok(!rate("기본 패키지"), "'기본 패키지'는 시드하지 않는다(2026-07-27 폐기)");
 });
 
 test("멱등: 게이트가 두 번 돌아도 중복 행이 생기지 않는다", () => {
@@ -115,7 +103,6 @@ test("멱등: 게이트가 두 번 돌아도 중복 행이 생기지 않는다",
   assert.equal(db().prepare("SELECT COUNT(*) n FROM rooms").get().n, before);
   assert.equal(db().prepare("SELECT COUNT(*) n FROM rate_items").get().n, beforeRates);
   assert.equal(room("Studio A").id, 1, "재실행 후에도 id 보존");
-  assert.equal(db().prepare("SELECT COUNT(*) n FROM surcharges").get().n, 1);
 });
 
 test("세션 구간 테이블: 세션 삭제 시 CASCADE로 함께 사라진다", () => {

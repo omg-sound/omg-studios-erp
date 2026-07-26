@@ -1,6 +1,6 @@
 "use strict";
 
-// 촬영 3구간(반입·설치 / 촬영 / 철수, 2026-07-26) + 미장센 할증.
+// 촬영 3구간(반입·설치 / 촬영 / 철수, 2026-07-26).
 //
 // 핵심 분리: **요금 시간 = 구간 합산**, **룸 점유·캘린더 = 반입 시작 ~ 철수 종료 전체**.
 // 구간 사이에 빈 시간이 있어도 그 방은 계속 잡혀 있으므로 점유는 아우르는 한 덩어리다(사용자 확정).
@@ -23,6 +23,7 @@ const {
   sessionRateAmount,
   deleteSession,
   busySessionRanges,
+  createRateItem,
 } = require("../src/data");
 
 init();
@@ -31,11 +32,13 @@ test.after(() => cleanupDb(process.env.DB_PATH, db()));
 
 const CHIEF = { id: 1, role: "chief", email: "chief@omg.test" };
 const projectId = Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('촬영 프로젝트', 'session', 0)").run().lastInsertRowid);
-const pkgId = db().prepare("SELECT id FROM rate_items WHERE name = '기본 패키지'").get().id;
+// 촬영 단가 항목은 이 테스트가 직접 만든다 — 시드하지 않는다(2026-07-27 '기본 패키지' 폐기).
+const PKG_NAME = "촬영 10시간 패키지";
+const pkgId = createRateItem({ rate_name: PKG_NAME, category: "스튜디오 촬영", base_hours: "10", base_price: "1000000", extra_hours: "1", extra_price: "100000" }).id;
 const soloId = db().prepare("SELECT id FROM rate_items WHERE name = '솔로 녹음'").get().id;
 const roomA = db().prepare("SELECT id FROM rooms WHERE name = 'Studio A'").get().id;
 
-/** 기본 패키지 촬영: 반입 10–12 / 촬영 12–19 / 철수 19–20 = 600분. */
+/** 촬영: 반입 10–12 / 촬영 12–19 / 철수 19–20 = 600분(기본 이내). */
 const SEGS = {
   seg_setup_start: "10:00", seg_setup_end: "12:00",
   seg_shoot_start: "12:00", seg_shoot_end: "19:00",
@@ -81,7 +84,7 @@ test("합산이 기본 시간을 넘으면 초과가 붙는다(구간 기준)", 
   assert.equal(sessionBillableMinutes(getSessionForUser(CHIEF, s.id)), 690);
   const calc = sessionRateAmount(getSessionForUser(CHIEF, s.id));
   assert.equal(calc.amount, 1200000);
-  assert.deepEqual(calc.lines.map((l) => l.label), ["기본 패키지", "초과 시간"]);
+  assert.deepEqual(calc.lines.map((l) => l.label), [PKG_NAME, "초과 시간"]);
   deleteSession(CHIEF, s.id);
 });
 
@@ -149,28 +152,3 @@ test("자정을 넘기는 구간도 span이 이어진다", () => {
   deleteSession(CHIEF, s.id);
 });
 
-test("미장센 할증: 체크하면 대관비의 50%가 가산되고 사유가 남는다", () => {
-  const s = createSession(CHIEF, projectId, base({ ...SEGS, surcharge_key: "mise_en_scene", surcharge_memo: "세트 제작·조명 연출" }));
-  const row = getSessionForUser(CHIEF, s.id);
-  assert.equal(row.surcharge_key, "mise_en_scene");
-  assert.equal(row.surcharge_memo, "세트 제작·조명 연출");
-  const calc = sessionRateAmount(row);
-  assert.equal(calc.amount, 1500000, "100만 + 할증 50만");
-  assert.equal(calc.surcharge.label, "미장센 할증");
-  deleteSession(CHIEF, s.id);
-});
-
-test("할증 체크를 풀면 사유도 함께 지운다(할증 없는데 사유만 남지 않게)", () => {
-  const s = createSession(CHIEF, projectId, base({ ...SEGS, surcharge_key: "mise_en_scene", surcharge_memo: "세트 제작" }));
-  const u = updateSession(CHIEF, s.id, base({ ...SEGS, surcharge_memo: "세트 제작" })); // 체크 해제
-  assert.equal(u.surcharge_key, null);
-  assert.equal(u.surcharge_memo, null);
-  assert.equal(sessionRateAmount(u).amount, 1000000);
-  deleteSession(CHIEF, s.id);
-});
-
-test("마스터에 없는 할증 key는 무시한다(폼이 보낸 문자열을 그대로 믿지 않는다)", () => {
-  const s = createSession(CHIEF, projectId, base({ ...SEGS, surcharge_key: "made_up", surcharge_memo: "임의" }));
-  assert.equal(getSessionForUser(CHIEF, s.id).surcharge_key, null);
-  deleteSession(CHIEF, s.id);
-});
