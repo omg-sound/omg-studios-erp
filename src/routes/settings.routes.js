@@ -6,6 +6,8 @@ const { requireChief, requireStaff, isChief, syncUserToManager, findUserById } =
 const { normalizeRole, config } = require("../config");
 const {
   createRoom,
+  updateRoom,
+  moveRoom,
   deleteRoom,
   createRateItem,
   updateRateItem,
@@ -422,7 +424,7 @@ router.post("/rate-categories/:id/delete", requireStaff, (req, res) => {
   res.redirect("/settings?tab=content&flash=deleted");
 });
 
-// ── 룸(스튜디오 공간) 관리(추가·삭제) ──
+// ── 룸(스튜디오 공간) 관리(추가·수정·순서·삭제) ──
 router.post("/rooms", requireStaff, (req, res) => {
   try {
     createRoom(req.body);
@@ -430,6 +432,23 @@ router.post("/rooms", requireStaff, (req, res) => {
     if (e.message !== "ROOM_NAME_REQUIRED") throw e;
   }
   res.redirect("/settings?tab=settings&flash=saved");
+});
+
+// 이름·상위·플래그 수정(2026-07-26) — 이전엔 추가·삭제만 있어 오타를 고치려면 지웠다 만들어야 했고
+// 그러면 그 장소로 잡힌 세션이 전부 '장소 미지정'이 됐다. id를 보존하는 수정 경로.
+router.post("/rooms/:id", requireStaff, (req, res) => {
+  try {
+    updateRoom(Number(req.params.id), req.body);
+  } catch (e) {
+    if (e.message !== "ROOM_NAME_REQUIRED") throw e; // 이름 누락은 조용히 저장 안 함
+  }
+  res.redirect("/settings?tab=settings&flash=saved");
+});
+
+// 표시 순서 이동(같은 상위 안에서 위/아래 한 칸).
+router.post("/rooms/:id/move", requireStaff, (req, res) => {
+  moveRoom(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
+  res.redirect("/settings?tab=settings");
 });
 
 router.post("/rooms/:id/delete", requireStaff, (req, res) => {

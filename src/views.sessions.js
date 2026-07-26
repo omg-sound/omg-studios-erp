@@ -5,22 +5,33 @@
 const { config, SESSION_TYPES, RENTAL_SESSION_TYPES, SESSION_STATUS_BADGE, SESSION_TYPE_RATE_KIND } = require("./config");
 const { esc, formatKRW, emptyState, detailsChevron, explain, dirtyActionRow, personCombo, personComboOptionsScript, personComboCompanyScript, personLabel, dateCombo } = require("./views");
 const { formatYmdShort, ddayLabel, todayYmd, minutesBetween, calendarMonthCells } = require("./lib/date");
-const { listRooms, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listRateCategories, rateCategoryKind } = require("./data");
+const { listRooms, getRoom, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listRateCategories, rateCategoryKind } = require("./data");
 
 /**
- * 룸 목록 보장 — 인자로 받으면 그대로, 아니면 활성 룸 조회(폴백).
+ * 룸 목록 보장 — 인자로 받으면 그대로, 아니면 **예약 대상 장소**만 조회(폴백).
  * projects.routes.js 등 rooms를 넘기지 않는 호출부에서도 룸 select가 채워지도록 한다(순환참조 없음: data는 views.sessions를 require하지 않음).
+ * 예약은 최상위 단위로만 잡는다 — Control Room A·Booth A 같은 하위 공간과 Lounge는 여기서 제외된다(bookable=0).
  */
 function resolveRooms(rooms) {
-  return Array.isArray(rooms) ? rooms : listRooms();
+  return Array.isArray(rooms) ? rooms : listRooms({ bookableOnly: true });
 }
 
-/** 장소(룸) select. 현재값 선택. 없으면 첫 장소(A룸)를 기본 선택. '장소 미지정'은 맨 아래. 외부 장소 옵션은 data-external=1(주소 필드 노출용). */
+/**
+ * 장소(룸) select. 현재값 선택. 없으면 첫 장소(Studio A)를 기본 선택. '장소 미지정'은 맨 아래.
+ * 외부 장소 옵션은 data-external=1(주소 필드 노출용).
+ * 목록은 예약 대상만이지만, **이미 그 세션에 잡혀 있는 장소는 예약 대상이 아니어도 살려 둔다** —
+ * 안 그러면 그 세션을 편집·저장하는 순간 장소가 조용히 '미지정'으로 바뀐다(담당자 select의 '(목록에 없음)'과 같은 이유).
+ */
 function roomSelect(rooms, currentId) {
   const cur = currentId == null || currentId === "" ? "" : String(currentId);
   const auto = cur === "" && rooms.length ? String(rooms[0].id) : cur; // 신규 예약은 첫 장소 기본
   const opts = [];
-  for (const r of rooms) {
+  const list = [...rooms];
+  if (cur && !list.some((r) => String(r.id) === cur)) {
+    const orphan = getRoom(cur);
+    if (orphan) list.unshift({ ...orphan, name: `${orphan.name} (예약 대상 아님)` });
+  }
+  for (const r of list) {
     opts.push(`<option value="${r.id}" data-external="${r.is_external ? 1 : 0}" ${String(r.id) === auto ? "selected" : ""}>${esc(r.name)}</option>`);
   }
   opts.push(`<option value="" data-external="0" ${auto === "" ? "selected" : ""}>장소 미지정</option>`); // 맨 아래

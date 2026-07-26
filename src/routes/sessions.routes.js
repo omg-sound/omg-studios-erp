@@ -129,7 +129,7 @@ router.get("/sessions", requireAuth, (req, res) => {
   } else {
     const managers = editable ? listProjectManagers() : [];
     const rateItems = editable ? listRateItems() : [];
-    const rooms = editable ? listRooms() : [];
+    const rooms = editable ? listRooms({ bookableOnly: true }) : []; // 예약은 최상위 단위로만(하위 공간·Lounge 제외)
     // 이름/프로젝트 검색(?q=): 조회된 목록을 프로젝트명·예약자·엔지니어·종류·메모로 필터(인메모리, 대소문자 무시).
     const q = String(req.query.q || "").trim();
     const ql = q.toLowerCase();
