@@ -19,7 +19,7 @@ const { getProjectForUser } = require("./projects"); // 무순환
 const { resolvePersonByName } = require("./parties"); // 무순환 — 디렉터=parties.id(사람)
 const { listRooms } = require("./rooms"); // 무순환
 const { computeRatePrice, computeCharge } = require("./rate-items"); // 무순환
-const { getSurcharge } = require("./surcharges"); // 무순환(할증 마스터 — 요율을 코드에 두지 않기 위해)
+const { getSurcharge, listSurcharges } = require("./surcharges"); // 무순환(할증 마스터 — 요율을 코드에 두지 않기 위해)
 
 /** 프로젝트의 세션 목록(날짜순). 권한 없으면 null. */
 function listSessionsForProject(user, projectId) {
@@ -32,7 +32,7 @@ function listSessionsForProject(user, projectId) {
   if (!rows.length) return { project, rows: [] };
   // N+1 회피(감사 L9 — 전역 목록 upcomingSessions와 통일): rate_items 1회 로드(withBilling) +
   // 청구 작업(세션당 1건, 부분 유니크)·청구여부를 세션 id IN 배치 1쿼리씩(행마다 단건 조회 폐지).
-  const bill = withBilling();
+  const bill = withBilling(rows.map((r) => r.id));
   const ids = rows.map((r) => r.id);
   const ph = ids.map(() => "?").join(",");
   const taskBySession = new Map();
@@ -389,7 +389,7 @@ function listSessionDirectors(sessionId) {
  */
 
 /** 녹음 세션의 진행시간 → 단가표 자동 산정. 시간제 대상(녹음+단가+시간)이 아니면 null. */
-function sessionRateAmount(session, itemOverride) {
+function sessionRateAmount(session, itemOverride, batch = {}) {
   if (!session || !RENTAL_SESSION_TYPES.includes(session.session_type) || !session.rate_item_id) return null;
   // itemOverride: 목록 조회가 rate_items를 한 번만 로드해 넘기는 배치 경로(2026-07-09 감사 — 행당 단건 조회 N+1 제거).
   const item = itemOverride || db().prepare("SELECT * FROM rate_items WHERE id = ?").get(session.rate_item_id);
@@ -398,11 +398,16 @@ function sessionRateAmount(session, itemOverride) {
   // 금액이 폼 안에서만 살아 있다가 새로고침하면 사라지던 문제. 작업 total_price 즉시 저장과 대칭).
   const fixed = session.billing_amount != null ? Math.round(session.billing_amount) : null;
   // 할증(2026-07-26) — 요율은 마스터 테이블에서 읽는다(코드에 박지 않음). 없거나 비활성이면 null.
-  const surcharge = session.surcharge_key ? getSurcharge(session.surcharge_key) : null;
+  // batch.surcharges/segments: 목록 조회가 1회 로드해 넘기는 배치 경로(행당 단건 조회 N+1 제거 — withBilling 참조).
+  const surcharge = !session.surcharge_key
+    ? null
+    : batch.surcharges
+      ? batch.surcharges.get(session.surcharge_key) || null
+      : getSurcharge(session.surcharge_key);
   // 종일 세션은 시간이 없어 시간제 산정 불가 → 1 기준 블록으로 취급(정액 항목=base_price, 시간제 항목=1Pro). 금액은 청구 시 조정.
   // 촬영은 구간(반입·설치/촬영/철수) 합산이 요금 시간이다 — 구간이 없으면 시작~종료 span으로 폴백.
   const allDay = !!session.all_day;
-  const minutes = allDay ? item.base_minutes || 0 : sessionBillableMinutes(session);
+  const minutes = allDay ? item.base_minutes || 0 : sessionBillableMinutes(session, batch.segments ? batch.segments.get(session.id) || [] : undefined);
   if (!allDay && minutes <= 0) return null;
   const charge = computeCharge(item, minutes, { surcharge });
   // 금액을 사람이 조정했으면 근거 라인을 쪼개지 않는다 — 조정된 총액을 기본가·초과로 되쪼개면 거짓 근거가 된다.
@@ -427,10 +432,11 @@ function sessionRateAmount(session, itemOverride) {
  * 룸 점유·캘린더는 span(sessions.start_time~end_time)을 그대로 쓴다 — 구간 사이에 빈 시간이 있어도
  * 그 방은 계속 잡혀 있으므로 점유는 아우르는 한 덩어리이고, 요금만 실제 쓴 구간의 합으로 센다.
  */
-function sessionBillableMinutes(session) {
+function sessionBillableMinutes(session, segmentsOverride) {
   if (!session) return 0;
   if (session.all_day) return 0;
-  const segs = listSessionSegments(session.id);
+  // segmentsOverride: 배치 조회가 미리 읽어 넘긴 구간 배열(빈 배열 = 구간 없음 → 재조회 금지).
+  const segs = segmentsOverride !== undefined ? segmentsOverride : listSessionSegments(session.id);
   if (segs.length) return segs.reduce((sum, g) => sum + minutesBetween(g.start_time, g.end_time), 0);
   return minutesBetween(session.start_time, session.end_time);
 }
@@ -648,9 +654,31 @@ function deleteSession(user, sessionId) {
 }
 
 /** rate_items를 1회 로드해 행별 billing을 계산하는 mapper — 목록 .map(sessionRateAmount) N+1 제거(2026-07-09 감사). */
-function withBilling() {
+/**
+ * 행별 billing 계산 mapper — rate_items를 1회 로드(N+1 제거, 2026-07-09 감사 L9).
+ * `ids`(그 목록의 세션 id)를 주면 **구간·할증도 1회씩 배치 로드**한다(2026-07-27 메인터넌스 —
+ * 촬영 구간·할증 도입이 행당 `listSessionSegments`+`getSurcharge` 단건 조회를 되살려 놨다: 실측 행당 1.5쿼리).
+ * ids 없이 쓰면 종전처럼 행당 조회로 폴백(단건 경로).
+ */
+function withBilling(ids) {
   const items = rateItemsById();
-  return (row) => ({ ...row, billing: sessionRateAmount(row, items.get(row.rate_item_id)) });
+  let segments;
+  let surcharges;
+  if (Array.isArray(ids) && ids.length) {
+    segments = new Map();
+    const ph = ids.map(() => "?").join(",");
+    for (const r of db().prepare(`SELECT * FROM session_segments WHERE session_id IN (${ph}) ORDER BY sort_order, id`).all(...ids)) {
+      if (!segments.has(r.session_id)) segments.set(r.session_id, []);
+      segments.get(r.session_id).push(r);
+    }
+    surcharges = new Map(listSurcharges().map((sc) => [sc.key, sc])); // 활성만(소형 테이블)
+  }
+  return (row) => ({ ...row, billing: sessionRateAmount(row, items.get(row.rate_item_id), { segments, surcharges }) });
+}
+
+/** 행 배열에 billing 부착 — 그 목록의 id로 구간·할증까지 배치 로드. 목록 조회 공용. */
+function attachBilling(rows) {
+  return rows.map(withBilling(rows.map((r) => r.id)));
 }
 
 /** rate_items 전체를 id Map으로 1회 로드(소형 테이블). */
@@ -662,28 +690,30 @@ function rateItemsById() {
 
 /** 다가오는 세션(오늘 이후, 취소 제외) — 전역 일정/대시보드. */
 function upcomingSessions(_user, { limit = 50 } = {}) {
-  return db()
-    .prepare(
-      `SELECT s.*, p.title AS project_title, p.artist, p.artist_company, p.production_company FROM sessions s
-       JOIN projects p ON p.id = s.project_id
-       WHERE s.session_date >= ? AND s.status <> '취소'
-       ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC LIMIT ?`
-    )
-    .all(todayYmd(), limit)
-    .map(withBilling());
+  return attachBilling(
+    db()
+      .prepare(
+        `SELECT s.*, p.title AS project_title, p.artist, p.artist_company, p.production_company FROM sessions s
+         JOIN projects p ON p.id = s.project_id
+         WHERE s.session_date >= ? AND s.status <> '취소'
+         ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC LIMIT ?`
+      )
+      .all(todayYmd(), limit)
+  );
 }
 
 /** 지난 세션(오늘 이전) — 전역 일정. */
 function pastSessions(_user, { limit = 30 } = {}) {
-  return db()
-    .prepare(
-      `SELECT s.*, p.title AS project_title, p.artist, p.artist_company, p.production_company FROM sessions s
-       JOIN projects p ON p.id = s.project_id
-       WHERE s.session_date < ?
-       ORDER BY s.session_date DESC, s.start_time DESC, s.id DESC LIMIT ?`
-    )
-    .all(todayYmd(), limit)
-    .map(withBilling());
+  return attachBilling(
+    db()
+      .prepare(
+        `SELECT s.*, p.title AS project_title, p.artist, p.artist_company, p.production_company FROM sessions s
+         JOIN projects p ON p.id = s.project_id
+         WHERE s.session_date < ?
+         ORDER BY s.session_date DESC, s.start_time DESC, s.id DESC LIMIT ?`
+      )
+      .all(todayYmd(), limit)
+  );
 }
 
 /** 특정 월(YYYY-MM)의 세션 + 프로젝트명 — 캘린더 뷰용. 취소 세션도 포함(monthCalendar 칩이 opacity-60로
@@ -691,15 +721,16 @@ function pastSessions(_user, { limit = 30 } = {}) {
  *  흐리게 표시 코드가 죽어 있었음, 전수 점검 2026-07-15). */
 function sessionsForMonth(_user, ym) {
   if (!/^\d{4}-\d{2}$/.test(String(ym || ""))) return [];
-  return db()
-    .prepare(
-      `SELECT s.*, p.title AS project_title, p.artist, p.artist_company, p.production_company FROM sessions s
-       JOIN projects p ON p.id = s.project_id
-       WHERE s.session_date LIKE ?
-       ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC`
-    )
-    .all(String(ym) + "-%")
-    .map(withBilling());
+  return attachBilling(
+    db()
+      .prepare(
+        `SELECT s.*, p.title AS project_title, p.artist, p.artist_company, p.production_company FROM sessions s
+         JOIN projects p ON p.id = s.project_id
+         WHERE s.session_date LIKE ?
+         ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC`
+      )
+      .all(String(ym) + "-%")
+  );
 }
 
 /**
@@ -712,15 +743,16 @@ function sessionsForCalendar(_user, ym) {
   const cells = calendarMonthCells(ym);
   const from = cells[0].ymd;
   const to = cells[cells.length - 1].ymd;
-  return db()
-    .prepare(
-      `SELECT s.*, p.title AS project_title, p.artist, p.artist_company, p.production_company FROM sessions s
-       JOIN projects p ON p.id = s.project_id
-       WHERE s.session_date BETWEEN ? AND ?
-       ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC`
-    )
-    .all(from, to)
-    .map(withBilling());
+  return attachBilling(
+    db()
+      .prepare(
+        `SELECT s.*, p.title AS project_title, p.artist, p.artist_company, p.production_company FROM sessions s
+         JOIN projects p ON p.id = s.project_id
+         WHERE s.session_date BETWEEN ? AND ?
+         ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC`
+      )
+      .all(from, to)
+  );
 }
 
 /** 세션 카드(캘린더 팝오버) 단건 — sessionsForMonth와 동일 enrich(프로젝트 필드 조인 + billing). */
