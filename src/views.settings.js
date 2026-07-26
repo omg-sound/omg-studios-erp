@@ -570,7 +570,7 @@ function rateItemRow(r) {
         </div>
       </div>
       <details class="group mt-2 border-t border-border pt-2">
-        <summary class="flex cursor-pointer list-none items-center justify-end text-xs text-muted hover:text-fg">${detailsChevron()}</summary>
+        <summary class="flex cursor-pointer list-none items-center justify-end gap-1 text-xs text-muted hover:text-fg">수정 ${detailsChevron()}</summary>
         <form method="post" action="/settings/rate-items/${r.id}" class="mt-2 space-y-2" data-dirty-form>
           <div class="grid gap-2 sm:grid-cols-2">
             <div><label class="label mb-0.5 text-xs">단가 항목명</label><input class="input py-1.5 text-sm" name="rate_name" value="${esc(r.name)}" autocomplete="off" required /></div>
@@ -587,7 +587,7 @@ function rateItemRow(r) {
             <span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span>
           </div>
         </form>
-        <form method="post" action="/settings/rate-items/${r.id}/delete" data-confirm="이 단가 항목을 삭제할까요?" class="mt-2">
+        <form method="post" action="/settings/rate-items/${r.id}/delete" data-confirm="'${esc(r.name)}' 단가 항목을 삭제할까요? 이미 발행된 청구서는 금액이 따로 저장돼 그대로 남지만, 이 항목으로 잡힌 세션은 단가 항목이 비워져 청구할 수 없게 됩니다." class="mt-2">
           <button class="btn-ghost btn-xs text-danger" type="submit">삭제</button>
         </form>
       </details>
@@ -614,7 +614,7 @@ function taskTypeRow(t) {
     </span>
       </div>
       <details class="group mt-2 border-t border-border pt-2">
-        <summary class="flex cursor-pointer list-none items-center justify-end text-xs text-muted hover:text-fg">${detailsChevron()}</summary>
+        <summary class="flex cursor-pointer list-none items-center justify-end gap-1 text-xs text-muted hover:text-fg">수정 ${detailsChevron()}</summary>
         <form method="post" action="/settings/task-types/${t.id}" class="mt-2 space-y-2" data-dirty-form>
           <input class="input py-1.5 text-sm w-full" name="label" value="${esc(t.label)}" required />
           <div class="grid gap-2 sm:grid-cols-2">
