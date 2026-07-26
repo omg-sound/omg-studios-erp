@@ -2,10 +2,10 @@
 
 /** 세션(스튜디오 일정) 렌더 — 프로젝트 상세 섹션 + 전역 일정에서 공유. */
 
-const { config, SESSION_TYPES, RENTAL_SESSION_TYPES, SESSION_STATUS_BADGE, SESSION_TYPE_RATE_KIND } = require("./config");
+const { config, SESSION_TYPES, RENTAL_SESSION_TYPES, SESSION_STATUS_BADGE, SESSION_TYPE_RATE_KIND, SESSION_SEGMENT_KINDS, SESSION_SEGMENT_LABELS } = require("./config");
 const { esc, formatKRW, emptyState, detailsChevron, explain, dirtyActionRow, personCombo, personComboOptionsScript, personComboCompanyScript, personLabel, dateCombo } = require("./views");
 const { formatYmdShort, ddayLabel, todayYmd, minutesBetween, durationKo, calendarMonthCells } = require("./lib/date");
-const { listRooms, getRoom, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listRateCategories, rateCategoryKind } = require("./data");
+const { listRooms, getRoom, listSessionSegments, listSurcharges, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listRateCategories, rateCategoryKind } = require("./data");
 
 /**
  * 룸 목록 보장 — 인자로 받으면 그대로, 아니면 **예약 대상 장소**만 조회(폴백).
@@ -206,6 +206,46 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
         <!-- 30분 단위 시간 목록은 app.js가 초기화 시 생성(48개 × 폼당 2박스가 서버 HTML을 불리던 것 — 2026-07-09 스케일 점검) -->
         <div class="absolute left-0 z-30 mt-1 hidden max-h-56 w-24 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg" data-time-pop role="listbox"></div>
       </div>`;
+  // ── 촬영 구간(2026-07-26) — 반입·설치 / 촬영 / 철수를 각각 시작·종료 시각으로 ──
+  // 노출 조건은 **단가 kind로 파생**한다(화면에 '촬영'을 하드코딩하지 않음 — config가 종류↔kind의 진실원천).
+  // 구간이 보이면 위의 [시작]–[종료]·소요 슬라이더는 숨는다(점유 시간은 구간 span에서 서버가 파생 —
+  // 같은 시간을 두 번 입력하게 두면 어느 쪽이 진짜인지 알 수 없다).
+  const filmingTypes = SESSION_TYPES.filter((t) => SESSION_TYPE_RATE_KIND[t] === "filming");
+  const segmentTypesAttr = `data-when-type="${esc(filmingTypes.join(","))}"`;
+  const curSegs = s && s.id ? listSessionSegments(s.id) : [];
+  const segOf = (kind) => curSegs.find((g) => g.kind === kind) || null;
+  const SEG_PLACEHOLDER = { setup: ["10:00", "12:00"], shoot: ["12:00", "19:00"], teardown: ["19:00", "20:00"] };
+  const segmentRows = SESSION_SEGMENT_KINDS.map((kind) => {
+    const g = segOf(kind);
+    const [ph1, ph2] = SEG_PLACEHOLDER[kind] || ["", ""];
+    return `<div class="flex flex-wrap items-center gap-2">
+        <span class="w-20 shrink-0 text-sm text-muted">${esc(SESSION_SEGMENT_LABELS[kind] || kind)}</span>
+        ${timeBox(`seg_${kind}_start`, g && g.start_time, ph1, `data-seg-time aria-label="${esc(SESSION_SEGMENT_LABELS[kind])} 시작"`)}
+        <span class="text-muted">–</span>
+        ${timeBox(`seg_${kind}_end`, g && g.end_time, ph2, `data-seg-time aria-label="${esc(SESSION_SEGMENT_LABELS[kind])} 종료"`)}
+      </div>`;
+  }).join("");
+  // 할증 — 적용 대상은 마스터(surcharges.applies_to)가 정하고, 그 kind를 쓰는 세션 종류에서만 보인다.
+  const surchargeField = listSurcharges()
+    .map((sc) => {
+      const types = sc.applies_to ? SESSION_TYPES.filter((t) => SESSION_TYPE_RATE_KIND[t] === sc.applies_to) : SESSION_TYPES;
+      const on = s.surcharge_key === sc.key;
+      return `<div class="mt-2 border-t border-border pt-2" data-when-type="${esc(types.join(","))}" data-show-when-type>
+        <label class="flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <input type="checkbox" name="surcharge_key" value="${esc(sc.key)}" class="h-4 w-4 rounded border-border text-primary" ${on ? "checked" : ""} data-surcharge-check />
+          ${esc(sc.label)} <span class="text-xs text-muted">(대관비의 ${Math.round(Number(sc.rate) * 100)}%)</span>
+        </label>
+        <input class="input mt-1.5 py-1.5 text-sm" name="surcharge_memo" value="${esc(s.surcharge_memo || "")}" placeholder="할증 사유 (예: 세트 제작·조명 연출 규모)" />
+        <p class="mt-1 text-xs text-muted">자동 판정하지 않습니다 — 스탠드 라이트나 테이블 위 꽃병 같은 간단한 오브제는 대상이 아닙니다.</p>
+      </div>`;
+    })
+    .join("");
+  const segmentBlock = `
+      <div class="rounded-lg border border-border bg-bg/40 p-3" ${segmentTypesAttr} data-show-when-type data-segments hidden>
+        <div class="mb-2 text-sm font-medium">촬영 구간 <span class="font-normal text-muted">(요금은 세 구간의 합산 시간 기준)</span></div>
+        <div class="space-y-1.5">${segmentRows}</div>
+        <p class="mt-2 text-xs text-muted">캘린더·룸 점유는 <b>반입 시작 ~ 철수 종료</b> 전체로 잡힙니다(그 사이 방을 계속 쓰므로).</p>
+      </div>`;
   const endDateInit = (() => {
     const d = s.session_date || todayYmd();
     if (s.all_day && s.end_date && s.end_date > d) return s.end_date; // 종일 다일 일정: 저장된 종료 날짜 복원
@@ -224,7 +264,7 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
   return `
     <input type="hidden" name="status" value="${esc(s.status || "예정")}" />
     <div class="space-y-3" data-time-block>
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5" ${segmentTypesAttr} data-hide-when-type>
         <!-- 줄바꿈 단위 = 시작(날짜+시간) / 종료(–+시간+날짜) 두 덩어리. 폭이 좁아 접히더라도 종료 시간과 종료 날짜가
              떨어지지 않게 한 묶음으로 둔다(2026-07-14 사용자 리포트 — 종료 날짜만 다음 줄로 가 연관이 끊겨 보이던 것). -->
         <div class="flex items-center gap-2">
@@ -240,9 +280,10 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
           <input type="checkbox" name="all_day" value="1" class="h-4 w-4 rounded border-border text-primary" data-all-day ${s.all_day ? "checked" : ""} /> 종일
         </label>
       </div>
+      ${segmentBlock}
       <p class="text-xs text-warning" data-conflict-warn hidden>⚠ 같은 룸에 이 시간대 예약이 이미 있습니다.</p>
       <input type="hidden" name="override_conflict" value="" data-override-conflict />
-      <div data-duration-wrap>
+      <div data-duration-wrap ${segmentTypesAttr} data-hide-when-type>
         <label class="label-sm">소요 시간 <span class="ml-1 font-medium text-primary" data-duration-label>${fmtDurationKo(initMins)}</span></label>
         ${durationButtons(initMins)}
       </div>
@@ -251,6 +292,7 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
       <div class="rounded-lg border border-border bg-bg/40 p-3">
         <div class="mb-2 text-sm font-medium">세션 세부정보</div>
         ${typeRateRow}
+        ${surchargeField}
         ${directorField}
         <input class="input mt-3 py-1.5 text-sm" name="memo" placeholder="메모(선택)" value="${esc(s.memo || "")}" />
       </div>
@@ -330,10 +372,15 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
     : s.billing && s.billing.amount > 0
       ? `<span class="whitespace-nowrap text-success">예상 청구액 ${formatKRW(s.billing.amount)}</span>`
       : `<span class="whitespace-nowrap text-muted">청구액 미정 <span class="text-muted/70">(청구 시 입력)</span></span>`;
+  // 할증이 걸린 세션은 금액 근거가 단가표만으로 설명되지 않으므로 표시한다(왜 이 금액인지 행에서 읽히게).
+  const surchargeChunk = s.billing && s.billing.surcharge
+    ? `<span class="whitespace-nowrap text-warning">${esc(s.billing.surcharge.label)} +${Math.round(Number(s.billing.surcharge.rate) * 100)}%</span>`
+    : "";
   const billLine = s.billing
     ? `<div class="mt-1 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 break-keep text-xs tabular">
          ${amountChunk}
          <span class="break-keep text-muted">${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}</span>
+         ${surchargeChunk}
          ${billStatusChunk}
        </div>`
     : "";
@@ -548,9 +595,13 @@ function sessionCardModal(s, { canEdit = false } = {}) {
   ].filter(Boolean).join(" · ");
   if (bookerEng) lines.push(bookerEng);
   if (directors.length) lines.push(`디렉터 ${directors.map((d) => esc(personLabel(d.name, d.activity_name))).join(", ")}`);
+  // 촬영 구간 — 팝오버의 시간 줄은 점유 전체(반입~철수)라, 그 안이 어떻게 쪼개졌는지 여기서 보여준다.
+  const segs = listSessionSegments(s.id);
+  if (segs.length) lines.push(segs.map((g) => `${esc(SESSION_SEGMENT_LABELS[g.kind] || g.kind)} ${esc(g.start_time)}–${esc(g.end_time)}`).join(" · "));
+  if (s.surcharge_memo) lines.push(`할증 사유 ${esc(s.surcharge_memo)}`);
   if (s.memo) lines.push(esc(s.memo));
   const bill = s.billing
-    ? `${s.billing.fixed ? `확정 청구액 ${formatKRW(s.billing.amount)}` : s.billing.amount > 0 ? `예상 청구액 ${formatKRW(s.billing.amount)}` : "청구액 미정"} · ${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}`
+    ? `${s.billing.fixed ? `확정 청구액 ${formatKRW(s.billing.amount)}` : s.billing.amount > 0 ? `예상 청구액 ${formatKRW(s.billing.amount)}` : "청구액 미정"} · ${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}${s.billing.surcharge ? ` · ${esc(s.billing.surcharge.label)} +${Math.round(Number(s.billing.surcharge.rate) * 100)}%` : ""}`
     : "";
   const isDone = s.status === "완료";
   const canToggle = canEdit && (s.status === "예정" || s.status === "완료");

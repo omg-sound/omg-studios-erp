@@ -14,7 +14,7 @@
 const { db } = require("../db");
 const { todayYmd, isValidYmd, cleanTime, timeToMin, minutesBetween, calendarMonthCells } = require("../lib/date");
 const { parseMoney } = require("../lib/forms");
-const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES, SESSION_SEGMENT_KINDS, normalizeSegmentKind } = require("../config");
+const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES, SESSION_SEGMENT_KINDS } = require("../config");
 const { getProjectForUser } = require("./projects"); // 무순환
 const { resolvePersonByName } = require("./parties"); // 무순환 — 디렉터=parties.id(사람)
 const { listRooms } = require("./rooms"); // 무순환
@@ -94,13 +94,20 @@ function sessionFields(input) {
   // 종일 다일 일정: 종료 날짜(end_date)가 시작보다 뒤일 때만 저장(단일일이면 NULL). 시간 세션은 end_date 무시(야간=end<start로 표현).
   const endDateRaw = String(input.end_date || "").trim();
   const endDate = allDay && isValidYmd(endDateRaw) && endDateRaw > date ? endDateRaw : null;
+  // 촬영 구간(2026-07-26): 반입·설치/촬영/철수가 들어오면 **점유 시간(start~end)을 구간 span에서 파생**한다.
+  // 사람이 같은 시간을 두 번 입력하지 않게 하고, 구간 사이에 빈 시간이 있어도 그 방은 계속 잡혀 있으므로
+  // 점유는 아우르는 한 덩어리다(요금 시간만 구간 합산 — sessionBillableMinutes).
+  const segs = allDay ? null : segmentsFromInput(input);
+  const span = segs && segs.length ? segmentsSpan(segs) : null;
   // 직접입력(그리드 밖 시간)이 있으면 우선, 없으면 그리드에서 고른 시작.
-  const start = allDay ? null : cleanTime(input.start_time_custom) || cleanTime(input.start_time);
+  const start = allDay ? null : span ? span.start : cleanTime(input.start_time_custom) || cleanTime(input.start_time);
   const rateItemId = Number(input.rate_item_id) || null;
   const roomId = validRoomId(input.room_id); // 활성 룸 검증 — 없거나 삭제된 id는 null
   const { isExternalRoom } = require("./rooms"); // 무순환(rooms는 sessions를 require하지 않음)
   // 외부 장소(is_external)일 때만 주소(location) 저장 — 스튜디오 룸이면 null(기본 장소 사용).
   const location = roomId && isExternalRoom(roomId) ? String(input.location || "").trim() || null : null;
+  // 할증 key는 마스터에 실제로 있고 활성인 것만 받는다(폼이 보낸 문자열을 그대로 믿지 않는다).
+  const surchargeKey = input.surcharge_key && getSurcharge(input.surcharge_key) ? String(input.surcharge_key) : null;
   // 담당 디렉터·담당 엔지니어는 다대다(session_directors·session_engineers)로 별도 처리 — 여기선 레거시 컬럼 자리만 null(caller가 첫 명으로 채움).
   return {
     session_type: normalizeSessionType(input.session_type),
@@ -108,7 +115,7 @@ function sessionFields(input) {
     all_day: allDay ? 1 : 0,
     end_date: endDate,
     start_time: start,
-    end_time: allDay ? null : resolveEndTime(input, start),
+    end_time: allDay ? null : span ? span.end : resolveEndTime(input, start),
     booker_name: String(input.booker_name || "").trim() || null,
     engineer_name: null,
     status: normalizeSessionStatus(input.status),
@@ -116,6 +123,10 @@ function sessionFields(input) {
     room_id: roomId,
     location,
     director_party_id: null,
+    // 할증(2026-07-26) — 체크박스 + 사유 메모. 자동 판정은 하지 않는다(주관적).
+    // 체크가 없으면 사유도 지운다(할증이 없는데 사유만 남으면 왜 남았는지 알 수 없다).
+    surcharge_key: surchargeKey,
+    surcharge_memo: surchargeKey ? String(input.surcharge_memo || "").trim() || null : null,
     memo: String(input.memo || "").trim() || null,
   };
 }
@@ -295,53 +306,42 @@ function listSessionSegments(sessionId) {
 }
 
 /**
- * 세션 구간 통째 교체(폼 제출 = 그 세션 구간의 전체 상태). 시작·종료가 둘 다 있는 구간만 저장한다.
- * 구간을 하나도 안 넣으면 행을 전부 지운다(= 구간 없는 일반 세션으로 되돌리기).
+ * 세션 구간 통째 교체(폼 제출 = 그 세션 구간의 전체 상태). 빈 배열이면 행을 전부 지운다
+ * (= 구간 없는 일반 세션으로 되돌리기). `segments`는 `segmentsFromInput`이 정제한 배열을 받는다.
  *
- * 저장 순서는 config.SESSION_SEGMENT_KINDS(반입·설치 → 촬영 → 철수) 고정 — 사람이 칸을 건너뛰어 입력해도
- * 표시·합산 순서가 흔들리지 않는다.
+ * **트랜잭션은 열지 않는다** — setSessionDirectors·setSessionEngineers와 같은 규약으로,
+ * createSession/updateSession이 세션 행과 함께 한 트랜잭션으로 감싼다(반쪽 저장 방지).
  */
 function setSessionSegments(sessionId, segments) {
   const sid = Number(sessionId);
   if (!sid) return [];
   const d = db();
-  const rows = [];
-  for (const kind of SESSION_SEGMENT_KINDS) {
-    const seg = (segments || []).find((s) => s && normalizeSegmentKind(s.kind) === kind && s.kind === kind);
-    if (!seg) continue;
-    const start = cleanTime(seg.start_time);
-    const end = cleanTime(seg.end_time);
-    if (!start || !end) continue; // 한쪽만 채운 구간은 무시(부분 입력 중일 수 있다)
-    rows.push({ kind, start, end });
-  }
-  d.exec("BEGIN IMMEDIATE;");
-  try {
-    d.prepare("DELETE FROM session_segments WHERE session_id = ?").run(sid);
-    const ins = d.prepare("INSERT INTO session_segments (session_id, kind, start_time, end_time, sort_order) VALUES (?, ?, ?, ?, ?)");
-    rows.forEach((r, i) => ins.run(sid, r.kind, r.start, r.end, i * 10));
-    d.exec("COMMIT;");
-  } catch (e) {
-    d.exec("ROLLBACK;");
-    throw e;
-  }
+  d.prepare("DELETE FROM session_segments WHERE session_id = ?").run(sid);
+  const ins = d.prepare("INSERT INTO session_segments (session_id, kind, start_time, end_time, sort_order) VALUES (?, ?, ?, ?, ?)");
+  (segments || []).forEach((r, i) => ins.run(sid, r.kind, r.start_time, r.end_time, i * 10));
   return listSessionSegments(sid);
 }
 
 /**
- * 폼 입력(구간 배열) → setSessionSegments 인자. 이름 규칙: `seg_<kind>_start` / `seg_<kind>_end`.
- * 구간 입력이 아예 없으면 null을 돌려 **호출부가 구간을 건드리지 않게** 한다(구간을 지원하지 않는
- * 폼·API가 저장할 때 기존 구간이 조용히 사라지는 것을 막는다).
+ * 폼 입력 → 유효 구간 배열. 이름 규칙: `seg_<kind>_start` / `seg_<kind>_end`.
+ * 순서는 config.SESSION_SEGMENT_KINDS(반입·설치 → 촬영 → 철수) 고정 — 사람이 칸을 건너뛰어 입력해도
+ * 표시·합산 순서가 흔들리지 않는다. 시작·종료가 둘 다 있는 구간만 담는다(한쪽만 채운 칸은 입력 중일 수 있다).
+ *
+ * 구간 필드가 요청에 **아예 없으면 null**을 돌려 호출부가 구간을 건드리지 않게 한다 —
+ * 구간을 모르는 폼·API가 저장할 때 기존 구간이 조용히 사라지는 것을 막는다.
  */
 function segmentsFromInput(input = {}) {
-  let any = false;
+  let present = false;
   const out = [];
   for (const kind of SESSION_SEGMENT_KINDS) {
-    const start = input[`seg_${kind}_start`];
-    const end = input[`seg_${kind}_end`];
-    if (start != null || end != null) any = true;
-    out.push({ kind, start_time: start, end_time: end });
+    const rawStart = input[`seg_${kind}_start`];
+    const rawEnd = input[`seg_${kind}_end`];
+    if (rawStart != null || rawEnd != null) present = true;
+    const start = cleanTime(rawStart);
+    const end = cleanTime(rawEnd);
+    if (start && end) out.push({ kind, start_time: start, end_time: end });
   }
-  return any ? out : null;
+  return present ? out : null;
 }
 
 /** 구간의 시작~종료 span('HH:MM' 쌍). 구간이 없으면 null. 세션의 점유 시간(캘린더·겹침)을 구간에서 파생할 때 쓴다. */
@@ -535,6 +535,7 @@ function createSession(user, projectId, input = {}) {
   const project = getProjectForUser(user, projectId);
   if (!project) return null;
   const f = sessionFields(input);
+  const segments = f.all_day ? [] : segmentsFromInput(input); // 종일은 시간이 없어 구간도 없다(있으면 지운다)
   const directorIds = resolveDirectorIds(input);
   f.director_party_id = directorIds[0] || null; // 첫 디렉터(party id)
   const engineerAssignments = resolveEngineerAssignments(input);
@@ -548,13 +549,14 @@ function createSession(user, projectId, input = {}) {
   try {
     const info = d
       .prepare(
-        `INSERT INTO sessions (project_id, session_type, session_date, all_day, end_date, start_time, end_time, booker_name, engineer_name, status, rate_item_id, room_id, location, director_party_id, memo)
-         VALUES (@project_id, @session_type, @session_date, @all_day, @end_date, @start_time, @end_time, @booker_name, @engineer_name, @status, @rate_item_id, @room_id, @location, @director_party_id, @memo)`
+        `INSERT INTO sessions (project_id, session_type, session_date, all_day, end_date, start_time, end_time, booker_name, engineer_name, status, rate_item_id, room_id, location, director_party_id, surcharge_key, surcharge_memo, memo)
+         VALUES (@project_id, @session_type, @session_date, @all_day, @end_date, @start_time, @end_time, @booker_name, @engineer_name, @status, @rate_item_id, @room_id, @location, @director_party_id, @surcharge_key, @surcharge_memo, @memo)`
       )
       .run({ project_id: project.id, ...f });
     newId = info.lastInsertRowid;
     setSessionDirectors(newId, directorIds); // 다대다 디렉터 저장
     setSessionEngineers(newId, engineerAssignments); // 다대다 엔지니어 저장(+ 외주 지급단가)
+    if (segments) setSessionSegments(newId, segments); // 촬영 구간 — 폼에 구간 칸이 없으면 null이라 건드리지 않는다
     d.exec("COMMIT;");
   } catch (e) {
     d.exec("ROLLBACK;");
@@ -569,6 +571,7 @@ function updateSession(user, sessionId, input = {}) {
   if (!s) return null;
   if (isSessionInvoiced(s.id)) throw new Error("SESSION_INVOICED");
   const f = sessionFields(input);
+  const segments = f.all_day ? [] : segmentsFromInput(input); // 종일은 시간이 없어 구간도 없다(있으면 지운다)
   const directorIds = resolveDirectorIds(input);
   f.director_party_id = directorIds[0] || null; // 첫 디렉터(party id)
   const engineerAssignments = resolveEngineerAssignments(input);
@@ -583,11 +586,13 @@ function updateSession(user, sessionId, input = {}) {
       .prepare(
         `UPDATE sessions SET session_type=@session_type, session_date=@session_date, all_day=@all_day, end_date=@end_date, start_time=@start_time,
          end_time=@end_time, booker_name=@booker_name, engineer_name=@engineer_name, status=@status,
-         rate_item_id=@rate_item_id, room_id=@room_id, location=@location, director_party_id=@director_party_id, memo=@memo WHERE id=@id`
+         rate_item_id=@rate_item_id, room_id=@room_id, location=@location, director_party_id=@director_party_id,
+         surcharge_key=@surcharge_key, surcharge_memo=@surcharge_memo, memo=@memo WHERE id=@id`
       )
       .run({ id: s.id, ...f });
     setSessionDirectors(s.id, directorIds); // 다대다 디렉터 교체
     setSessionEngineers(s.id, engineerAssignments); // 다대다 엔지니어 교체(+ 외주 지급단가, worker_paid 보존)
+    if (segments) setSessionSegments(s.id, segments); // 촬영 구간 교체(구간 칸이 없는 요청은 기존 구간 보존)
     d.exec("COMMIT;");
   } catch (e) {
     d.exec("ROLLBACK;");

@@ -610,6 +610,12 @@ function sortCellValue(cell) {
   var roomSel = form.querySelector('select[name="room_id"]');
   var externalLoc = form.querySelector("[data-external-loc]"); // 외부 장소 주소 입력(장소=외부일 때만 노출)
   var showWhenRec = form.querySelectorAll('[data-show-when="rec"]');
+  // 세션 종류별 노출/숨김(2026-07-26 촬영 구간) — data-when-type="촬영"에 해당하면
+  // data-show-when-type 요소는 보이고 data-hide-when-type 요소는 숨는다(반대로도).
+  var showWhenType = form.querySelectorAll("[data-show-when-type]");
+  var hideWhenType = form.querySelectorAll("[data-hide-when-type]");
+  var segBlock = form.querySelector("[data-segments]"); // 촬영 구간(반입·설치/촬영/철수)
+  var segTimes = segBlock ? segBlock.querySelectorAll("[data-seg-time]") : []; // 보이는 입력(DOM 순서 = 시작,종료 × 3구간)
   var conflictWarn = form.querySelector("[data-conflict-warn]");
   var overrideField = form.querySelector("[data-override-conflict]");
   var SLIDER_MAX = slider ? parseInt(slider.max, 10) || 960 : 960;
@@ -687,10 +693,34 @@ function sortCellValue(cell) {
     var h = parseInt(p[0], 10), m = parseInt(p[1], 10);
     return isNaN(h) || isNaN(m) ? null : h * 60 + m;
   }
+  // 촬영 구간이 보이는 상태면 점유 시간을 **구간 span**에서 계산한다(서버 sessionFields와 같은 규칙).
+  // 이걸 안 하면 겹침 경고가 숨겨진 시작/소요 칸의 옛 값을 보게 되고, 그 순간 '경고 조건 ≡ 차단 조건'
+  // 불변식이 깨진다(경고에 길들여진 사용자가 승인을 눌러 진짜 이중 예약이 통과하던 2026-07-23 결함과 같은 클래스).
+  function segSpanMin() {
+    if (!segBlock || segBlock.hidden || !segTimes.length) return null;
+    var first = null, last = null, cursor = null;
+    for (var i = 0; i < segTimes.length; i += 2) {
+      var st = toMin(segTimes[i].value), en = toMin(segTimes[i + 1] ? segTimes[i + 1].value : "");
+      if (st == null || en == null) continue;
+      if (first == null) { first = st; cursor = st; last = st; }
+      while (st < cursor) st += 1440; // 앞 구간보다 이르면 다음 날로
+      while (en <= st) en += 1440;
+      cursor = st;
+      if (en > last) last = en;
+    }
+    return first == null ? null : { start: first, end: last };
+  }
   // 선택한 시작+소요가 그 룸의 점유 구간과 겹치면 그 구간을 반환(없으면 null).
   // busy = 서버 busySessionRanges 결과([{start,end,label}] — 기준일 자정 절대 분축, 전날 야간분은 start 음수).
   // 서버의 겹침 차단과 같은 데이터·같은 반열린 비교라 경고와 차단이 어긋나지 않는다(2026-07-23).
   function overlapDetected() {
+    var span = segSpanMin();
+    if (span) {
+      for (var k = 0; k < busy.length; k++) {
+        if (span.start < busy[k].end && busy[k].start < span.end) return busy[k];
+      }
+      return null;
+    }
     var sMin = toMin(currentStart());
     if (sMin == null) return null;
     var dur = durationMinutes();
@@ -724,6 +754,17 @@ function sortCellValue(cell) {
     swapRateOptions();
     var isRec = isRecType();
     Array.prototype.forEach.call(showWhenRec, function (el) { el.hidden = !isRec; });
+    syncTypeScoped();
+  }
+  // 세션 종류가 data-when-type 목록에 들면 show 요소를 켜고 hide 요소를 끈다(촬영 = 구간 입력 ↔ 시작·종료+소요).
+  function syncTypeScoped() {
+    var cur = sessionTypeSel ? sessionTypeSel.value : "";
+    var match = function (el) {
+      var raw = el.getAttribute("data-when-type") || "";
+      return raw.split(",").indexOf(cur) !== -1;
+    };
+    Array.prototype.forEach.call(showWhenType, function (el) { el.hidden = !match(el); });
+    Array.prototype.forEach.call(hideWhenType, function (el) { el.hidden = match(el); });
   }
   // 1Pro~4Pro 프리셋: 녹음 단가 기준시간이 있으면 그걸, 없으면 스튜디오 기본 블록(proDefault)을 기준으로 항상 활성.
   // positionTicks도 같은 폴백으로 위치를 잡으므로 일관. 세션 종류·룸 예약과 무관하게 프리셋 클릭 가능(사용자 요청).
@@ -798,6 +839,8 @@ function sortCellValue(cell) {
     var opt = roomSel.options[roomSel.selectedIndex];
     externalLoc.hidden = !(opt && opt.getAttribute("data-external") === "1");
   }
+  // 구간 시각을 고치면 점유 span이 바뀌므로 경고를 다시 판정한다(hidden 값은 app.js가 세팅하므로 input으로 잡는다).
+  if (segBlock) segBlock.addEventListener("input", function () { updateConflictWarn(); });
   if (roomSel) roomSel.addEventListener("change", syncExternalLoc);
   syncExternalLoc();
   if (dateInput) dateInput.addEventListener("change", function () { refreshAvailability(); updatePreview(); });
@@ -889,6 +932,9 @@ function sortCellValue(cell) {
       else if (e.key === "Enter" && !pop.classList.contains("hidden")) { e.preventDefault(); closePop(); } // 목록 열린 채 Enter=닫기(폼 오제출 방지)
     });
   });
+  // 촬영 구간 시각도 같은 처리를 붙인다 — **필수**: 보이는 입력은 nameless라 attachTimeFormat의
+  // syncTimeHidden이 없으면 제출용 hidden이 비어 구간이 저장되지 않는다(콜론 자동 포맷도 함께 얻는다).
+  Array.prototype.forEach.call(segTimes, function (el) { attachTimeFormat(el); });
   attachTimeFormat(startInput); // 시작 변경 → 소요 유지, 종료 자동 재계산(updatePreview)
   // 종료 입력 → 소요 역산(자정 넘김 = 종료<시작이면 +24h). 슬라이더·직접입력과 양방향 동기.
   attachTimeFormat(endInput, function () {

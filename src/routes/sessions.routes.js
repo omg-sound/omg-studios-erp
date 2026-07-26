@@ -24,10 +24,11 @@ const {
   sessionAttendeeEmails,
   listSessionDirectors,
   listSessionEngineers,
+  listSessionSegments,
   contactOptions,
   partyOptions,
 } = require("../data");
-const { config, RENTAL_SESSION_TYPES } = require("../config");
+const { config, RENTAL_SESSION_TYPES, SESSION_SEGMENT_LABELS } = require("../config");
 const { layout, pageHeader, esc, flashBanner, errorPage, emptyState, tabBar, searchBox, personLabel, personComboOptionsScript, personComboCompanyScript } = require("../views");
 const { sessionProjectCard, monthCalendar, sessionCardModal } = require("../views.sessions");
 const { safePath } = require("../lib/nav");
@@ -63,9 +64,16 @@ function eventInputForSession(session, project) {
   const directors = session.id ? listSessionDirectors(session.id).map((d) => personLabel(d.name, d.activity_name)).filter(Boolean) : [];
   // 담당 엔지니어(다대다, 2026-07-05) — 배정된 전원을 콤마로 병기(레거시 engineer_name은 첫 명뿐이라 여러 명일 때 누락됨).
   const engineers = session.id ? listSessionEngineers(session.id).map((e) => e.name).filter(Boolean) : [];
+  // 촬영 구간(2026-07-26): 일정은 **하나**(반입 시작 ~ 철수 종료 전체 점유 — 그 사이 방을 계속 쓰므로)이고,
+  // 구간 내역은 설명에 적는다. 일정을 3개로 쪼개면 gcal_event_id 추적·취소·삭제 경로가 셋으로 늘고
+  // 구간 사이 공백이 '예약 가능'으로 보인다(사용자 결정).
+  const segments = session.id
+    ? listSessionSegments(session.id).map((g) => `${SESSION_SEGMENT_LABELS[g.kind] || g.kind} ${g.start_time}–${g.end_time}`)
+    : [];
   const description = [
     project.title ? `프로젝트: ${project.title}` : "", // 맨 앞에 프로젝트명(2026-07-05 사용자 요청 — 캘린더 공유 시 식별용)
     session.session_type ? `종류: ${sessionTypeLabel(session)}` : "",
+    segments.length ? `구간: ${segments.join(" · ")}` : "",
     session.booker_name ? `예약: ${session.booker_name}` : "",
     engineers.length ? `엔지니어: ${engineers.join(", ")}` : "",
     directors.length ? `디렉터: ${directors.join(", ")}` : "",

@@ -1805,3 +1805,97 @@ test("제안 칩 클릭: 대상 입력칸에 값을 채우고 change를 발화�
   assert.equal(input.value, "창고", "칩 클릭 시 대상 입력칸에 값이 채워진다");
   assert.ok(changeFired, "change 이벤트가 발화되어야 dirty-form 감시가 반응한다(함정 #23)");
 });
+
+// ── 촬영 3구간(2026-07-26) — 종류에 따라 구간 입력 ↔ 시작·종료+소요를 갈아 끼운다 ──
+// 구간이 보이는 동안 겹침 경고는 **구간 span**을 봐야 한다. 숨겨진 시작·소요 칸의 옛 값을 보면
+// 경고와 서버 차단이 어긋나고(경고≡차단 불변식 위반) 거짓 경고에 길들여진 승인이 진짜 이중 예약을 통과시킨다.
+
+/** 세션 폼(촬영 구간 포함) 마운트 — 단가 항목에 촬영 분류가 있어야 종류 스왑이 의미 있다. */
+function mountFilmingForm(busy) {
+  const rooms = [{ id: 1, name: "Studio A", is_external: 0 }];
+  const rateItems = [
+    { id: 1, name: "솔로 녹음", category: "스튜디오 녹음", base_minutes: 210, base_price: 300000, extra_minutes: 60, extra_price: 100000 },
+    { id: 2, name: "기본 패키지", category: "스튜디오 촬영", base_minutes: 600, base_price: 1000000, extra_minutes: 60, extra_price: 100000 },
+  ];
+  const html = `<form data-session-form>${sessionBookingFields({ session_date: "2026-03-05", session_type: "녹음" }, [], rateItems, rooms, "")}<input type="hidden" data-override-conflict name="override_conflict" /></form>`;
+  return mountDom(html, {
+    fetchImpl: (url) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(String(url).indexOf("/sessions/availability") >= 0 ? { date: "2026-03-05", busy } : {}) }),
+  });
+}
+
+/** 세션 종류 변경(app.js가 종류별 노출을 다시 계산한다). */
+function setType(win, doc, type) {
+  const sel = doc.querySelector('select[name="session_type"]');
+  sel.value = type;
+  fire(win, sel, "change");
+}
+
+/** 구간 시각 타이핑(보이는 입력 → app.js가 hidden 동기). */
+function setSeg(win, doc, kind, which, hhmm) {
+  const el = doc.querySelector(`[aria-label^="${kind}"][aria-label$="${which}"]`);
+  el.value = hhmm;
+  fire(win, el, "input");
+}
+
+test("세션 폼: 촬영을 고르면 구간 입력이 나오고 시작·종료+소요는 숨는다", async () => {
+  const { win, doc } = mountFilmingForm([]);
+  await tick();
+  const seg = doc.querySelector("[data-segments]");
+  const durWrap = doc.querySelector("[data-duration-wrap]");
+  assert.equal(seg.hidden, true, "녹음일 때는 구간 없음");
+  assert.equal(durWrap.hidden, false);
+  setType(win, doc, "촬영");
+  assert.equal(seg.hidden, false, "촬영이면 구간 입력");
+  assert.equal(durWrap.hidden, true, "같은 시간을 두 번 입력하게 두지 않는다");
+  setType(win, doc, "녹음");
+  assert.equal(seg.hidden, true, "되돌리면 다시 숨는다");
+  assert.equal(durWrap.hidden, false);
+});
+
+test("세션 폼: 구간 시각은 제출용 hidden에 동기된다(보이는 입력은 nameless)", async () => {
+  const { win, doc } = mountFilmingForm([]);
+  await tick();
+  setType(win, doc, "촬영");
+  setSeg(win, doc, "반입·설치", "시작", "1000");
+  const hidden = doc.querySelector('input[name="seg_setup_start"]');
+  assert.equal(hidden.value, "10:00", "콜론 자동 포맷 + hidden 동기(안 되면 구간이 저장되지 않는다)");
+});
+
+test("세션 폼 겹침 경고: 촬영 구간은 span(반입 시작~철수 종료)으로 판정한다", async () => {
+  const { win, doc } = mountFilmingForm([{ start: 780, end: 840, label: "Studio A 13:00–14:00 · 다른 세션" }]);
+  await tick();
+  const warn = doc.querySelector("[data-conflict-warn]");
+  setType(win, doc, "촬영");
+  setSeg(win, doc, "반입·설치", "시작", "10:00");
+  setSeg(win, doc, "반입·설치", "종료", "12:00");
+  setSeg(win, doc, "촬영", "시작", "14:00"); // 12–14시는 공백이지만 점유는 이어진다
+  setSeg(win, doc, "촬영", "종료", "19:00");
+  assert.equal(warn.hidden, false, "13:00–14:00은 구간 사이 공백이지만 점유 span(10–19시)에 든다");
+  assert.match(warn.textContent, /다른 세션/);
+});
+
+test("세션 폼 겹침 경고: 구간 span이 점유와 안 겹치면 경고 없음", async () => {
+  const { win, doc } = mountFilmingForm([{ start: 1260, end: 1380, label: "Studio A 21:00–23:00 · 야간" }]);
+  await tick();
+  const warn = doc.querySelector("[data-conflict-warn]");
+  setType(win, doc, "촬영");
+  setSeg(win, doc, "반입·설치", "시작", "10:00");
+  setSeg(win, doc, "반입·설치", "종료", "12:00");
+  setSeg(win, doc, "촬영", "시작", "12:00");
+  setSeg(win, doc, "촬영", "종료", "19:00");
+  setSeg(win, doc, "철수", "시작", "19:00");
+  setSeg(win, doc, "철수", "종료", "20:00");
+  assert.equal(warn.hidden, true, "10:00–20:00은 21:00–23:00과 안 겹친다");
+});
+
+test("세션 폼: 미장센 할증은 촬영에서만 보인다(적용 대상 kind = 마스터가 정한다)", async () => {
+  const { win, doc } = mountFilmingForm([]);
+  await tick();
+  const box = doc.querySelector("[data-surcharge-check]");
+  assert.ok(box, "할증 체크박스 렌더");
+  const block = box.closest("[data-show-when-type]");
+  assert.equal(block.hidden, true, "녹음에는 미장센 할증이 없다");
+  setType(win, doc, "촬영");
+  assert.equal(block.hidden, false);
+});
