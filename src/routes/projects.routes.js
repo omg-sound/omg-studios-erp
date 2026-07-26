@@ -659,6 +659,7 @@ router.post("/tasks/:taskId/delete", requireEditor, (req, res) => {
 });
 
 /** req.body에서 `${prefix}_<id>` 금액 필드를 {id: 금액} 맵으로 추출(청구 폼에서 작업·세션별로 입력/조정한 금액). */
+// `<prefix>_<id>` 형태 폼 필드를 { id: 값 } 맵으로. 금액·조정 사유 모두 같은 이름 규칙을 쓴다.
 function extractAmountMap(body, prefix) {
   const out = {};
   const re = new RegExp(`^${prefix}_(\\d+)$`);
@@ -684,6 +685,9 @@ router.post("/:id/invoices/from-tasks", requireBilling, (req, res) => {
       vatIncluded: req.body.vat_included != null, // 부가세 포함 체크박스(기본 체크) — 해제 시 미전송 → false(현금 거래)
       taskAmounts: extractAmountMap(req.body, "task_amount"), // 금액은 청구 시점 확정 — 작업별 입력/조정 금액
       sessionAmounts: extractAmountMap(req.body, "session_amount"), // 녹음 세션도 작업처럼 금액 수정 가능
+      // 금액을 산정치와 다르게 조정했을 때의 사유(2026-07-26) — 청구 근거로 스냅샷되고 원본 행에도 남는다.
+      taskMemos: extractAmountMap(req.body, "task_billing_memo"),
+      sessionMemos: extractAmountMap(req.body, "session_billing_memo"),
       confirmZero: req.body.confirm_zero_amount === "1", // 0원 항목 확인 후 청구(폼이 window.confirm 후 세팅)
     });
     if (!inv) return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));

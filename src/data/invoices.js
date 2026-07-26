@@ -284,7 +284,7 @@ function invoiceAmountsFromSupply(supply, discount, vatIncluded = true) {
  * 청구 초안 계산(읽기 전용, 쓰기 없음) — 청구서 생성과 미리보기 PDF가 공유.
  * 선택 작업/세션 + 폼 입력 금액 → 라인아이템·공급가·할인·VAT·총액·청구처 계산. 반환: null(권한 없음) 또는 draft 객체.
  */
-function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, issueDate, dueDate, title, discount, discountPct, vatIncluded = true, taskAmounts = {}, sessionAmounts = {} } = {}) {
+function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, issueDate, dueDate, title, discount, discountPct, vatIncluded = true, taskAmounts = {}, sessionAmounts = {}, taskMemos = {}, sessionMemos = {} } = {}) {
   const { sessionRateAmount } = require("../data"); // sessions와 상호의존 → 지연 require
   const project = getProjectForUser(user, projectId);
   if (!project || !canBill(user)) return null;
@@ -362,7 +362,11 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
   for (const t of tasks) {
     // item_date: created_at은 UTC라 kstYmd로 KST 달력 날짜를 쓴다 — 세션 라인(session_date)과 같은 기준이라야
     // 한 청구서 안에서 작업·세션 라인이 하루 어긋나지 않는다(2026-07-20 메인터넌스).
-    items.push({ task_id: t.id, session_id: null, track_title: t.track_title, task_type: t.task_type, description: `${t.track_title} - ${taskTypeLabel(t.task_type)}`, quantity: t.quantity, unit_price: t.unit_price, amount: t.total_price, item_date: kstYmd(t.created_at) || null });
+    // 조정 사유가 있으면 품목명에 덧붙인다(청구서에서 '왜 이 금액인지' 읽히게) — 세션 라인과 같은 규칙.
+    const memoIn = taskMemos[t.id] != null ? taskMemos[t.id] : taskMemos[String(t.id)];
+    const reason = String(memoIn != null ? memoIn : t.billing_memo || "").trim();
+    const desc = [`${t.track_title} - ${taskTypeLabel(t.task_type)}`, reason].filter(Boolean).join(" · ");
+    items.push({ task_id: t.id, session_id: null, track_title: t.track_title, task_type: t.task_type, description: desc, quantity: t.quantity, unit_price: t.unit_price, amount: t.total_price, item_date: kstYmd(t.created_at) || null });
   }
   for (const { session, calc, amount } of billSessions) {
     // 형식 = "7월 8일 아티스트명 보컬녹음"(2026-07-08 사용자 요청 — '녹음 세션' 접두·소요시간 제거, 날짜·아티스트·단가 항목명만).
@@ -371,8 +375,11 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
     // 근거를 항목별로 분리 표시(2026-07-26 사용자 지시): 기본가 / 초과 N시간 / 할증을 각각 한 라인으로.
     // 폼에서 금액을 조정했으면(입력값 ≠ 산정치) 쪼개지 않는다 — 조정된 총액을 되쪼개면 거짓 근거가 된다.
     const adjusted = amount !== calc.amount || calc.fixed;
+    // 조정 사유 = 이번 폼 입력 우선, 없으면 세션에 남아 있던 사유(즉시 저장분).
+    const memoIn = sessionMemos[session.id] != null ? sessionMemos[session.id] : sessionMemos[String(session.id)];
+    const reason = String(memoIn != null ? memoIn : session.billing_memo || "").trim();
     const lines = adjusted
-      ? [{ label: calc.item.name, amount, detail: session.billing_memo || "조정 금액", quantity: 1, unit_price: amount }]
+      ? [{ label: calc.item.name, amount, detail: reason || "조정 금액", quantity: 1, unit_price: amount }]
       : calc.lines;
     lines.forEach((ln, i) => {
       // 첫 라인만 기존 형식(날짜 · 아티스트 · 항목명)을 유지해 목록·PDF·매출 집계가 종전대로 읽힌다.
@@ -437,10 +444,27 @@ function createInvoiceFromTasks(user, opts = {}) {
     // 청구 시 작업 잠금·확정 금액 반영 + 상태를 '완료'로(청구=완료 처리; 미완료 선택 시 폼에서 확인받음).
     const markTask = d.prepare("UPDATE track_tasks SET is_invoiced = 1, invoice_id = ?, unit_price = ?, total_price = ?, status = 'Completed' WHERE id = ?");
     const markSession = d.prepare("UPDATE sessions SET status = '완료' WHERE id = ? AND status <> '취소'"); // 청구 시 녹음 세션도 완료 처리(예정→완료)
+    // 조정 사유(2026-07-26)는 청구 라인 근거로 들어가는 것과 별개로 **원본 행에도 남긴다** —
+    // 그래야 나중에 세션·작업을 열었을 때 왜 그 금액이었는지 알 수 있다(청구서만 보면 라인 텍스트뿐).
+    const memoSession = d.prepare("UPDATE sessions SET billing_memo = ? WHERE id = ?");
+    const memoTask = d.prepare("UPDATE track_tasks SET billing_memo = ? WHERE id = ?");
+    const pickMemo = (map, id) => {
+      const v = map[id] != null ? map[id] : map[String(id)];
+      const t = String(v == null ? "" : v).trim();
+      return t || null;
+    };
+    const seen = new Set();
     for (const it of draft.items) {
       insertItem.run(invoiceId, it.task_id, it.session_id, it.track_title, it.task_type, it.description, it.quantity, it.unit_price, it.amount, it.item_date);
       if (it.task_id) markTask.run(invoiceId, it.unit_price, it.amount, it.task_id); // 청구 시 확정 금액을 작업에도 반영
       if (it.session_id) markSession.run(it.session_id); // 청구=완료(예정 세션도 완료로)
+      // 라인이 여러 개(기본가·초과·할증)여도 원본 행 갱신은 한 번만.
+      const key = it.task_id ? `t${it.task_id}` : it.session_id ? `s${it.session_id}` : "";
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        if (it.task_id) { const m = pickMemo(opts.taskMemos || {}, it.task_id); if (m) memoTask.run(m, it.task_id); }
+        if (it.session_id) { const m = pickMemo(opts.sessionMemos || {}, it.session_id); if (m) memoSession.run(m, it.session_id); }
+      }
     }
     d.exec("COMMIT;");
     return getInvoiceForUser(user, invoiceId);

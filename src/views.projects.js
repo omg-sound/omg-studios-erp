@@ -28,6 +28,7 @@ const {
   activeTaskTypes,
   taskTypeLabel,
   taskTypeUnitPrice,
+  taskTypePriceType,
   payerDocMeta,
   peekInvoiceNumber,
   listGroupsForPicker,
@@ -813,6 +814,40 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
     tasks.filter((t) => !t.waived && isDone(t)).reduce((sum, task) => sum + taskAmt(task), 0) +
     sessionRows.filter((s) => !s.waived && s.status === "완료").reduce((sum, s) => sum + (s.billing ? s.billing.amount : 0), 0); // 완료 세션만 기본 집계(예정은 체크 시 합산)
   const tax = Math.round(subtotal * 0.1);
+  /**
+   * 금액칸 렌더(2026-07-26 가격 유형 반영).
+   *  fixed   = 기본가 잠금(readonly) — 초과 시간·할증은 자동 가산되므로 사람이 손댈 값이 없다.
+   *  base    = 기준가를 넣어 주고 위아래로 수정 가능 + 조정 사유 메모.
+   *  minimum = 최소가를 넣어 주고 **상향만**(min 하한) + 조정 사유 메모.
+   *
+   * ⚠️ 잠금은 **산정치가 실제로 정해졌을 때만** 건다(computed > 0). 가격 유형이 fixed라도 카탈로그
+   * 단가가 0인 항목('금액 미정' 정액 세션·단가 미정 작업 종류)은 청구 시 입력해야 하므로 잠그면
+   * 아예 청구할 수 없게 된다. 협의 감액은 청구서 할인(정액/정률) 또는 가격 유형 변경으로 한다.
+   */
+  const amountCell = (name, value, label, priceType, { memoName = "", memo = "" } = {}) => {
+    const amt = Number(value) || 0;
+    const locked = priceType === "fixed" && amt > 0;
+    const minAttr = priceType === "minimum" && amt > 0 ? ` data-line-min="${amt}"` : "";
+    const hint = locked
+      ? `<span class="mt-0.5 block text-right text-xs text-muted">고정 · 초과·할증 자동</span>`
+      : priceType === "minimum"
+        ? `<span class="mt-0.5 block text-right text-xs text-muted">최소가 — 상향만</span>`
+        : priceType === "base"
+          ? `<span class="mt-0.5 block text-right text-xs text-muted">기준가 — 조정 가능</span>`
+          : "";
+    // 조정 사유 메모는 조정이 가능한 유형에만(잠긴 칸에 사유를 물으면 답할 게 없다). 청구 생성 시 근거로 스냅샷된다.
+    const memoField = !locked && memoName
+      ? `<input class="input mt-1 w-full py-1 text-xs" type="text" name="${memoName}" value="${esc(memo || "")}" placeholder="조정 사유(선택)" aria-label="${esc(label)} 조정 사유" />`
+      : "";
+    return `<div class="w-28 shrink-0">
+              <div class="relative">
+                <input class="input py-1 pr-7 text-right text-sm tabular ${locked ? "bg-elevated text-muted" : ""}" type="text" inputmode="numeric" name="${name}" value="${value === "" || value == null ? "" : value}" data-line-input${minAttr} placeholder="0" aria-label="${esc(label)} 금액"${locked ? " readonly" : ""} />
+                <span class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted">원</span>
+              </div>
+              ${hint}
+              ${memoField}
+            </div>`;
+  };
   // 무료 처리된 행 — 체크박스·금액칸 없이 배지 + 되돌리기 버튼만(2026-07-06). formaction으로 같은 폼에서 다른 라우트 제출(중첩 폼 회피).
   const waivedRow = (label, waiveAction) => `
     <div class="${LINE_ROW} opacity-60" data-line-row>
@@ -833,10 +868,7 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
           <label for="task-cb-${task.id}" class="${LINE_LABEL} cursor-pointer font-medium">${esc(task.track_title)} · ${esc(label)}${statusTag}</label>
           <div class="${LINE_CTRL}">
             <button type="submit" formaction="${waiveAction}" formmethod="post" data-waive-btn class="btn-ghost btn-xs shrink-0 whitespace-nowrap text-muted">청구 안 함</button>
-            <div class="relative w-28 shrink-0">
-              <input class="input py-1 pr-7 text-right text-sm tabular" type="text" inputmode="numeric" name="task_amount_${task.id}" value="${amt || ""}" data-line-input placeholder="0" aria-label="${esc(label)} 금액" />
-              <span class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted">원</span>
-            </div>
+            ${amountCell(`task_amount_${task.id}`, amt || "", label, taskTypePriceType(task.task_type), { memoName: `task_billing_memo_${task.id}`, memo: task.billing_memo })}
           </div>
         </div>`;
     })
@@ -873,10 +905,7 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
           </label>
           <div class="${LINE_CTRL}">
             <button type="submit" formaction="${waiveAction}" formmethod="post" data-waive-btn class="btn-ghost btn-xs shrink-0 whitespace-nowrap text-muted">청구 안 함</button>
-            <div class="relative w-28 shrink-0">
-              <input class="input py-1 pr-7 text-right text-sm tabular" type="text" inputmode="numeric" name="session_amount_${s.id}" value="${s.billing.amount == null ? "" : s.billing.amount}" data-line-input placeholder="0" aria-label="${esc(label)} 금액" />
-              <span class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted">원</span>
-            </div>
+            ${amountCell(`session_amount_${s.id}`, s.billing.amount == null ? "" : s.billing.amount, label, s.billing.item.price_type, { memoName: `session_billing_memo_${s.id}`, memo: s.billing_memo })}
           </div>
         </div>`;
     })

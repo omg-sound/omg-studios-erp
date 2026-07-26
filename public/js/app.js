@@ -1262,6 +1262,18 @@ function sortCellValue(cell) {
     inp.addEventListener("input", function () {
       if (parseFloat(pctInput.value) > 0) applyPct(); else updatePreview();
     });
+    // 최소가(minimum) 항목은 그 아래로 못 내린다(2026-07-26) — 타이핑 중에는 막지 않고 칸을 떠날 때 되올린다
+    // (입력 도중 자릿수가 잠깐 작아지는 걸 붙잡으면 숫자를 지울 수조차 없다).
+    var min = parseInt(inp.getAttribute("data-line-min") || "", 10);
+    if (min > 0) {
+      inp.addEventListener("change", function () {
+        var cur = parseInt(String(inp.value).replace(/[^0-9]/g, ""), 10);
+        if (!(cur >= min)) {
+          inp.value = String(min);
+          if (parseFloat(pctInput.value) > 0) applyPct(); else updatePreview();
+        }
+      });
+    }
     // Tab/Shift+Tab = 금액칸끼리 이동(행 DOM 순서상 기본 Tab은 다음 행 체크박스로 가던 것). 처음/마지막은 기본 동작(할인/이전 버튼) 유지.
     inp.addEventListener("keydown", function (e) {
       if (e.isComposing || e.keyCode === 229) return; // 한글 조합 중 무시(함정 #18)

@@ -46,6 +46,11 @@ function taskTypeUnitPrice(key) {
   const r = taskTypeCache().byKey.get(key);
   return (r && r.unit_price) || 0;
 }
+/** key → 가격 유형(fixed|base|minimum, 없으면 fixed). 청구 화면이 금액칸을 잠글지 판정. */
+function taskTypePriceType(key) {
+  const r = taskTypeCache().byKey.get(key);
+  return (r && r.price_type) || "fixed";
+}
 /** 카탈로그에 있는 key면 통과, 없으면 첫 활성 종류로 폴백(없으면 raw 유지). 신규 종류도 정규화 통과. */
 function normalizeTaskTypeDb(key) {
   const k = String(key || "").trim();
@@ -116,6 +121,7 @@ module.exports = {
   activeTaskTypes,
   taskTypeLabel,
   taskTypeUnitPrice,
+  taskTypePriceType,
   normalizeTaskTypeDb, // 내부 정규화용(data.js 로컬 바인딩) — 공개 API 미노출
   createTaskType,
   updateTaskType,
