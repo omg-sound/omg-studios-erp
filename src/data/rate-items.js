@@ -158,28 +158,36 @@ function computeCharge(item, minutes, { surcharge = null } = {}) {
       const unit = item.extra_minutes > 0 ? item.extra_minutes : 60;
       const n = Math.ceil(remainder / unit); // 3시간 31분을 썼으면 1시간 초과다 — 분 단위로 깎아 주지 않는다.
       const unitLabel = unit === 60 ? "시간" : `${durationKo(unit)}`;
-      lines.push({
-        label: "초과 시간",
-        amount: n * item.extra_price,
-        detail: `${durationKo(remainder)} 초과 → ${n}${unitLabel} × ${wonText(item.extra_price)}`,
-        quantity: n,
-        unit_price: item.extra_price,
-      });
+      const extra = n * item.extra_price;
+      // ⚠️ 0원 라인은 만들지 않는다 — 초과 단가가 0인 항목(기준가만 설정)에서 '2시간 × ₩0' 같은 무의미한
+      // 근거가 생기고, 그 0원 라인이 createInvoiceFromTasks의 0원 가드(TASK_AMOUNT_REQUIRED)에 걸려
+      // **발행 자체가 막힌다**(근거를 쪼개기 전에는 한 줄이라 통과했다). 기본가 라인은 0이어도 남긴다 —
+      // '금액 미정'(청구 시 입력) 흐름이 그 라인에 걸려 있다.
+      if (extra > 0) {
+        lines.push({
+          label: "초과 시간",
+          amount: extra,
+          detail: `${durationKo(remainder)} 초과 → ${n}${unitLabel} × ${wonText(item.extra_price)}`,
+          quantity: n,
+          unit_price: item.extra_price,
+        });
+      }
     }
   }
 
   // 할증은 초과분이 아니라 **기본가**에 붙는다(홈페이지와 동일 — 촬영 100만 → 미장센 150만).
   const rate = surcharge && Number(surcharge.rate) > 0 ? Number(surcharge.rate) : 0;
   if (rate > 0) {
-    const baseAmount = lines[0].amount;
-    const amount = Math.round(baseAmount * rate);
-    lines.push({
-      label: (surcharge && surcharge.label) || "할증",
-      amount,
-      detail: `기본가의 ${Math.round(rate * 100)}%`,
-      quantity: 1,
-      unit_price: amount,
-    });
+    const amount = Math.round(lines[0].amount * rate);
+    if (amount > 0) { // 위와 같은 이유 — 기본가가 0이면 할증도 0이라 라인이 의미 없다
+      lines.push({
+        label: (surcharge && surcharge.label) || "할증",
+        amount,
+        detail: `기본가의 ${Math.round(rate * 100)}%`,
+        quantity: 1,
+        unit_price: amount,
+      });
+    }
   }
 
   return { lines, total: lines.reduce((s, l) => s + l.amount, 0) };

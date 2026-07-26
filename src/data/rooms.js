@@ -101,7 +101,9 @@ function moveRoom(id, dir) {
   if (i < 0 || j < 0 || j >= sibs.length) return;
   [sibs[i], sibs[j]] = [sibs[j], sibs[i]];
   const upd = db().prepare("UPDATE rooms SET sort_order = ? WHERE id = ?");
-  // 하위 공간은 상위 바로 뒤에 붙어야 하므로(sort_order 오름차순 한 줄 목록) 상위의 순서를 기준으로 오프셋을 준다.
+  // 하위 공간은 상위 순서를 기준 오프셋으로 뒤에 붙인다(정렬 힌트). 상위를 나중에 움직이면 이 전제가 깨져
+  // 다른 최상위 룸과 sort_order가 겹칠 수 있으나 **표시에는 무해하다** — 관리 화면은 상위→하위로 직접 묶어
+  // 그리고(roomsSection), 세션 폼은 예약 대상(bookable=1)만 보여 하위 공간이 섞이지 않는다.
   const base = cur.parent_id ? (getRoom(cur.parent_id) || { sort_order: 0 }).sort_order : 0;
   sibs.forEach((r, idx) => upd.run(base + (idx + 1) * 10, r.id));
 }

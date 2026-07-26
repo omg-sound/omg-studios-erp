@@ -950,11 +950,12 @@ function sortCellValue(cell) {
   function applyAllDay(on) {
     // 종일이면 시간(콤보)·소요 UI만 숨긴다. 날짜 2개(시작·종료)는 남겨 다일 일정(예: 2/5~2/9)을 지정할 수 있게(사용자 요청).
     Array.prototype.forEach.call(form.querySelectorAll("[data-time-combo]"), function (w) { w.hidden = on; });
+    if (segBlock && on) segBlock.hidden = true; // 종일엔 구간이 성립하지 않는다(서버도 종일이면 구간을 지운다). 해제 시 syncTypeScoped가 종류로 다시 판정.
     if (durationWrap) durationWrap.hidden = on;
     if (durLabel) durLabel.textContent = on ? "종일" : fmtDuration(curDur);
     if (on) updateConflictWarn(); // 시간 없음 → 겹침 경고 해제
   }
-  if (allDay) allDay.addEventListener("change", function () { applyAllDay(allDay.checked); });
+  if (allDay) allDay.addEventListener("change", function () { applyAllDay(allDay.checked); if (!allDay.checked) syncTypeScoped(); });
   // 편집 진입 시 서버가 체크(all_day 세션)해 뒀으면 UI 반영.
   if (allDay && allDay.checked) applyAllDay(true);
   // 겹침이 감지되면 제출 직전 확인 → 승인 시 override_conflict=1로 그대로 등록(서버가 겹침 허용). 취소면 제출 중단.

@@ -119,3 +119,20 @@ test("computeRatePrice는 computeCharge.total과 항상 같다(기존 호출부 
   assert.equal(computeRatePrice(null, 100), 0, "item 없으면 0");
   assert.deepEqual(computeCharge(null, 100), { lines: [], total: 0 });
 });
+
+test("금액 0인 초과·할증 라인은 만들지 않는다(0원 라인이 발행을 막던 회귀)", () => {
+  // 기준가만 있고 초과 단가가 0인 항목(createRateItem은 둘 중 하나만 있으면 통과시킨다).
+  // 근거를 라인으로 쪼개면서 '2시간 × ₩0'이라는 0원 라인이 생겼고, createInvoiceFromTasks의
+  // 0원 가드(TASK_AMOUNT_REQUIRED)가 그걸 잡아 **발행 자체가 막혔다**(쪼개기 전에는 한 줄 30만이라 통과).
+  const noExtra = { name: "기준만 있는 항목", base_minutes: 210, base_price: 300000, extra_minutes: 60, extra_price: 0 };
+  const r = computeCharge(noExtra, 300);
+  assert.deepEqual(labels(r), ["기준만 있는 항목"], "청구할 게 없는 초과 라인은 안 만든다");
+  assert.equal(r.total, 300000);
+  // 할증도 마찬가지 — 기본가가 0이면 할증 금액도 0이라 라인이 의미 없다.
+  const free = { name: "무료 항목", base_minutes: 0, base_price: 0, extra_minutes: 60, extra_price: 0 };
+  const withSur = computeCharge(free, 60, { surcharge: { label: "미장센 할증", rate: 0.5 } });
+  assert.deepEqual(labels(withSur), ["무료 항목"], "0원 할증 라인 없음");
+  // 기본가 라인은 0원이어도 남는다 — '금액 미정'(청구 시 입력) 흐름이 이 라인에 걸려 있다.
+  assert.equal(withSur.lines.length, 1);
+  assert.equal(withSur.lines[0].amount, 0);
+});

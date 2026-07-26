@@ -344,7 +344,10 @@ function segmentsFromInput(input = {}) {
   return present ? out : null;
 }
 
-/** 구간의 시작~종료 span('HH:MM' 쌍). 구간이 없으면 null. 세션의 점유 시간(캘린더·겹침)을 구간에서 파생할 때 쓴다. */
+/**
+ * 구간의 시작~종료 span('HH:MM' 쌍). 구간이 없으면 null. 세션의 **점유 시간**(캘린더·겹침)을 구간에서 파생한다.
+ * 요금 시간은 여기가 아니라 sessionBillableMinutes(구간 합산) — 구간 사이 공백은 점유이되 과금 대상은 아니다.
+ */
 function segmentsSpan(segments) {
   const list = (segments || []).filter((s) => s && s.start_time && s.end_time);
   if (!list.length) return null;
@@ -360,7 +363,7 @@ function segmentsSpan(segments) {
     cursor = st;
     if (en > last) last = en;
   }
-  return { start: list[0].start_time, end: minToTime(last % 1440), minutes: last - base };
+  return { start: list[0].start_time, end: minToTime(last % 1440) };
 }
 
 /** 분(0~1439) → 'HH:MM'. */
