@@ -121,7 +121,7 @@ src/
   db.js                  스키마 · 멱등 마이그레이션 · AES-256-GCM 암호화
   auth.js                JWT 세션 · 권한 술어/미들웨어 · Google OAuth(논스+쿠키 대조) · 화이트리스트
   data.js                데이터 헬퍼(전 직원 전체 열람, 청구는 canInvoice 분기). listRooms/createRoom/deleteRoom. sessionAmountsByProject. 스튜디오 설정은 data/studio.js 재export
-  data/studio.js         스튜디오(공급자) 설정 도메인(분리 착수 1차): getStudioInfo/getStudioLogo/**getStudioHours/setStudioHours/studioStartSlots**/getProMinutes/getDefaultBooker(운영시간·PDF 세금정보·기본값)
+  data/studio.js         스튜디오(공급자) 설정 도메인(분리 착수 1차): getStudioInfo/getStudioLogo/**getStudioHours/setStudioHours**/getProMinutes/getDefaultBooker(운영시간·PDF 세금정보·기본값)
   notify.js              알림 디스패치 — 웹훅(SSRF 방어) + **이메일(dispatchEmail — invoice_issued만, 웹훅과 독립)** · SIGTERM 드레인(fail-safe)
   mailer.js              청구 발행 알림 메일 — 지메일 API(스튜디오 계정 토큰 재사용) · 수신 주소(admin_state) · 청구처·항목·합계 본문(fail-safe)
   views.js               레이아웃 · **사이드바 그룹화**(운영/청구/관리, 권한별 NAV) · flashBanner · tabBar/filterChips/projectTypeBadge/**listGroup/listRow/emptyState** 헬퍼 · **테마 토글**

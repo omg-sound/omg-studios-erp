@@ -2,7 +2,7 @@
 description: 종합 개선점 진단 — 8축 점검·파일:라인 근거·심각도·Top5 (코드 수정 없음)
 ---
 
-당신은 OMG Studios Manager 코드베이스를 점검하는 시니어 코드 감사자입니다.
+당신은 OMG Studios ERP 코드베이스를 점검하는 시니어 코드 감사자입니다.
 목표: 이 레포의 개선점을 "종합적으로" 찾아, 우선순위가 매겨진 리포트를 작성합니다.
 코드는 수정하지 말고 진단 리포트만 작성하세요.
 
@@ -10,13 +10,17 @@ description: 종합 개선점 진단 — 8축 점검·파일:라인 근거·심�
 - 스택: Node ≥20, Express 4 (CommonJS), SQLite(better-sqlite3 / node:sqlite 폴백),
   서버 렌더 HTML(src/views*.js) + 클래식 폼 POST + 최소 JS(public/js/app.js), Tailwind.
 - 인증: Google OAuth + 화이트리스트, 3단계(owner/chief/staff), httpOnly JWT.
-  requireAuth / requireEditor(대표 차단) / requireChief / requireInvoice.
+  requireAuth / requireEditor(치프·스태프·**대표** 편집) / requireStaff(치프·스태프 — 대표 차단) /
+  requireChief / requireBilling(청구서 발행=전원) / requireInvoice(매출·정산=치프·대표).
 - **내부 전용 도구**: 로그인 직원의 전 프로젝트 열람은 의도된 설계(인가 누락 아님).
 - 의도적 설계 — 무조건 지적 금지: better-sqlite3 **동기 API**(소규모 내부도구),
   CSP 인라인 스크립트 0(모든 JS는 app.js), DB CHECK 미사용(config.js 상수가 enum 진실원천),
   돈=정수(원)·날짜="YYYY-MM-DD".
-- 이미 처리된 것 재지적 금지: CLAUDE.md "빠진 함정"·"주요 변경 이력"을 먼저 읽을 것
+- 이미 처리된 것 재지적 금지: CLAUDE.md "빠진 함정"·HISTORY.md를 먼저 읽을 것
   (CSRF 기본거부·OAuth 논스·SSRF 차단·채번 원자화·세션 청구잠금 등은 이미 해결).
+- **의도적 경계(severity=by-design)**: 총계정원장·재고/발주·급여·멀티테넌트, 그리고 세무 심화
+  (발행기한 추적·미수 에이징·기간 마감·대변전표)는 **범위 밖**이다 — 범용 ERP 기준으로 재서
+  '치명'으로 올리지 말 것. CLAUDE.md '제품 정체성'을 먼저 읽는다.
 
 ## 작업 방식
 1. 레포 구조 파악: CLAUDE.md·WORKFLOW.md·package.json·src/ 전체.
@@ -29,9 +33,10 @@ description: 종합 개선점 진단 — 8축 점검·파일:라인 근거·심�
 2. 보안: 인증/인가 우회(미들웨어 빠진 라우트), SQL 인젝션, 입력 검증 누락, 세션/시크릿, XSS(esc 누락)·CSRF, 업로드/경로.
 3. 데이터 무결성: 트랜잭션 경계, 동시 쓰기, 멱등 마이그레이션, FK·CASCADE·SET NULL 정합, 삭제 가드, 스냅샷 일관성.
 4. 성능: N+1 쿼리(반복문 안 쿼리), 누락 인덱스, 큰 결과셋, 불필요한 재조회·렌더링.
-5. 코드 품질/구조: 비대 파일·함수(특히 src/data.js 1459줄·projects.routes.js 890줄), 중복, 네이밍, 죽은 코드, 모듈 분리.
+5. 코드 품질/구조: 비대 파일·함수(views.js·projects.routes.js·app.js), 중복, 네이밍, 죽은 코드, 모듈 분리.
 6. 에러 처리/관측성: 누락 try/catch, 삼켜진 예외, 로깅, 사용자 에러 메시지, fail-safe(알림·외부연동) 검증.
-7. 테스트/CI: 테스트·린트·포맷·CI 전무 — 어디부터 테스트가 가장 가치 있는지(청구 채번·VAT·세션 겹침·권한 매트릭스).
+7. 테스트/CI: 현재 `node:test` 743개(스모크·가드레일 22종·jsdom 상호작용) + CI(Node 20/22 매트릭스)가 있다
+   — '테스트 없음'은 사실이 아니다. 볼 것은 **커버리지 공백**(어느 불변식이 기계 가드 없이 리뷰에만 의존하나).
 8. UX/접근성 + 문서: UI 일관성(공통 헬퍼), 빈/로딩/에러 상태, 모바일(16px)·aria·대비, 문서-코드 불일치.
 
 ## 출력 형식
