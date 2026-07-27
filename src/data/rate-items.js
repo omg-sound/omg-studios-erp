@@ -85,8 +85,10 @@ function updateRateItem(id, input = {}) {
 
 /**
  * 통합 저장(2026-07-27 인라인 편집): body의 `<필드>_<id>` 묶음을 행별로 모아 한 트랜잭션으로 갱신.
- * 행 판별은 DB 기준(rate_name_<id> 존재 시 참여) — 임의 id 주입은 자연 무시. 이름·가격 누락 행은
- * 그 행만 건너뛴다(단건 저장과 같은 의미론). 그 외 오류는 롤백 후 재던짐.
+ * 행 판별은 DB 기준(rate_name_<id> 존재 시 참여) — 임의 id 주입은 자연 무시.
+ * 검증은 2단 구조다 — 이름 입력은 `required`라 정상 브라우저에서는 한 행이라도 비면 제출 자체가 막힌다.
+ * 여기의 이름·가격 누락 skip은 JS-off·직접 제출 등 required를 우회한 경우를 위한 안전망(단건 저장과 같은 의미론).
+ * 그 외 오류는 롤백 후 재던짐.
  */
 function bulkUpdateRateItems(body = {}) {
   const d = db();

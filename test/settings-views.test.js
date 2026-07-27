@@ -66,3 +66,22 @@ test("룸: 인라인 필드 + bulk 폼 + 계층 들여쓰기 유지, 중첩 폼 
     assert.ok(html.includes(`form="${fid}"`) && html.includes(`id="${fid}"`), `액션 폼 짝 ${fid}`);
   }
 });
+
+// ⚠️ 이 파일의 마지막 테스트여야 한다 — 위 두 테스트가 만든 행(+기본 시드)을 전부 지워 진짜 0건 상태를
+// 재현하므로, 뒤에 행을 전제하는 테스트가 오면 깨진다. 파일 정리 후 temp DB 자체가 버려지므로 복구는 불필요.
+test("빈 목록: 단가표·작업 종류·룸이 0건이어도 예외 없이 렌더 + bulk 폼 대신 빈 안내", () => {
+  db().exec("DELETE FROM rate_items; DELETE FROM rooms;");
+  // task_types는 모듈 캐시가 있어 raw DELETE로는 캐시가 무효화되지 않는다 — D.deleteTaskType로 지워야
+  // invalidateTaskTypeCache가 함께 호출돼 listTaskTypes가 실제로 빈 목록을 본다.
+  for (const t of D.listTaskTypes({ includeInactive: true })) D.deleteTaskType(t.id);
+
+  const contentHtml = V.contentTab();
+  assert.ok(contentHtml.includes("등록된 단가 항목이 없습니다."), "단가표 빈 안내(emptyState)");
+  assert.ok(contentHtml.includes("등록된 작업 종류가 없습니다."), "작업 종류 빈 안내(emptyState)");
+  assert.ok(!contentHtml.includes('id="rates-bulk-form"'), "단가표 bulk 폼은 행이 있을 때만 렌더");
+  assert.ok(!contentHtml.includes('id="task-types-bulk-form"'), "작업 종류 bulk 폼은 행이 있을 때만 렌더");
+
+  const roomsHtml = V.roomsSection();
+  assert.ok(roomsHtml.includes("등록된 룸이 없습니다."), "룸 빈 안내(emptyState)");
+  assert.ok(!roomsHtml.includes('id="rooms-bulk-form"'), "룸 bulk 폼은 행이 있을 때만 렌더");
+});

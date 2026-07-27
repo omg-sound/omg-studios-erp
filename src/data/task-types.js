@@ -101,7 +101,11 @@ function deleteTaskType(id) {
   invalidateTaskTypeCache();
 }
 
-/** 통합 저장(2026-07-27 인라인 편집) — sort_order는 현재 값 명시 보존(updateTaskType이 미전송 시 100으로 리셋). */
+/**
+ * 통합 저장(2026-07-27 인라인 편집) — sort_order는 현재 값 명시 보존(updateTaskType이 미전송 시 100으로 리셋).
+ * 검증은 2단 구조: 이름(label) 입력이 `required`라 정상 브라우저에서는 빈 이름 행이 있으면 제출 자체가 막힌다.
+ * 여기의 이름 누락 skip은 required를 우회한 경우(JS-off·직접 제출)를 위한 안전망이다.
+ */
 function bulkUpdateTaskTypes(body = {}) {
   const d = db();
   const rows = d.prepare("SELECT id, sort_order FROM task_types").all();

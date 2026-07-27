@@ -640,7 +640,7 @@ function rateItemActionForms(r) {
 /** 작업 종류 행 = 한 줄 인라인 편집(2026-07-27 통합 저장). */
 function taskTypeRow(t) {
   return `
-    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(0,1.4fr)_8rem_6.5rem_6rem_auto_auto] ${t.active ? "" : "opacity-60"}" id="task-type-${t.id}">
+    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(0,1.4fr)_8rem_6.5rem_6rem_auto_auto]" id="task-type-${t.id}">
       <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="label_${t.id}" value="${esc(t.label)}" aria-label="작업 종류명" required />
       <select class="input py-1.5 text-sm" name="billing_type_${t.id}" aria-label="과금">
         ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
