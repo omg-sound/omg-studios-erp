@@ -9,11 +9,13 @@ const {
   updateRoom,
   moveRoom,
   deleteRoom,
+  bulkUpdateRooms,
   createRateItem,
   updateRateItem,
   setRateItemActive,
   moveRateItem,
   deleteRateItem,
+  bulkUpdateRateItems,
   createRateCategory,
   updateRateCategory,
   moveRateCategory,
@@ -22,6 +24,7 @@ const {
   updateTaskType,
   moveTaskType,
   deleteTaskType,
+  bulkUpdateTaskTypes,
   setStudioInfo,
   setStudioLogo,
   setProMinutes,
@@ -367,6 +370,12 @@ router.post("/rate-items", requireStaff, (req, res) => {
   res.redirect("/settings?tab=content&flash=saved");
 });
 
+// 통합 저장(2026-07-27 인라인 편집) — 섹션 전 행을 한 번에. 행별 검증·건너뜀은 데이터 계층(bulkUpdateRateItems) 규약.
+router.post("/rate-items/bulk", requireStaff, (req, res) => {
+  bulkUpdateRateItems(req.body);
+  res.redirect("/settings?tab=content&flash=saved#rates-section");
+});
+
 router.post("/rate-items/:id", requireStaff, (req, res) => {
   try {
     updateRateItem(Number(req.params.id), req.body);
@@ -379,18 +388,18 @@ router.post("/rate-items/:id", requireStaff, (req, res) => {
 // 표시 순서 이동(같은 분류 안에서 위/아래) — 분류·작업 종류와 같은 ↑↓(2026-07-26, 이전엔 이름순 강제).
 router.post("/rate-items/:id/move", requireStaff, (req, res) => {
   moveRateItem(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?tab=content");
+  res.redirect("/settings?tab=content#rates-section");
 });
 
 // 활성/비활성 토글(2026-07-26) — active 컬럼은 있었는데 라우트가 없어 한 번 비활성이 되면 되살릴 수 없었다.
 router.post("/rate-items/:id/active", requireStaff, (req, res) => {
   setRateItemActive(Number(req.params.id), req.body.active === "1");
-  res.redirect("/settings?tab=content&flash=saved");
+  res.redirect("/settings?tab=content&flash=saved#rates-section");
 });
 
 router.post("/rate-items/:id/delete", requireStaff, (req, res) => {
   deleteRateItem(Number(req.params.id));
-  res.redirect("/settings?tab=content&flash=deleted");
+  res.redirect("/settings?tab=content&flash=deleted#rates-section");
 });
 
 // ── 단가표 분류 관리(2026-07-05) — 기본 분류는 잠금(locked), 치프가 추가한 분류만 수정·삭제 ──
@@ -441,6 +450,12 @@ router.post("/rooms", requireStaff, (req, res) => {
   res.redirect("/settings?tab=settings&flash=saved");
 });
 
+// 통합 저장(2026-07-27 인라인 편집) — 섹션 전 행을 한 번에. 행별 검증·건너뜀은 데이터 계층(bulkUpdateRooms) 규약.
+router.post("/rooms/bulk", requireStaff, (req, res) => {
+  bulkUpdateRooms(req.body);
+  res.redirect("/settings?tab=settings&flash=saved#rooms-section");
+});
+
 // 이름·상위·플래그 수정(2026-07-26) — 이전엔 추가·삭제만 있어 오타를 고치려면 지웠다 만들어야 했고
 // 그러면 그 장소로 잡힌 세션이 전부 '장소 미지정'이 됐다. id를 보존하는 수정 경로.
 router.post("/rooms/:id", requireStaff, (req, res) => {
@@ -455,12 +470,12 @@ router.post("/rooms/:id", requireStaff, (req, res) => {
 // 표시 순서 이동(같은 상위 안에서 위/아래 한 칸).
 router.post("/rooms/:id/move", requireStaff, (req, res) => {
   moveRoom(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?tab=settings");
+  res.redirect("/settings?tab=settings#rooms-section");
 });
 
 router.post("/rooms/:id/delete", requireStaff, (req, res) => {
   deleteRoom(Number(req.params.id)); // 참조 세션 room_id → NULL 후 행 삭제(data.deleteRoom)
-  res.redirect("/settings?tab=settings&flash=deleted");
+  res.redirect("/settings?tab=settings&flash=deleted#rooms-section");
 });
 
 // ── 작업 종류 카탈로그 관리(삭제-only) ──
@@ -471,6 +486,12 @@ router.post("/task-types", requireStaff, (req, res) => {
     if (e.message !== "TASK_TYPE_LABEL_REQUIRED") throw e;
   }
   res.redirect("/settings?tab=content&flash=saved");
+});
+
+// 통합 저장(2026-07-27 인라인 편집) — 섹션 전 행을 한 번에. 행별 검증·건너뜀은 데이터 계층(bulkUpdateTaskTypes) 규약.
+router.post("/task-types/bulk", requireStaff, (req, res) => {
+  bulkUpdateTaskTypes(req.body);
+  res.redirect("/settings?tab=content&flash=saved#task-types-section");
 });
 
 router.post("/task-types/:id", requireStaff, (req, res) => {
@@ -485,12 +506,12 @@ router.post("/task-types/:id", requireStaff, (req, res) => {
 // 작업 종류 순서 이동(위/아래) — 곡·콘텐츠 빠른추가·드롭다운 순서에 반영.
 router.post("/task-types/:id/move", requireStaff, (req, res) => {
   moveTaskType(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?tab=content");
+  res.redirect("/settings?tab=content#task-types-section");
 });
 
 router.post("/task-types/:id/delete", requireStaff, (req, res) => {
   deleteTaskType(Number(req.params.id));
-  res.redirect("/settings?tab=content&flash=deleted");
+  res.redirect("/settings?tab=content&flash=deleted#task-types-section");
 });
 
 // ── 구글 연락처 일괄 내보내기(치프) ── 미연동(google_resource_name NULL) 연락처를 구글 주소록에 push(1회성, 2026-07-09 사용자 요청).
