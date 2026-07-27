@@ -17,6 +17,7 @@ const {
   getClientFile,
   listOrgContacts,
   snapshotPayer,
+  refreshedPayerSnapshot,
   payerSnapshotChanged,
   ensureInvoiceNumber,
   recomputePaid,
@@ -296,7 +297,8 @@ function invoiceItemsSection(items) {
 router.post("/:id/refresh-payer", requireBilling, (req, res) => {
   const inv = db().prepare("SELECT * FROM invoices WHERE id = ?").get(Number(req.params.id));
   if (!inv) return res.status(404).send(errorPage({ code: 404, title: "청구를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-  if (inv.payer_id) db().prepare("UPDATE invoices SET payer_snapshot = ? WHERE id = ?").run(snapshotPayer(inv.payer_id), inv.id);
+  // 건별 임의 발행 이메일(email_overridden)은 보존 — 새로고침은 party 정보 보정이지 override 취소가 아니다(2026-07-27).
+  if (inv.payer_id) db().prepare("UPDATE invoices SET payer_snapshot = ? WHERE id = ?").run(refreshedPayerSnapshot(inv), inv.id);
   res.redirect(returnTo(req, `/invoices/${inv.id}`, "saved"));
 });
 
