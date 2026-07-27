@@ -934,6 +934,12 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
           </div>
           <p class="mt-1 text-xs text-muted">여기에 입력하면 청구처 정보에 저장됩니다.</p>
         </div>
+        <div data-payer-email-row class="mt-1.5 hidden">
+          <label class="label mb-1 text-xs">세금계산서 발행 이메일</label>
+          <input class="input py-1.5 text-sm" type="text" name="payer_email" inputmode="email" autocomplete="off" data-payer-email />
+          <input type="hidden" name="payer_email_set" value="0" data-payer-email-set />
+          ${explain("이번 청구서에만 적용됩니다 — 청구처 정보는 바뀌지 않습니다. 비우면 이 청구서는 발행 이메일 없이 기록됩니다.")}
+        </div>
       </div>
       <div class="label mb-1 text-xs">청구 항목</div>
       <div class="rounded-lg border border-border bg-surface px-3">${sessionList}${taskList}</div>

@@ -796,11 +796,11 @@ function payerCombo({ selectedId = null, clientOptions = [], contactOptions = []
       const sub = kindLabel(c.kind) + (aff ? " · " + aff : "");
       // 아티스트(개인)는 **본명 (활동명)** 표기 — 현금영수증 명의(본명)와 직결돼 활동명만 보면 오해(2026-07-05 사용자 요청).
       const label = c.kind === "person" ? personLabel(c.real_name || c.name, c.activity_name) : c.name;
-      return { label, sub, cid: c.id, pid: 0, co, warn };
+      return { label, sub, cid: c.id, pid: 0, co, warn, email: c.email || null };
     }),
     ...contactOptions.filter((o) => !clientIds.has(Number(o.id))).map((o) => {
       const aff = [o.group_name, o.current_client].filter(Boolean).join(" · "); // 소속 그룹·회사로 식별
-      return { label: personLabel(o.name, o.activity_name), sub: "담당자" + (aff ? " · " + aff : o.phone ? " · " + o.phone : ""), cid: 0, pid: o.id, co: 0, warn: cashSet.has(Number(o.id)) ? "" : PS_WARN }; // 담당자도 아티스트면 본명 (활동명)
+      return { label: personLabel(o.name, o.activity_name), sub: "담당자" + (aff ? " · " + aff : o.phone ? " · " + o.phone : ""), cid: 0, pid: o.id, co: 0, warn: cashSet.has(Number(o.id)) ? "" : PS_WARN, email: o.email || null }; // 담당자도 아티스트면 본명 (활동명)
     }),
   ];
   const json = JSON.stringify(items).replace(/</g, "\\u003c");
