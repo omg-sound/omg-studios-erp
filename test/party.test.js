@@ -416,6 +416,56 @@ test("payerSnapshotChanged: 변경 없으면 false, 주소·이메일 보강 시
   assert.equal(D.payerSnapshotChanged(inv()), false, "스냅샷 없는 레거시 = false");
 });
 
+// ── 발행 이메일 건별 override(2026-07-27): 폼 값 = 이번 청구서의 발행 이메일(WYSIWYG). party 불변·스냅샷에만. ──
+test("발행 이메일 override: 스냅샷에만 기록·party 불변·빈값=없음·마커 없으면 기존 동작·형식 검사·변경감지 제외·새로고침 보존", () => {
+  const co = D.createCompany({ name: "이메일오버사", roles: "제작사", biz_no: "111-22-33344" });
+  db().prepare("UPDATE parties SET email='base@co.kr' WHERE id=?").run(co);
+  const mk = (opts) => {
+    const pid = Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('이멜','task',0)").run().lastInsertRowid);
+    const tr = Number(db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(pid).lastInsertRowid);
+    const tk = Number(db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(tr).lastInsertRowid);
+    return D.createInvoiceFromTasks(CHIEF, { projectId: pid, taskIds: [tk], clientId: co, issueDate: "2026-07-27", ...opts });
+  };
+  const snapOf = (id) => JSON.parse(db().prepare("SELECT payer_snapshot FROM invoices WHERE id=?").get(id).payer_snapshot);
+
+  // ① 프리필 그대로(party 이메일과 동일) = 기존 동작·플래그 없음
+  const i1 = mk({ payerEmail: "base@co.kr", payerEmailSet: true });
+  assert.equal(snapOf(i1.id).email, "base@co.kr", "동일 값 = 스냅샷 그대로");
+  assert.ok(!snapOf(i1.id).email_overridden, "동일 값 = override 플래그 없음");
+
+  // ② 다른 주소 = 스냅샷만 교체 + 플래그, party 불변
+  const i2 = mk({ payerEmail: "other@x.com", payerEmailSet: true });
+  assert.equal(snapOf(i2.id).email, "other@x.com", "임의 주소가 스냅샷에");
+  assert.equal(snapOf(i2.id).email_overridden, true, "override 플래그");
+  assert.equal(db().prepare("SELECT email FROM parties WHERE id=?").get(co).email, "base@co.kr", "party 이메일 불변");
+
+  // ③ 빈칸으로 지움 = 이메일 없음(null) + 플래그 (폴백 아님 — 명시적 의사)
+  const i3 = mk({ payerEmail: "", payerEmailSet: true });
+  assert.equal(snapOf(i3.id).email, null, "빈값 = 이메일 없음");
+  assert.equal(snapOf(i3.id).email_overridden, true, "빈값도 override");
+
+  // ④ 마커 없으면(JS-off 제출) 기존 동작 — 빈 필드가 이메일을 지우지 않는다
+  const i4 = mk({ payerEmail: "", payerEmailSet: false });
+  assert.equal(snapOf(i4.id).email, "base@co.kr", "마커 없으면 party 이메일 스냅샷(기존 동작)");
+  assert.ok(!snapOf(i4.id).email_overridden, "마커 없으면 플래그 없음");
+
+  // ⑤ 형식 불량은 생성 차단(값이 있을 때만 검사 — 빈값은 '없음'이라 통과)
+  assert.throws(() => mk({ payerEmail: "not-an-email", payerEmailSet: true }), /PAYER_EMAIL_INVALID/, "형식 불량 차단");
+
+  // ⑥ 변경 감지: override면 이메일 비교 제외(거짓 '정보 업데이트' 경고 방지), 다른 필드 변경은 여전히 감지
+  const inv2 = () => db().prepare("SELECT * FROM invoices WHERE id=?").get(i2.id);
+  assert.equal(D.payerSnapshotChanged(inv2()), false, "override ≠ party 이메일이어도 변경 아님");
+  db().prepare("UPDATE parties SET address='서울 어딘가' WHERE id=?").run(co);
+  assert.equal(D.payerSnapshotChanged(inv2()), true, "주소 변경은 여전히 감지");
+
+  // ⑦ [새로고침] = party 정보 갱신하되 임의 이메일 보존
+  db().prepare("UPDATE invoices SET payer_snapshot=? WHERE id=?").run(D.refreshedPayerSnapshot(inv2()), i2.id);
+  assert.equal(snapOf(i2.id).email, "other@x.com", "새로고침 후 임의 이메일 보존");
+  assert.equal(snapOf(i2.id).email_overridden, true, "플래그도 보존");
+  assert.equal(snapOf(i2.id).address, "서울 어딘가", "다른 필드는 현재 party 값으로 갱신");
+  assert.equal(D.payerSnapshotChanged(inv2()), false, "새로고침 후 변경 없음");
+});
+
 // ── 회귀(2026-07-05 전수점검): 이름 해석 안전망 — 표시 라벨 텍스트가 유령 party를 만들지 않게 ──
 test("resolvePersonByName: 라벨('본명 호칭'·'본명 (활동명)'·활동명) 텍스트도 기존 사람으로 해석", () => {
   const p = D.createPerson({ name: "한도윤", nickname: "도윤사운드", honorific: "실장님" });

@@ -67,11 +67,32 @@ function payerSnapshotChanged(inv) {
   let a, b;
   try { a = JSON.parse(inv.payer_snapshot); b = JSON.parse(cur); } catch (_e) { return false; }
   const norm = (v) => (v == null ? "" : String(v).trim());
-  const fields = ["name", "activity_name", "owner_name", "biz_no", "address", "email", "cash_receipt_no"];
+  const fields = ["name", "activity_name", "owner_name", "biz_no", "address", "email", "cash_receipt_no"]
+    .filter((f) => !(f === "email" && a.email_overridden)); // 건별 임의 이메일(2026-07-27) — party와 다른 게 정상이라 비교 제외
   if (fields.some((f) => norm(a[f]) !== norm(b[f]))) return true;
   const ca = (a.contacts && a.contacts[0]) || {};
   const cb = (b.contacts && b.contacts[0]) || {};
   return ["name", "phone", "email"].some((f) => norm(ca[f]) !== norm(cb[f]));
+}
+
+/**
+ * [새로고침](refresh-payer)용 재스냅샷 — party 현재 정보로 갱신하되, 건별 임의 발행 이메일(email_overridden)은
+ * 보존한다(2026-07-27 스펙). 새로고침은 party 정보 보정이지 override 취소가 아니다.
+ */
+function refreshedPayerSnapshot(inv) {
+  if (!inv || !inv.payer_id) return null;
+  let snap = snapshotPayer(inv.payer_id);
+  if (!snap) return null; // 청구처 party 삭제됨 — 기존 라우트와 동일하게 null 저장
+  try {
+    const prev = JSON.parse(inv.payer_snapshot || "null");
+    if (prev && prev.email_overridden) {
+      const cur = JSON.parse(snap);
+      cur.email = prev.email == null ? null : prev.email;
+      cur.email_overridden = true;
+      snap = JSON.stringify(cur);
+    }
+  } catch (_e) {}
+  return snap;
 }
 
 /**
@@ -408,6 +429,20 @@ function createInvoiceFromTasks(user, opts = {}) {
     const miss = payerDocMissing(getParty(draft.resolvedPayerId));
     if (miss) throw new Error(miss);
   }
+  // 발행 이메일(청구서 건별, 2026-07-27 스펙): 폼이 프리필/직접 입력을 거쳤을 때만(payerEmailSet) 적용 —
+  // 보이는 값 = 이번 청구서의 발행 이메일(빈값=이메일 없음). party 정보는 불변, 스냅샷에만 기록.
+  // 마커 없으면(JS-off 제출) 기존 동작 — 빈 필드가 이메일을 조용히 지우는 사고 방지.
+  let payerSnapshot = snapshotPayer(draft.resolvedPayerId);
+  if (opts.payerEmailSet && payerSnapshot) {
+    const v = String(opts.payerEmail == null ? "" : opts.payerEmail).trim();
+    if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new Error("PAYER_EMAIL_INVALID"); // mailer.invalidRecipients와 동일 패턴
+    const snap = JSON.parse(payerSnapshot);
+    if (v !== String(snap.email == null ? "" : snap.email).trim()) {
+      snap.email = v || null;
+      snap.email_overridden = true; // payerSnapshotChanged 이메일 비교 제외·[새로고침] 보존 판정 플래그
+      payerSnapshot = JSON.stringify(snap);
+    }
+  }
   const d = db();
   const invoiceNumber = nextInvoiceNumber(draft.issued);
   d.exec("BEGIN IMMEDIATE;");
@@ -421,7 +456,7 @@ function createInvoiceFromTasks(user, opts = {}) {
       .run({
         project_id: draft.project.id,
         payer_id: draft.resolvedPayerId,
-        payer_snapshot: snapshotPayer(draft.resolvedPayerId), // 발행 시점 청구처 정보 고정
+        payer_snapshot: payerSnapshot, // 발행 시점 청구처 정보 고정(건별 발행 이메일 반영)
         title: draft.invoiceTitle,
         invoice_number: invoiceNumber,
         amount: draft.total,
@@ -639,6 +674,7 @@ module.exports = {
   createInvoiceFromTasks,
   snapshotPayer,
   payerSnapshotChanged,
+  refreshedPayerSnapshot,
   payerDocMeta,
   payerDocMissing,
   invoiceDraftForPdf,
