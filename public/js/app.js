@@ -2649,6 +2649,19 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
     var warnEl = form ? form.querySelector("[data-payer-warn]") : null;
     var fixInput = form ? form.querySelector("[data-payer-fix-input]") : null;
     var fixBtn = form ? form.querySelector("[data-payer-fix-btn]") : null;
+    // 발행 이메일(청구서 건별, 2026-07-27): 선택 시 표시+프리필. 마커(payer_email_set)=프리필했거나 직접 입력했으면 1 —
+    // 서버는 마커 있을 때만 '보이는 값 = 발행 이메일' 규칙 적용(JS-off 제출이 이메일을 지우는 사고 방지).
+    var emailRow = form ? form.querySelector("[data-payer-email-row]") : null;
+    var emailInput = form ? form.querySelector("[data-payer-email]") : null;
+    var emailSet = form ? form.querySelector("[data-payer-email-set]") : null;
+    function applyEmail(it) {
+      if (!emailRow || !emailInput || !emailSet) return;
+      if (!cid.value && !pid.value) { emailRow.classList.add("hidden"); emailInput.value = ""; emailSet.value = "0"; return; }
+      emailRow.classList.remove("hidden");
+      if (it) { emailInput.value = it.email || ""; emailSet.value = "1"; } // 옵션에 있는 청구처 = 이메일을 안다(없음 포함)
+      else { emailInput.value = ""; emailSet.value = "0"; } // 옵션 밖 당사자(추천 칩 관계자 등) — 미상은 규칙 미적용
+    }
+    if (emailInput) emailInput.addEventListener("input", function () { if (emailSet) emailSet.value = "1"; }); // 직접 입력 = 사용자 결정
     function applyDoc(it) {
       if (docLabel) docLabel.textContent = (it && !it.co) ? "(현금영수증 발행)" : "(계산서 발행)";
       if (fixBox) {
@@ -2658,6 +2671,7 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
           fixBox.classList.remove("hidden");
         } else fixBox.classList.add("hidden");
       }
+      applyEmail(it);
     }
     // 발행 정보 인라인 저장 — 경고 아래 입력칸+버튼. 저장되면 버튼 하이라이트 후 경고 숨김·차단 해제.
     if (fixBtn) {
@@ -2776,6 +2790,8 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
   var discPct = form.querySelector("[data-discount-pct]");
   var vat = form.querySelector("[data-vat-toggle]");
   var title = form.querySelector('input[name="title"]');
+  var pemail = form.querySelector("[data-payer-email]");
+  var pemailSet = form.querySelector("[data-payer-email-set]");
   // 발행일(issued_date)은 초안에 저장하지 않는다 — 발행일은 '발행하는 날'이라 항상 서버 기본값(오늘)이 맞고,
   // 며칠 전 초안의 옛 '오늘'이 되살아나 과거 일자로 발행되던 위험만 있었다(사용자 결정 2026-07-15).
   function pget() {
@@ -2789,7 +2805,9 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
       da: discAmt ? discAmt.value : "",
       dp: discPct ? discPct.value : "",
       vat: vat ? !!vat.checked : true,
-      t: title ? title.value : ""
+      t: title ? title.value : "",
+      pe: pemail ? pemail.value : "",
+      pes: pemailSet ? pemailSet.value : "0"
     };
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(read())); return true; } catch (e) { return false; } }
@@ -2804,6 +2822,8 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
     if (discPct && s.dp != null) discPct.value = s.dp;
     if (vat) vat.checked = !!s.vat;
     if (title && s.t) title.value = s.t;
+    // 발행 이메일은 __pkSet(프리필) 뒤에 복원 — 저장해 둔 입력값이 프리필에 덮이지 않게(구 초안엔 pe 없음 → 프리필 유지).
+    if (s.pe != null && pemail) { pemail.value = s.pe; if (pemailSet) pemailSet.value = s.pes === "1" ? "1" : "0"; }
     // 미리보기(공급가·할인·VAT·총액) 갱신
     if (discPct && s.dp) discPct.dispatchEvent(new Event("input", { bubbles: true }));
     else if (discAmt) discAmt.dispatchEvent(new Event("input", { bubbles: true }));

@@ -1329,7 +1329,7 @@ test("청구 초안: '임시저장' 버튼 클릭 시에만 저장(자동저장 
   saveBtn.click();
   let draft = JSON.parse(win.localStorage.getItem("invdraft:7") || "null");
   assert.ok(draft && String(draft.da).replace(/\D/g, "") === "10000", "버튼 클릭 → 초안 저장(할인 반영)");
-  assert.equal(Object.keys(draft).sort().join(","), "da,dp,p,t,vat", "초안 키 = 금액·발행일 없는 폼 필드만(p·da·dp·vat·t)");
+  assert.equal(Object.keys(draft).sort().join(","), "da,dp,p,pe,pes,t,vat", "초안 키 = 금액·발행일 없는 폼 필드만(p·da·dp·vat·t·pe·pes)");
   assert.ok(!("d" in draft), "발행일(d)은 초안에 저장하지 않음");
   assert.match(saveBtn.textContent, /임시저장됨/, "저장 후 피드백 라벨");
 
@@ -1367,6 +1367,65 @@ test("청구 초안: 발행일은 초안에 저장/복원 안 됨(레거시 초�
   r.doc.querySelector("[data-invoice-draft-save]").click();
   const draft = JSON.parse(r.win.localStorage.getItem("invdraft:7") || "null");
   assert.ok(draft && !("d" in draft), "새 임시저장에도 발행일 미포함");
+});
+
+// ── 발행 이메일(청구서 건별, 2026-07-27): 청구처 선택 → 프리필+마커, 옵션 밖 당사자 → 빈칸+마커0(직접 입력 시 1), 선택 해제 → 숨김 ──
+test("발행 이메일 필드: 선택 시 프리필·payer_email_set=1, 옵션 밖 당사자는 빈칸·마커0(입력하면 1), 미선택은 숨김", () => {
+  const opts = [
+    { label: "이멜상사", sub: "업체", cid: 11, pid: 0, co: 1, warn: "", email: "tax@emel.kr" },
+    { label: "무메일상사", sub: "업체", cid: 12, pid: 0, co: 1, warn: "", email: null },
+  ];
+  const html = `<form data-discount-form data-supply="0" action="/projects/9/invoices/from-tasks">
+    <div data-picker-combo>
+      <input type="hidden" name="client_id" value="" data-pk-cid />
+      <input type="hidden" name="payer_contact_id" value="" data-pk-pid />
+      <input type="text" data-pk-input /><div data-pk-pop hidden></div>
+      <script type="application/json" data-pk-options>${JSON.stringify(opts)}</script>
+    </div>
+    <div data-payer-email-row class="hidden">
+      <input type="text" name="payer_email" data-payer-email />
+      <input type="hidden" name="payer_email_set" value="0" data-payer-email-set />
+    </div></form>`;
+  const { win, doc } = mountDom(html);
+  const row = doc.querySelector("[data-payer-email-row]");
+  const email = doc.querySelector("[data-payer-email]");
+  const marker = doc.querySelector("[data-payer-email-set]");
+  const combo = doc.querySelector("[data-picker-combo]");
+
+  assert.equal(row.classList.contains("hidden"), true, "미선택 = 숨김");
+  assert.equal(marker.value, "0", "미선택 = 마커 0");
+
+  combo.__pkSet({ cid: "11", label: "이멜상사" }); // 옵션에 있는 청구처 → pick 경로
+  assert.equal(row.classList.contains("hidden"), false, "선택 = 표시");
+  assert.equal(email.value, "tax@emel.kr", "청구처 이메일 프리필");
+  assert.equal(marker.value, "1", "프리필 = 마커 1(WYSIWYG 규칙 적용)");
+
+  combo.__pkSet({ cid: "12", label: "무메일상사" }); // 이메일 없는 청구처 → 빈 프리필
+  assert.equal(email.value, "", "이메일 없는 청구처 = 빈칸");
+  assert.equal(marker.value, "1", "옵션에 있는 청구처는 이메일 없어도 마커 1(빈값=없음 그대로)");
+
+  combo.__pkSet({ cid: "999", label: "옵션밖관계자" }); // 옵션 밖 당사자(추천 칩 관계자 등) — 이메일 미상
+  assert.equal(row.classList.contains("hidden"), false, "선택은 됐으니 표시");
+  assert.equal(email.value, "", "이메일 미상 = 빈칸");
+  assert.equal(marker.value, "0", "미상은 마커 0 — 모르는 이메일을 지운 것으로 오인 방지");
+  email.value = "typed@x.com"; fire(win, email, "input"); // 직접 입력
+  assert.equal(marker.value, "1", "직접 입력 = 마커 1");
+
+  const pk = doc.querySelector("[data-pk-input]");
+  pk.value = ""; fire(win, pk, "input"); // 검색칸 비움 → 선택 해제(cid/pid 클리어)
+  assert.equal(row.classList.contains("hidden"), true, "선택 해제 = 숨김");
+  assert.equal(marker.value, "0", "해제 = 마커 0");
+});
+
+// 초안(임시저장)에 발행 이메일 포함 — __pkSet 프리필 뒤에 복원돼 입력값이 덮이지 않는다.
+test("청구 초안: 발행 이메일(pe·pes) 저장·복원 — 복원이 프리필을 이긴다", () => {
+  const project = { id: 7, title: "테스트 프로젝트" };
+  const tasks = [{ id: 1, task_type: "vocal_tune", track_title: "곡A", status: "Completed", total_price: 100000, waived: 0 }];
+  const formHtml = unbilledInvoiceForm(project, tasks, []);
+  const seed = { p: { cid: "42", pid: "", label: "복원청구처" }, da: "", dp: "", vat: true, t: "", pe: "draft@x.com", pes: "1" };
+  const r = mountDom(formHtml, { storage: { "invdraft:7": JSON.stringify(seed) } });
+  assert.equal(r.doc.querySelector("[data-payer-email]").value, "draft@x.com", "복원: 초안 이메일이 프리필을 덮음");
+  assert.equal(r.doc.querySelector("[data-payer-email-set]").value, "1", "복원: 마커도 초안대로");
 });
 
 // ── 금액칸 포커스 시 전체선택(타이핑=새 금액). 단 이미 포커스된 칸 클릭(특정 숫자)·드래그 범위는 존중 ──
