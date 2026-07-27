@@ -32,8 +32,8 @@ const sessions = require("./data/sessions"); // 세션(스튜디오 일정)
 const workerSummary = require("./data/worker-summary"); // 외주 정산 요약(작업+세션+첨부 합산)
 const search = require("./data/search"); // 전역 통합 검색 집계(searchAll)
 
-// 작업 종류 카탈로그: 공개 API는 아래 7함수만 재export(normalizeTaskTypeDb는 내부전용이므로 spread하지 않고 명시 나열).
-const { listTaskTypes, activeTaskTypes, taskTypeLabel, taskTypeUnitPrice, taskTypePriceType, createTaskType, updateTaskType, moveTaskType, deleteTaskType } = taskTypes;
+// 작업 종류 카탈로그: 공개 API는 아래 함수만 재export(normalizeTaskTypeDb는 내부전용이므로 spread하지 않고 명시 나열).
+const { listTaskTypes, activeTaskTypes, taskTypeLabel, taskTypeUnitPrice, taskTypePriceType, createTaskType, updateTaskType, bulkUpdateTaskTypes, moveTaskType, deleteTaskType } = taskTypes;
 
 module.exports = {
   ...parties, // src/data/parties.js — 당사자 통합(사람/조직/아티스트/담당자연동)
@@ -43,13 +43,14 @@ module.exports = {
   ...equipment, // src/data/equipment.js — 장비 대장
   ...rateItems, // src/data/rate-items.js
   ...rateCategories, // src/data/rate-categories.js
-  listTaskTypes, // src/data/task-types.js (7함수, normalizeTaskTypeDb 내부전용 제외)
+  listTaskTypes, // src/data/task-types.js (normalizeTaskTypeDb 내부전용 제외)
   activeTaskTypes,
   taskTypeLabel,
   taskTypeUnitPrice,
   taskTypePriceType,
   createTaskType,
   updateTaskType,
+  bulkUpdateTaskTypes,
   moveTaskType,
   deleteTaskType,
   ...projects, // src/data/projects.js (distinctProjectFields·listProjects·getProjectForUser·deleteProject)

@@ -83,6 +83,29 @@ function updateRoom(id, input = {}) {
   return getRoom(cur.id);
 }
 
+/** 통합 저장(2026-07-27 인라인 편집) — rate-items의 bulkUpdateRateItems와 같은 규약. */
+function bulkUpdateRooms(body = {}) {
+  const d = db();
+  const ids = d.prepare("SELECT id FROM rooms").all().map((r) => r.id);
+  let updated = 0, skipped = 0;
+  d.exec("BEGIN IMMEDIATE;");
+  try {
+    for (const id of ids) {
+      if (body[`room_name_${id}`] == null) continue;
+      const input = {
+        room_name: body[`room_name_${id}`],
+        parent_id: body[`parent_id_${id}`],
+        bookable: body[`bookable_${id}`],
+        is_external: body[`is_external_${id}`],
+      };
+      try { if (updateRoom(id, input)) updated++; else skipped++; }
+      catch (e) { if (e.message !== "ROOM_NAME_REQUIRED") throw e; skipped++; }
+    }
+    d.exec("COMMIT;");
+  } catch (e) { d.exec("ROLLBACK;"); throw e; }
+  return { updated, skipped };
+}
+
 /**
  * 표시 순서 이동(위/아래 한 칸) — 단가표 분류·작업 종류의 moveRateCategory/moveTaskType과 같은 방식.
  * 현재 표시 순서를 물질화해 이웃과 자리를 바꾸고 sort_order를 10 간격으로 재부여(기본값 중복 상태에서도 결정적).
@@ -140,6 +163,7 @@ module.exports = {
   getRoom,
   createRoom,
   updateRoom,
+  bulkUpdateRooms,
   moveRoom,
   isExternalRoom,
   deleteRoom,

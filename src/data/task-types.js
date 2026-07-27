@@ -101,6 +101,31 @@ function deleteTaskType(id) {
   invalidateTaskTypeCache();
 }
 
+/** 통합 저장(2026-07-27 인라인 편집) — sort_order는 현재 값 명시 보존(updateTaskType이 미전송 시 100으로 리셋). */
+function bulkUpdateTaskTypes(body = {}) {
+  const d = db();
+  const rows = d.prepare("SELECT id, sort_order FROM task_types").all();
+  let updated = 0, skipped = 0;
+  d.exec("BEGIN IMMEDIATE;");
+  try {
+    for (const r of rows) {
+      if (body[`label_${r.id}`] == null) continue;
+      const input = {
+        label: body[`label_${r.id}`],
+        billing_type: body[`billing_type_${r.id}`],
+        unit_price: body[`unit_price_${r.id}`],
+        price_type: body[`price_type_${r.id}`],
+        is_quick: body[`is_quick_${r.id}`],
+        sort_order: r.sort_order, // ⚠️ 미전송이면 taskTypeFields가 100으로 리셋 — 사용자 ↑↓ 순서 보존
+      };
+      try { updateTaskType(r.id, input); updated++; }
+      catch (e) { if (e.message !== "TASK_TYPE_LABEL_REQUIRED") throw e; skipped++; }
+    }
+    d.exec("COMMIT;");
+  } catch (e) { d.exec("ROLLBACK;"); throw e; }
+  return { updated, skipped };
+}
+
 /**
  * 작업 종류 순서 이동(위/아래 한 칸, 2026-07-09 관리 개선). 표시 순서(active DESC→sort_order→label)를
  * 물질화해 이웃과 교환 후 sort_order 10 간격 재부여(중복 값에도 결정적). 캐시 무효화 포함.
@@ -125,6 +150,7 @@ module.exports = {
   normalizeTaskTypeDb, // 내부 정규화용(data.js 로컬 바인딩) — 공개 API 미노출
   createTaskType,
   updateTaskType,
+  bulkUpdateTaskTypes,
   moveTaskType,
   deleteTaskType,
 };

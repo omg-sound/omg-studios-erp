@@ -84,6 +84,36 @@ function updateRateItem(id, input = {}) {
 }
 
 /**
+ * 통합 저장(2026-07-27 인라인 편집): body의 `<필드>_<id>` 묶음을 행별로 모아 한 트랜잭션으로 갱신.
+ * 행 판별은 DB 기준(rate_name_<id> 존재 시 참여) — 임의 id 주입은 자연 무시. 이름·가격 누락 행은
+ * 그 행만 건너뛴다(단건 저장과 같은 의미론). 그 외 오류는 롤백 후 재던짐.
+ */
+function bulkUpdateRateItems(body = {}) {
+  const d = db();
+  const ids = d.prepare("SELECT id FROM rate_items").all().map((r) => r.id);
+  let updated = 0, skipped = 0;
+  d.exec("BEGIN IMMEDIATE;");
+  try {
+    for (const id of ids) {
+      if (body[`rate_name_${id}`] == null) continue;
+      const input = {
+        rate_name: body[`rate_name_${id}`],
+        category: body[`category_${id}`],
+        base_hours: body[`base_hours_${id}`],
+        base_price: body[`base_price_${id}`],
+        extra_hours: body[`extra_hours_${id}`],
+        extra_price: body[`extra_price_${id}`],
+        price_type: body[`price_type_${id}`],
+      };
+      try { updateRateItem(id, input); updated++; }
+      catch (e) { if (!["RATE_NAME_REQUIRED", "RATE_PRICE_REQUIRED"].includes(e.message)) throw e; skipped++; }
+    }
+    d.exec("COMMIT;");
+  } catch (e) { d.exec("ROLLBACK;"); throw e; }
+  return { updated, skipped };
+}
+
+/**
  * 활성/비활성 토글(2026-07-26) — active 컬럼은 처음부터 있었는데 UI·라우트가 없어서
  * 한 번 비활성이 되면 되살릴 방법이 없었다(세션 폼 옵션에서 사라지고 관리 화면에서도 손댈 수 없었다).
  * 비활성 항목은 세션 폼 단가 select에서 빠지지만 그 항목으로 발행된 청구서는 스냅샷이라 그대로 남는다.
@@ -196,6 +226,7 @@ module.exports = {
   getRateItem,
   createRateItem,
   updateRateItem,
+  bulkUpdateRateItems,
   setRateItemActive,
   moveRateItem,
   deleteRateItem,
