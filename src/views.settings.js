@@ -16,7 +16,7 @@ const {
   getProMinutes,
   getDefaultBooker,
 } = require("./data");
-const { esc, formatKRW, formatBytes, emptyState, detailsChevron, explain } = require("./views");
+const { esc, formatBytes, emptyState, detailsChevron, explain } = require("./views");
 const drive = require("./drive");
 const calendar = require("./calendar");
 const alerts = require("./notify");
@@ -98,28 +98,29 @@ function peopleTab(currentUser) {
       //  사이드바에 외주 작업자 메뉴가 상시 노출돼 중복. 담당자 탭 = 로그인 계정 관리로 정체성 정리.)
 }
 
-/** 단가표 항목을 분류별로 묶어 접이식(<details>, 기본 접힘)으로 — 2026-07-05 사용자 요청. DB 분류 순서(kind→sort_order→이름) 따름. */
+/** 단가표를 분류별로 묶어 **항상 펼침**(2026-07-27 인라인 편집 — 옛 접이식 폐기). {list, actionForms} 반환. */
 function ratesGroupedByCategory(rates) {
-  if (!rates.length) return emptyState("등록된 단가 항목이 없습니다.");
+  if (!rates.length) return { list: emptyState("등록된 단가 항목이 없습니다."), actionForms: "" };
   const order = listRateCategories().map((c) => c.name);
   const groups = {};
   rates.forEach((r) => { const c = r.category || order[0] || ""; (groups[c] = groups[c] || []).push(r); });
   const orderedCats = [...order.filter((c) => groups[c]), ...Object.keys(groups).filter((c) => !order.includes(c))];
-  return orderedCats
+  const list = orderedCats
     .map((c) => {
       const items = groups[c];
       const activeN = items.filter((r) => r.active).length;
       const countLabel = activeN !== items.length ? `${items.length}개 · 활성 ${activeN}` : `${items.length}개`;
       return `
-        <details class="group rounded-lg border border-border">
-          <summary class="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm font-medium hover:bg-elevated">
-            <span>${esc(c)}</span>
-            <span class="flex items-center gap-2 text-xs font-normal text-muted">${esc(countLabel)}${detailsChevron()}</span>
-          </summary>
-          <div class="space-y-2 border-t border-border p-3">${items.map((r) => rateItemRow(r)).join("")}</div>
-        </details>`;
+        <div class="rounded-lg border border-border">
+          <div class="flex items-center justify-between gap-2 border-b border-border px-3 py-2 text-sm font-medium">
+            <span>${esc(c)}</span><span class="text-xs font-normal text-muted">${esc(countLabel)}</span>
+          </div>
+          <div class="space-y-1.5 p-2">${items.map((r) => rateItemRow(r)).join("")}</div>
+        </div>`;
     })
     .join("");
+  const actionForms = rates.map((r) => rateItemActionForms(r)).join("");
+  return { list, actionForms };
 }
 
 /** 분류 관리 행 — 기본(내장) 분류는 표시만(수정·삭제 불가), 치프가 추가한 분류만 이름·kind 수정 + 삭제. */
@@ -173,9 +174,8 @@ function rateCategoriesSection() {
 function contentTab() {
   const rates = listRateItems({ includeInactive: true });
   const taskTypes = listTaskTypes({ includeInactive: true });
-  const taskTypeRows = taskTypes.length ? taskTypes.map((t) => taskTypeRow(t)).join("") : emptyState("등록된 작업 종류가 없습니다.");
   return `
-      <section class="card space-y-4">
+      <section class="card space-y-4" id="rates-section">
         <div>
           <h2 class="font-display text-lg font-semibold">단가표 · 녹음/촬영 종류</h2>
           ${explain(`대관 세션(녹음·촬영)의 시간제 단가 항목을 분류(스튜디오/로케이션 녹음·촬영)별로 추가합니다. 세션 폼의 '단가 항목'에 세션 종류(녹음/촬영)에 맞춰 분류로 묶여 표시됩니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금. <b>기준 시간을 비우면 정액(회당)</b> — 시간과 무관하게 1회 = 기준 가격이며, 가격까지 비우면 <b>금액 미정</b>(플레이백 세션처럼 회당 가격이 매번 다른 항목 — 청구 생성 시 금액을 입력해 확정).<br /><b>가격 유형</b>은 청구 화면에서 금액칸을 어떻게 다룰지 정합니다 — <b>고정</b>은 기본가를 잠그고 초과 시간만 자동 가산(녹음·촬영 대관), <b>기준가</b>는 산정치를 넣어 주되 위아래로 고칠 수 있고, <b>최소가</b>는 그 아래로 못 내립니다. <b>↑↓</b>로 분류 안 표시 순서를 바꾸고, 잠시 안 쓰는 항목은 삭제 대신 <b>비활성</b>으로 두면(세션 폼에서만 숨음) 나중에 되살릴 수 있습니다.`)}
@@ -209,11 +209,21 @@ function contentTab() {
           </div>
           <button class="btn-primary btn-sm" type="submit">단가 항목 추가</button>
         </form>
-        <div class="space-y-2">${ratesGroupedByCategory(rates)}</div>
+        ${(() => {
+          const g = ratesGroupedByCategory(rates);
+          if (!g.actionForms) return g.list; // 빈 상태
+          return `
+        <form method="post" action="/settings/rate-items/bulk" id="rates-bulk-form" class="space-y-2" data-dirty-form>
+          <div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(0,1.3fr)_7.5rem_4rem_6rem_4rem_6rem_5.5rem_auto]"><span>이름</span><span>분류</span><span>기준(h)</span><span>기준가(원)</span><span>초과(h)</span><span>초과가(원)</span><span>유형</span><span></span></div>
+          ${g.list}
+          <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
+        </form>
+        ${g.actionForms}`;
+        })()}
         ${rateCategoriesSection()}
       </section>
 
-      <section class="card space-y-4">
+      <section class="card space-y-4" id="task-types-section">
         <div>
           <h2 class="font-display text-lg font-semibold">작업 종류 <span class="text-sm font-normal text-muted">(곡·콘텐츠 후반작업)</span></h2>
           ${explain(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가·과금을 관리합니다. '빠른추가'를 켜면 곡·콘텐츠의 빠른 추가 버튼에 노출됩니다. <b>포스트(믹싱·보컬튠)는 시간이 아니라 작업량으로 산정</b>하므로 여기서 관리합니다 — 믹싱은 <b>기준가</b>(작업량에 따라 차등), 보컬튠은 <b>최소가</b>(작업량에 따라 상향)로 두면 청구 화면이 그 금액을 넣어 주고 수정 범위를 그에 맞게 제한합니다.`)}
@@ -230,7 +240,13 @@ function contentTab() {
           <label class="flex items-center gap-2 text-sm text-muted"><input type="checkbox" name="is_quick" value="1" /> 곡·콘텐츠 '빠른 추가' 버튼에 노출</label>
           <button class="btn-primary btn-sm" type="submit">작업 종류 추가</button>
         </form>
-        <div class="space-y-2">${taskTypeRows}</div>
+        ${taskTypes.length ? `
+        <form method="post" action="/settings/task-types/bulk" id="task-types-bulk-form" class="space-y-1.5" data-dirty-form>
+          <div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(0,1.4fr)_8rem_6.5rem_6rem_auto_auto]"><span>이름</span><span>과금</span><span>기본 단가(원)</span><span>유형</span><span>빠른추가</span><span></span></div>
+          ${taskTypes.map((t) => taskTypeRow(t)).join("")}
+          <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
+        </form>
+        ${taskTypes.map((t) => taskTypeActionForms(t)).join("")}` : emptyState("등록된 작업 종류가 없습니다.")}
       </section>`;
 }
 
@@ -330,7 +346,7 @@ function roomsSection() {
   for (const r of rooms) if (!listed.has(r.id)) ordered.push({ room: r, depth: 0 });
   const rows = ordered.length ? ordered.map((o) => roomRow(o.room, o.depth, tops)).join("") : emptyState("등록된 룸이 없습니다.");
   return `
-    <div class="${SETTING_BLOCK}">
+    <div class="${SETTING_BLOCK}" id="rooms-section">
       <div>
         <h2 class="text-sm font-semibold">장소 (스튜디오 룸 · 외부)</h2>
         ${explain(`세션 예약 시 장소를 지정하면 <span class="text-fg">같은 장소끼리만 시간 겹침을 검사</span>합니다(다른 장소는 같은 시간 병렬 예약 허용). <span class="text-fg">예약 대상</span>이 아닌 장소는 세션 폼의 장소 목록에 나오지 않습니다 — 예약은 최상위 단위로만 잡기 때문에 <b>Control Room A·Booth A 같은 하위 공간과 Lounge는 여기서 빠집니다</b>(하위 공간은 상위를 지정하면 자동으로 예약 대상에서 제외). 이름은 <b>수정</b>할 수 있어요(id가 그대로라 그 장소로 잡힌 세션이 유지됩니다 — 지웠다 만들면 '장소 미지정'이 됩니다). <span class="text-fg">외부 장소</span>로 표시하면 세션 폼에서 주소 입력칸이 나오고 캘린더 일정 장소로 쓰입니다.`)}
@@ -342,7 +358,12 @@ function roomsSection() {
         <label class="flex cursor-pointer items-center gap-1.5 text-sm"><input type="checkbox" name="is_external" value="1" class="h-4 w-4 rounded border-border text-primary" /> 외부 장소(주소 입력)</label>
         <button class="btn-primary shrink-0 btn-sm" type="submit">장소 추가</button>
       </form>
-      <div class="space-y-2">${rows}</div>
+      ${ordered.length ? `
+      <form method="post" action="/settings/rooms/bulk" id="rooms-bulk-form" class="space-y-1.5" data-dirty-form>
+        ${rows}
+        <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
+      </form>
+      ${ordered.map((o) => roomActionForms(o.room)).join("")}` : rows}
     </div>`;
 }
 
@@ -357,43 +378,29 @@ function roomParentOptions(tops, current, selfId) {
   return opts.join("");
 }
 
-/** 룸 행 — 계층 들여쓰기 + 순서 이동(↑↓) + 이름·상위·플래그 수정(펼침) + 삭제. */
+/** 룸 행 = 한 줄 인라인 편집(2026-07-27 통합 저장). 계층 들여쓰기 유지, 배지는 필드가 보이므로 제거. */
 function roomRow(r, depth = 0, tops = []) {
-  const badges = [
-    r.is_external ? `<span class="badge badge-info">외부</span>` : "",
-    r.bookable ? "" : `<span class="badge bg-bg text-muted">예약 대상 아님</span>`,
-  ].join("");
   return `
-    <div class="rounded-lg border border-border bg-bg p-3 ${depth ? "ml-4 sm:ml-6" : ""}">
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex min-w-0 items-center gap-2">
-          ${depth ? `<span class="shrink-0 text-muted" aria-hidden="true">└</span>` : ""}
-          <span class="truncate font-medium">${esc(r.name)}</span>${badges}
-        </div>
-        <span class="flex shrink-0 gap-1">
-          <form method="post" action="/settings/rooms/${r.id}/move"><input type="hidden" name="dir" value="up" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="위로 이동">↑</button></form>
-          <form method="post" action="/settings/rooms/${r.id}/move"><input type="hidden" name="dir" value="down" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="아래로 이동">↓</button></form>
-        </span>
-      </div>
-      <details class="group mt-2 border-t border-border pt-2">
-        <summary class="flex cursor-pointer list-none items-center justify-end gap-1 text-xs text-muted hover:text-fg">수정 ${detailsChevron()}</summary>
-        <form method="post" action="/settings/rooms/${r.id}" class="mt-2 space-y-2" data-dirty-form>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <div><label class="label mb-0.5 text-xs">장소 이름</label><input class="input py-1.5 text-sm" name="room_name" value="${esc(r.name)}" autocomplete="off" required /></div>
-            <div><label class="label mb-0.5 text-xs">상위 룸</label><select class="input py-1.5 text-sm" name="parent_id">${roomParentOptions(tops, r.parent_id, r.id)}</select></div>
-          </div>
-          <label class="flex cursor-pointer items-center gap-1.5 text-sm"><input type="checkbox" name="bookable" value="1" ${r.bookable ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 예약 대상 <span class="text-xs text-muted">(하위 룸은 상위 지정 시 자동 제외)</span></label>
-          <label class="flex cursor-pointer items-center gap-1.5 text-sm"><input type="checkbox" name="is_external" value="1" ${r.is_external ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 외부 장소(주소 입력)</label>
-          <div class="flex items-center gap-2">
-            <button class="btn-primary btn-xs transition" type="submit" data-dirty-save>저장</button>
-            <span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span>
-          </div>
-        </form>
-        <form method="post" action="/settings/rooms/${r.id}/delete" data-confirm="'${esc(r.name)}' 장소를 삭제할까요? 이 장소로 예약된 세션은 '장소 미지정'으로 바뀝니다. 이름만 고치려면 위 '수정'을 쓰세요." class="mt-2">
-          <button class="btn-ghost btn-xs text-danger" type="submit">삭제</button>
-        </form>
-      </details>
+    <div class="flex flex-wrap items-center gap-2 rounded-lg bg-bg p-2 ${depth ? "ml-4 sm:ml-6" : ""}" id="room-${r.id}">
+      ${depth ? `<span class="shrink-0 text-muted" aria-hidden="true">└</span>` : ""}
+      <input class="input min-w-36 flex-1 py-1.5 text-sm" name="room_name_${r.id}" value="${esc(r.name)}" aria-label="장소 이름" autocomplete="off" required />
+      <select class="input py-1.5 text-sm" name="parent_id_${r.id}" aria-label="상위 룸">${roomParentOptions(tops, r.parent_id, r.id)}</select>
+      <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm"><input type="checkbox" name="bookable_${r.id}" value="1" ${r.bookable ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 예약 대상</label>
+      <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm"><input type="checkbox" name="is_external_${r.id}" value="1" ${r.is_external ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 외부</label>
+      <span class="ml-auto flex items-center gap-1">
+        <button class="btn-ghost btn-xs px-2" type="submit" form="room-mv-u-${r.id}" aria-label="위로 이동">↑</button>
+        <button class="btn-ghost btn-xs px-2" type="submit" form="room-mv-d-${r.id}" aria-label="아래로 이동">↓</button>
+        <button class="btn-ghost btn-xs text-danger" type="submit" form="room-del-${r.id}">삭제</button>
+      </span>
     </div>`;
+}
+
+/** 룸 행의 형제 hidden 액션 폼(↑↓·삭제) — bulk 폼 밖에 렌더해 중첩 폼 회피. */
+function roomActionForms(r) {
+  return `
+    <form id="room-mv-u-${r.id}" method="post" action="/settings/rooms/${r.id}/move" hidden><input type="hidden" name="dir" value="up" /></form>
+    <form id="room-mv-d-${r.id}" method="post" action="/settings/rooms/${r.id}/move" hidden><input type="hidden" name="dir" value="down" /></form>
+    <form id="room-del-${r.id}" method="post" action="/settings/rooms/${r.id}/delete" hidden data-confirm="'${esc(r.name)}' 장소를 삭제할까요? 이 장소로 예약된 세션은 '장소 미지정'으로 바뀝니다. 이름만 고치려면 이름 칸을 고쳐 통합 저장하세요."></form>`;
 }
 
 /**
@@ -591,120 +598,70 @@ function userRow(u, currentUser, chief = true) {
     </div>`;
 }
 
-/** 분 → "3시간 30분" / 0이면 "정액". */
-function hourLabel(minutes) {
-  if (!minutes || minutes <= 0) return "정액";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m ? `${h}시간 ${m}분` : `${h}시간`;
-}
-
 /** 가격 유형 select 옵션(고정·기준가·최소가). 단가 항목·작업 종류 공용. */
 function priceTypeOptions(current) {
   const cur = PRICE_TYPES.includes(current) ? current : "fixed";
   return PRICE_TYPES.map((k) => `<option value="${k}" ${k === cur ? "selected" : ""}>${esc(PRICE_TYPE_LABELS[k] || k)}</option>`).join("");
 }
 
-/** 가격 유형 배지 — 청구 화면 동작(금액 잠금/수정 가능)을 목록에서 바로 읽히게. 고정은 기본값이라 배지 없음. */
-function priceTypeBadge(priceType) {
-  if (priceType === "base") return `<span class="badge badge-info">기준가</span>`;
-  if (priceType === "minimum") return `<span class="badge badge-warning">최소가</span>`;
-  return "";
-}
-
+/** 단가표 행 = 한 줄 인라인 편집 필드(2026-07-27 통합 저장). 액션 버튼은 form=으로 형제 hidden 폼 참조(중첩 폼 금지). */
 function rateItemRow(r) {
   const baseHours = r.base_minutes ? r.base_minutes / 60 : "";
   const extraHours = r.extra_minutes ? r.extra_minutes / 60 : 1;
-  const summary = r.base_minutes
-    ? `기준 ${hourLabel(r.base_minutes)} · ${formatKRW(r.base_price)} · 초과 ${hourLabel(r.extra_minutes)}당 ${formatKRW(r.extra_price)}`
-    : r.base_price > 0 ? `정액(회당) ${formatKRW(r.base_price)}` : `정액(회당) · 금액 미정 — 청구 시 입력`;
   const cat = r.category || RECORDING_CATEGORIES[0];
   return `
-    <div class="rounded-lg border border-border bg-bg p-3 ${r.active ? "" : "opacity-60"}">
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2"><span class="font-medium">${esc(r.name)}</span><span class="badge bg-bg text-muted">${esc(cat)}</span>${priceTypeBadge(r.price_type)}${r.active ? "" : '<span class="text-xs text-muted">(비활성)</span>'}</div>
-          <div class="mt-0.5 text-xs text-muted">${summary}</div>
-        </div>
-        <span class="flex shrink-0 gap-1">
-          <form method="post" action="/settings/rate-items/${r.id}/move"><input type="hidden" name="dir" value="up" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="위로 이동">↑</button></form>
-          <form method="post" action="/settings/rate-items/${r.id}/move"><input type="hidden" name="dir" value="down" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="아래로 이동">↓</button></form>
-        </span>
-      </div>
-      <details class="group mt-2 border-t border-border pt-2">
-        <summary class="flex cursor-pointer list-none items-center justify-end gap-1 text-xs text-muted hover:text-fg">수정 ${detailsChevron()}</summary>
-        <form method="post" action="/settings/rate-items/${r.id}" class="mt-2 space-y-2" data-dirty-form>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <div><label class="label mb-0.5 text-xs">단가 항목명</label><input class="input py-1.5 text-sm" name="rate_name" value="${esc(r.name)}" autocomplete="off" required /></div>
-            <div><label class="label mb-0.5 text-xs">분류</label><select class="input py-1.5 text-sm" name="category">${rateCategoryOptions(cat)}</select></div>
-          </div>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <div><label class="label mb-0.5 text-xs">기준 시간(시간)</label><input class="input py-1.5 text-sm" name="base_hours" inputmode="decimal" value="${esc(String(baseHours))}" /></div>
-            <div><label class="label mb-0.5 text-xs">기준 가격(원)</label><input class="input py-1.5 text-sm" name="base_price" inputmode="numeric" value="${esc(String(r.base_price || ""))}" /></div>
-            <div><label class="label mb-0.5 text-xs">초과 단위(시간)</label><input class="input py-1.5 text-sm" name="extra_hours" inputmode="decimal" value="${esc(String(extraHours))}" /></div>
-            <div><label class="label mb-0.5 text-xs">초과 단가(원)</label><input class="input py-1.5 text-sm" name="extra_price" inputmode="numeric" value="${esc(String(r.extra_price || ""))}" /></div>
-            <div><label class="label mb-0.5 text-xs">가격 유형</label><select class="input py-1.5 text-sm" name="price_type">${priceTypeOptions(r.price_type)}</select></div>
-          </div>
-          <div class="flex items-center gap-2">
-            <button class="btn-primary btn-xs transition" type="submit" data-dirty-save>저장</button>
-            <span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span>
-          </div>
-        </form>
-        <div class="mt-2 flex items-center gap-2">
-          <form method="post" action="/settings/rate-items/${r.id}/active">
-            <input type="hidden" name="active" value="${r.active ? "0" : "1"}" />
-            <button class="btn-ghost btn-xs" type="submit">${r.active ? "비활성으로" : "다시 활성으로"}</button>
-          </form>
-          <form method="post" action="/settings/rate-items/${r.id}/delete" data-confirm="'${esc(r.name)}' 단가 항목을 삭제할까요? 이미 발행된 청구서는 금액이 따로 저장돼 그대로 남지만, 이 항목으로 잡힌 세션은 단가 항목이 비워져 청구할 수 없게 됩니다. 잠시 안 쓰는 것뿐이면 '비활성으로'를 쓰세요.">
-            <button class="btn-ghost btn-xs text-danger" type="submit">삭제</button>
-          </form>
-        </div>
-      </details>
+    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(0,1.3fr)_7.5rem_4rem_6rem_4rem_6rem_5.5rem_auto] ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
+      <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="rate_name_${r.id}" value="${esc(r.name)}" aria-label="단가 항목명" autocomplete="off" required />
+      <select class="input py-1.5 text-sm" name="category_${r.id}" aria-label="분류">${rateCategoryOptions(cat)}</select>
+      <input class="input py-1.5 text-sm" name="base_hours_${r.id}" inputmode="decimal" value="${esc(String(baseHours))}" aria-label="기준 시간(시간)" placeholder="기준(h)" />
+      <input class="input py-1.5 text-sm" name="base_price_${r.id}" inputmode="numeric" value="${esc(String(r.base_price || ""))}" aria-label="기준 가격(원)" placeholder="기준가(원)" />
+      <input class="input py-1.5 text-sm" name="extra_hours_${r.id}" inputmode="decimal" value="${esc(String(extraHours))}" aria-label="초과 단위(시간)" placeholder="초과(h)" />
+      <input class="input py-1.5 text-sm" name="extra_price_${r.id}" inputmode="numeric" value="${esc(String(r.extra_price || ""))}" aria-label="초과 단가(원)" placeholder="초과가(원)" />
+      <select class="input py-1.5 text-sm" name="price_type_${r.id}" aria-label="가격 유형">${priceTypeOptions(r.price_type)}</select>
+      <span class="col-span-2 flex items-center justify-end gap-1 sm:col-span-1">
+        ${r.active ? "" : '<span class="text-xs text-muted">(비활성)</span>'}
+        <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-u-${r.id}" aria-label="위로 이동">↑</button>
+        <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-d-${r.id}" aria-label="아래로 이동">↓</button>
+        <button class="btn-ghost btn-xs whitespace-nowrap" type="submit" form="rate-act-${r.id}">${r.active ? "비활성" : "활성"}</button>
+        <button class="btn-ghost btn-xs text-danger" type="submit" form="rate-del-${r.id}">삭제</button>
+      </span>
     </div>`;
 }
 
-/** 작업 종류 카탈로그 행(삭제-only). 편집/삭제는 details 안. */
-function taskTypeRow(t) {
-  const billLabel = BILLING_TYPE_LABELS[t.billing_type] || t.billing_type;
-  const priceLabel = t.unit_price ? formatKRW(t.unit_price) : "단가 미정";
+/** 단가표 행의 형제 hidden 액션 폼(↑↓·활성 토글·삭제) — bulk 폼 밖에 렌더해 중첩 폼 회피. */
+function rateItemActionForms(r) {
   return `
-    <div class="rounded-lg border border-border bg-bg p-3">
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="font-medium">${esc(t.label)}</span>
-            ${priceTypeBadge(t.price_type)}
-            ${t.is_quick ? '<span class="badge bg-primary/10 text-primary">빠른추가</span>' : ""}
-          </div>
-          <div class="mt-0.5 text-xs text-muted">${esc(billLabel)} · ${priceLabel}</div>
-        </div>
-        <span class="flex shrink-0 gap-1">
-      <form method="post" action="/settings/task-types/${t.id}/move"><input type="hidden" name="dir" value="up" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="위로 이동">↑</button></form>
-      <form method="post" action="/settings/task-types/${t.id}/move"><input type="hidden" name="dir" value="down" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="아래로 이동">↓</button></form>
-    </span>
-      </div>
-      <details class="group mt-2 border-t border-border pt-2">
-        <summary class="flex cursor-pointer list-none items-center justify-end gap-1 text-xs text-muted hover:text-fg">수정 ${detailsChevron()}</summary>
-        <form method="post" action="/settings/task-types/${t.id}" class="mt-2 space-y-2" data-dirty-form>
-          <input class="input py-1.5 text-sm w-full" name="label" value="${esc(t.label)}" required />
-          <div class="grid gap-2 sm:grid-cols-2">
-            <select class="input py-1.5 text-sm" name="billing_type">
-              ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
-            </select>
-            <input class="input py-1.5 text-sm" name="unit_price" inputmode="numeric" value="${esc(String(t.unit_price || ""))}" placeholder="기본 단가(원)" />
-            <select class="input py-1.5 text-sm" name="price_type" aria-label="가격 유형">${priceTypeOptions(t.price_type)}</select>
-          </div>
-          <label class="flex items-center gap-2 text-sm text-muted"><input type="checkbox" name="is_quick" value="1" ${t.is_quick ? "checked" : ""} /> 빠른 추가 노출</label>
-          <div class="flex items-center gap-2">
-            <button class="btn-primary btn-xs transition" type="submit" data-dirty-save>저장</button>
-            <span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span>
-          </div>
-        </form>
-        <form method="post" action="/settings/task-types/${t.id}/delete" data-confirm="'${esc(t.label)}' 작업 종류를 삭제할까요? 이 종류로 만든 기존 작업은 유지되지만 종류명이 코드값으로 표시됩니다." class="mt-2">
-          <button class="btn-ghost btn-xs text-danger" type="submit">삭제</button>
-        </form>
-      </details>
+    <form id="rate-mv-u-${r.id}" method="post" action="/settings/rate-items/${r.id}/move" hidden><input type="hidden" name="dir" value="up" /></form>
+    <form id="rate-mv-d-${r.id}" method="post" action="/settings/rate-items/${r.id}/move" hidden><input type="hidden" name="dir" value="down" /></form>
+    <form id="rate-act-${r.id}" method="post" action="/settings/rate-items/${r.id}/active" hidden><input type="hidden" name="active" value="${r.active ? "0" : "1"}" /></form>
+    <form id="rate-del-${r.id}" method="post" action="/settings/rate-items/${r.id}/delete" hidden data-confirm="'${esc(r.name)}' 단가 항목을 삭제할까요? 이미 발행된 청구서는 금액이 따로 저장돼 그대로 남지만, 이 항목으로 잡힌 세션은 단가 항목이 비워져 청구할 수 없게 됩니다. 잠시 안 쓰는 것뿐이면 '비활성으로'를 쓰세요."></form>`;
+}
+
+/** 작업 종류 행 = 한 줄 인라인 편집(2026-07-27 통합 저장). */
+function taskTypeRow(t) {
+  return `
+    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(0,1.4fr)_8rem_6.5rem_6rem_auto_auto] ${t.active ? "" : "opacity-60"}" id="task-type-${t.id}">
+      <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="label_${t.id}" value="${esc(t.label)}" aria-label="작업 종류명" required />
+      <select class="input py-1.5 text-sm" name="billing_type_${t.id}" aria-label="과금">
+        ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
+      </select>
+      <input class="input py-1.5 text-sm" name="unit_price_${t.id}" inputmode="numeric" value="${esc(String(t.unit_price || ""))}" aria-label="기본 단가(원)" placeholder="기본 단가(원)" />
+      <select class="input py-1.5 text-sm" name="price_type_${t.id}" aria-label="가격 유형">${priceTypeOptions(t.price_type)}</select>
+      <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-muted"><input type="checkbox" name="is_quick_${t.id}" value="1" ${t.is_quick ? "checked" : ""} /> 빠른추가</label>
+      <span class="col-span-2 flex items-center justify-end gap-1 sm:col-span-1">
+        <button class="btn-ghost btn-xs px-2" type="submit" form="tt-mv-u-${t.id}" aria-label="위로 이동">↑</button>
+        <button class="btn-ghost btn-xs px-2" type="submit" form="tt-mv-d-${t.id}" aria-label="아래로 이동">↓</button>
+        <button class="btn-ghost btn-xs text-danger" type="submit" form="tt-del-${t.id}">삭제</button>
+      </span>
     </div>`;
+}
+
+/** 작업 종류 행의 형제 hidden 액션 폼(↑↓·삭제) — bulk 폼 밖에 렌더해 중첩 폼 회피. */
+function taskTypeActionForms(t) {
+  return `
+    <form id="tt-mv-u-${t.id}" method="post" action="/settings/task-types/${t.id}/move" hidden><input type="hidden" name="dir" value="up" /></form>
+    <form id="tt-mv-d-${t.id}" method="post" action="/settings/task-types/${t.id}/move" hidden><input type="hidden" name="dir" value="down" /></form>
+    <form id="tt-del-${t.id}" method="post" action="/settings/task-types/${t.id}/delete" hidden data-confirm="'${esc(t.label)}' 작업 종류를 삭제할까요? 이 종류로 만든 기존 작업은 유지되지만 종류명이 코드값으로 표시됩니다."></form>`;
 }
 
 /**
@@ -905,4 +862,4 @@ module.exports = {
   systemTab,
   systemWarnings,
   isBootstrapChief,
-}; // 내부 전용: rateCategoryOptions·listUsers·ratesGroupedByCategory·rateCategoryManageRow·rateCategoriesSection·roomRow·userRow·hourLabel·rateItemRow·taskTypeRow(위 export 함수들이 클로저로 사용)
+}; // 내부 전용: rateCategoryOptions·listUsers·ratesGroupedByCategory·rateCategoryManageRow·rateCategoriesSection·roomRow·roomActionForms·roomParentOptions·userRow·priceTypeOptions·rateItemRow·rateItemActionForms·taskTypeRow·taskTypeActionForms(위 export 함수들이 클로저로 사용)
