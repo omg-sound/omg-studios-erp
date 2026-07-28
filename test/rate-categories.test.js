@@ -22,25 +22,32 @@ init();
 
 test.after(() => cleanupDb(process.env.DB_PATH, db()));
 
-// ── 1회 시드: 기본 4개 분류가 locked=1로 들어와 있어야 한다 ──
-test("시드: 기본 분류 4개(스튜디오/로케이션 녹음·스튜디오 촬영·공연)는 locked", () => {
+// ── 1회 시드: 기본 4개 분류가 들어와 있어야 한다 ──
+test("시드: 기본 분류 4개(스튜디오/로케이션 녹음·스튜디오 촬영·공연) + kind 매핑", () => {
   const cats = listRateCategories();
-  const builtin = ["스튜디오 녹음", "로케이션 녹음", "스튜디오 촬영", "공연"];
-  for (const name of builtin) {
-    const c = cats.find((x) => x.name === name);
-    assert.ok(c, `${name} 시드 존재`);
-    assert.strictEqual(c.locked, 1, `${name}은 locked`);
+  for (const name of ["스튜디오 녹음", "로케이션 녹음", "스튜디오 촬영", "공연"]) {
+    assert.ok(cats.find((x) => x.name === name), `${name} 시드 존재`);
   }
   assert.strictEqual(rateCategoryKind("스튜디오 녹음"), "recording");
   assert.strictEqual(rateCategoryKind("스튜디오 촬영"), "filming");
   assert.strictEqual(rateCategoryKind("공연"), "performance");
 });
 
-// ── 기본 분류는 수정·삭제 불가 ──
-test("기본 분류는 수정·삭제 시 CATEGORY_LOCKED", () => {
-  const c = listRateCategories().find((x) => x.name === "스튜디오 녹음");
-  assert.throws(() => updateRateCategory(c.id, { name: "바뀐이름", kind: "recording" }), /CATEGORY_LOCKED/);
-  assert.throws(() => deleteRateCategory(c.id), /CATEGORY_LOCKED/);
+// ── 기본 분류도 수정·삭제 가능(2026-07-29 잠금 해제) ──
+// 옛 CATEGORY_LOCKED 가드를 뺐다. 근거였던 '코드가 이름에 의존'이 사실이 아니었고(kind는 DB 조회),
+// 남은 보호는 '사용 중이면 삭제 거부'뿐이라 그게 기본 분류에도 똑같이 걸리는지까지 함께 잠근다.
+test("기본 분류: 이름·kind 수정과 삭제가 되고, 이름을 바꾸면 kind 조회가 새 이름을 따라간다", () => {
+  const c = listRateCategories().find((x) => x.name === "로케이션 녹음");
+  const renamed = updateRateCategory(c.id, { name: "출장 녹음", kind: "recording" });
+  assert.strictEqual(renamed.name, "출장 녹음");
+  assert.strictEqual(rateCategoryKind("출장 녹음"), "recording", "새 이름으로 kind 조회");
+  assert.strictEqual(deleteRateCategory(renamed.id).id, c.id, "참조 없는 기본 분류는 삭제 가능");
+
+  // 사용 중이면 기본 분류라도 삭제 거부(유일하게 남은 안전망).
+  const inUse = listRateCategories().find((x) => x.name === "스튜디오 녹음");
+  const item = createRateItem({ rate_name: "잠금검사 녹음", category: "스튜디오 녹음", base_hours: "1", base_price: "100000" });
+  assert.throws(() => deleteRateCategory(inUse.id), /CATEGORY_IN_USE/);
+  db().prepare("DELETE FROM rate_items WHERE id = ?").run(item.id);
 });
 
 // ── 커스텀 분류는 추가·수정·삭제 가능 ──

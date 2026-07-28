@@ -124,8 +124,8 @@ function init() {
     );
 
     -- 단가표 분류(2026-07-05, 이전엔 config 하드코딩 배열이 유일한 진실원천 — 커스텀 분류 추가 불가했음).
-    -- config RECORDING/FILMING/PERFORMANCE_CATEGORIES를 1회 시드하며 그 4개는 locked=1(수정·삭제 불가 — 세션 종류↔kind
-    -- 매핑 등 코드가 이름에 의존). 치프가 새로 추가하는 분류만 locked=0(수정·삭제 가능).
+    -- config RECORDING/FILMING/PERFORMANCE_CATEGORIES를 1회 시드한다. locked는 레거시 컬럼(2026-07-29부터
+    -- 읽는 코드 없음) — 기본 분류도 수정·삭제할 수 있다(잠금 근거였던 '코드가 이름에 의존'이 사실이 아니었다).
     CREATE TABLE IF NOT EXISTS rate_categories (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT NOT NULL UNIQUE,

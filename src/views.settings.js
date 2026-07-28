@@ -160,32 +160,31 @@ function ratesGroupedByCategory(rates) {
   return { list, actionForms };
 }
 
-/** 분류 관리 행 — 기본(내장) 분류는 표시만(수정·삭제 불가), 치프가 추가한 분류만 이름·kind 수정 + 삭제. */
+/**
+ * 분류 관리 행 — 기본 분류도 같은 편집 행을 쓴다(2026-07-29 잠금 해제. 근거였던 '코드가 이름에 의존'이
+ * 사실이 아니었고, 남은 보호인 '사용 중이면 삭제 거부'는 데이터 계층이 지킨다).
+ * ⚠️저장 버튼은 행에 없다 — 섹션 하나에 통합 저장 하나(단가 항목·룸·작업 종류와 같은 규칙). 행 액션
+ * (↑↓·삭제)만 `form=`으로 형제 hidden 폼을 가리킨다(중첩 폼 금지).
+ */
 function rateCategoryManageRow(c) {
-  if (c.locked) {
-    return `<div class="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg px-3 py-2 text-sm">
-      <span>${esc(c.name)} <span class="badge bg-bg text-muted">${esc(RATE_KIND_LABELS[c.kind] || c.kind)}</span></span>
-      <span class="flex items-center gap-2"><span class="text-xs text-muted">기본 분류 · 수정·삭제 불가</span><span class="flex shrink-0 gap-1">
-      <form method="post" action="/settings/rate-categories/${c.id}/move"><input type="hidden" name="dir" value="up" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="위로 이동">↑</button></form>
-      <form method="post" action="/settings/rate-categories/${c.id}/move"><input type="hidden" name="dir" value="down" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="아래로 이동">↓</button></form>
-    </span></span>
-    </div>`;
-  }
   const kindOpts = Object.entries(RATE_KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === c.kind ? "selected" : ""}>${esc(l)}</option>`).join("");
   return `<div class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2">
-    <form method="post" action="/settings/rate-categories/${c.id}" class="flex flex-1 flex-wrap items-center gap-2" data-dirty-form>
-      <input class="input py-1 text-sm w-40" name="cat_name" value="${esc(c.name)}" autocomplete="off" required />
-      <select class="input py-1 text-sm" name="kind">${kindOpts}</select>
-      <button class="btn-primary btn-xs transition" type="submit" data-dirty-save>저장</button>
-    </form>
-    <form method="post" action="/settings/rate-categories/${c.id}/delete" data-confirm="'${esc(c.name)}' 분류를 삭제할까요? 이 분류를 쓰는 단가 항목이 있으면 삭제할 수 없습니다.">
-      <button class="btn-ghost btn-xs text-danger" type="submit">삭제</button>
-    </form>
-    <span class="flex shrink-0 gap-1">
-      <form method="post" action="/settings/rate-categories/${c.id}/move"><input type="hidden" name="dir" value="up" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="위로 이동">↑</button></form>
-      <form method="post" action="/settings/rate-categories/${c.id}/move"><input type="hidden" name="dir" value="down" /><button class="btn-ghost btn-xs px-2" type="submit" aria-label="아래로 이동">↓</button></form>
+    <input class="input py-1 text-sm w-40" name="cat_name_${c.id}" value="${esc(c.name)}" aria-label="분류명" autocomplete="off" required />
+    <select class="input w-32 py-1 text-sm" name="kind_${c.id}" aria-label="종류">${kindOpts}</select>
+    <span class="ml-auto flex shrink-0 items-center gap-1">
+      <button class="btn-ghost btn-xs px-2" type="submit" form="cat-mv-u-${c.id}" aria-label="위로 이동">↑</button>
+      <button class="btn-ghost btn-xs px-2" type="submit" form="cat-mv-d-${c.id}" aria-label="아래로 이동">↓</button>
+      <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="cat-del-${c.id}">삭제</button>
     </span>
   </div>`;
+}
+
+/** 분류 행의 형제 hidden 액션 폼(↑↓·삭제) — 통합 저장 폼 밖에 렌더해 중첩 폼 회피. */
+function rateCategoryActionForms(c) {
+  return `
+    <form id="cat-mv-u-${c.id}" method="post" action="/settings/rate-categories/${c.id}/move" hidden><input type="hidden" name="dir" value="up" /></form>
+    <form id="cat-mv-d-${c.id}" method="post" action="/settings/rate-categories/${c.id}/move" hidden><input type="hidden" name="dir" value="down" /></form>
+    <form id="cat-del-${c.id}" method="post" action="/settings/rate-categories/${c.id}/delete" hidden data-confirm="'${esc(c.name)}' 분류를 삭제할까요? 이 분류를 쓰는 단가 항목이 있으면 삭제할 수 없습니다."></form>`;
 }
 
 /** 분류 관리 섹션(접이식, 기본 접힘) — 추가 폼 + 목록(기본 분류/커스텀 분류). */
@@ -196,13 +195,18 @@ function rateCategoriesSection() {
     <details class="group mt-3 border-t border-border pt-3">
       <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-muted hover:text-fg">${detailsChevron()} 분류 관리</summary>
       <div class="mt-2 space-y-2">
-        ${settingDesc(`분류는 <b>녹음·촬영·공연</b> 중 하나에 속해 세션 종류에 맞는 단가 항목을 거르는 기준입니다. <b>기본 분류는 수정·삭제할 수 없고</b>, 새로 추가한 분류만 고치거나 지울 수 있습니다(그 분류를 쓰는 단가 항목이 없을 때만 삭제).`)}
-        <form method="post" action="/settings/rate-categories" class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-bg p-3">
-          <input class="input py-1.5 text-sm flex-1" name="cat_name" placeholder="새 분류명 (예: 야외 촬영)" autocomplete="off" required />
-          <select class="input py-1.5 text-sm" name="kind">${kindOpts}</select>
-          <button class="btn-primary btn-sm shrink-0" type="submit">분류 추가</button>
+        ${settingDesc(`분류는 <b>녹음·촬영·공연</b> 중 하나에 속해 세션 종류에 맞는 단가 항목을 거르는 기준입니다. 이름을 바꾸면 그 분류를 쓰는 단가 항목도 함께 따라옵니다. <b>삭제는 그 분류를 쓰는 단가 항목이 없을 때만</b> 됩니다.`)}
+        <form method="post" action="/settings/rate-categories" class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2">
+          <input class="input w-40 py-1 text-sm" name="cat_name" placeholder="새 분류명" aria-label="분류명" autocomplete="off" required />
+          <select class="input w-32 py-1 text-sm" name="kind" aria-label="종류">${kindOpts}</select>
+          <button class="btn-primary btn-xs shrink-0" type="submit">추가</button>
         </form>
-        <div class="space-y-2">${cats.map(rateCategoryManageRow).join("")}</div>
+        ${cats.length ? `
+        <form method="post" action="/settings/rate-categories/bulk" id="rate-cats-bulk-form" class="space-y-2" data-dirty-form>
+          ${cats.map(rateCategoryManageRow).join("")}
+          ${saveRow("통합 저장")}
+        </form>
+        ${cats.map(rateCategoryActionForms).join("")}` : ""}
       </div>
     </details>`;
 }
@@ -620,7 +624,9 @@ function priceTypeOptions(current) {
 function rateItemRow(r) {
   const baseHours = r.base_minutes ? r.base_minutes / 60 : "";
   const extraHours = r.extra_minutes ? r.extra_minutes / 60 : 1;
-  const cat = r.category || RECORDING_CATEGORIES[0];
+  // 분류가 비어 있을 때의 기본 선택값 — 첫 등록 분류(없으면 시드 상수). ⚠️config 상수를 그대로 쓰면
+  // 기본 분류를 개명·삭제할 수 있게 된 뒤(2026-07-29) DB에 없는 이름을 고르게 된다.
+  const cat = r.category || (listRateCategories()[0] || {}).name || RECORDING_CATEGORIES[0];
   return `
     <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 ${RATE_COLS} ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
       <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="rate_name_${r.id}" value="${esc(r.name)}" aria-label="단가 항목명" autocomplete="off" required />

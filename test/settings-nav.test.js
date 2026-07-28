@@ -49,13 +49,31 @@ test("옛 탭 이름이 사용자 노출 문구에 남아 있지 않다", () => 
 // ⚠️ `data-dirty-save` 마커만 세면 그 마커를 안 쓰는 화면(예약 기본값·알림·스튜디오 정보)은 **항상 0이라 무조건 통과**한다
 // (최종 리뷰가 '3/6 화면에서 이 테스트가 공허하다'고 지적). 그래서 **'저장' 성격의 제출 버튼 자체**를 센다 —
 // 추가·삭제·이동·업로드·테스트 발송 같은 액션 버튼은 라벨이 달라 걸리지 않고, 폼을 다시 쪼개면 즉시 실패한다.
-test("화면당 값-편집 저장 버튼은 1개 이하", () => {
-  const panes = { 장소: V.roomsSection(), 요금표: V.ratesPane(), "작업 종류": V.taskTypesPane(), "예약 기본값": V.bookingDefaultsSection(), 알림: V.alertsSection(true), "스튜디오 정보": V.studioInfoSection() };
-  for (const [name, html] of Object.entries(panes)) {
-    // <button ...>저장</button> / <button ...>통합 저장</button> — '저장'으로 끝나는 라벨만(‘분류 추가’·‘테스트 발송’ 등 제외).
-    const saveButtons = (html.match(/<button[^>]*>[^<]*저장<\/button>/g) || []);
-    assert.ok(saveButtons.length <= 1, `${name}: 저장 버튼 ${saveButtons.length}개(1개 이하여야 함) — ${saveButtons.join(" | ")}`);
+// <button ...>저장</button> / <button ...>통합 저장</button> — '저장'으로 끝나는 라벨만(‘분류 추가’·‘테스트 발송’ 등 제외).
+const countSaves = (html) => (html.match(/<button[^>]*>[^<]*저장<\/button>/g) || []).length;
+
+test("화면당 값-편집 저장 버튼은 표 하나에 하나", () => {
+  // 요금표만 2 — 한 화면에 독립된 표가 둘(단가 항목 / 접이식 '분류 관리')이고 각자 통합 저장 하나다.
+  const panes = [["장소", V.roomsSection(), 1], ["요금표", V.ratesPane(), 2], ["작업 종류", V.taskTypesPane(), 1],
+    ["예약 기본값", V.bookingDefaultsSection(), 1], ["알림", V.alertsSection(true), 1], ["스튜디오 정보", V.studioInfoSection(), 1]];
+  for (const [name, html, max] of panes) {
+    assert.ok(countSaves(html) <= max, `${name}: 저장 버튼 ${countSaves(html)}개(${max}개 이하여야 함)`);
   }
+});
+
+// 위 상한만으로는 '행마다 저장'을 못 막는다(행이 1개인 테스트 DB에선 통과해 버린다). 재설계가 없앤 건
+// 개수가 아니라 **행 수에 비례해 저장 버튼이 늘어나는 구조**라, 행을 늘려도 버튼 수가 그대로인지로 잠근다
+// (기본 분류 잠금을 푼 2026-07-29에 실제로 분류 행마다 저장 버튼이 되살아났었다).
+test("저장 버튼 수는 행 수와 무관하다(행마다 저장 금지)", () => {
+  const D = require("../src/data");
+  const before = { rates: countSaves(V.ratesPane()), tasks: countSaves(V.taskTypesPane()), rooms: countSaves(V.roomsSection()) };
+  D.createRateItem({ rate_name: "행수검사 녹음", category: "스튜디오 녹음", base_hours: "1", base_price: "100000" });
+  D.createRateCategory({ name: "행수검사 분류", kind: "recording" });
+  D.createTaskType({ label: "행수검사 작업", billing_type: "Fixed_Per_Track", unit_price: "10000" });
+  D.createRoom({ room_name: "행수검사 룸", bookable: "1" });
+  assert.deepStrictEqual(
+    { rates: countSaves(V.ratesPane()), tasks: countSaves(V.taskTypesPane()), rooms: countSaves(V.roomsSection()) },
+    before, "행을 추가해도 저장 버튼 수는 그대로여야 한다");
 });
 
 // 저장 버튼이 하나인 것만으로는 부족하다 — 그 버튼이 dirty 패턴에 걸려 있어야 (a)안 바꾸면 흐리고 (b)바꾼 채

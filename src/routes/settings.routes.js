@@ -18,6 +18,7 @@ const {
   bulkUpdateRateItems,
   createRateCategory,
   updateRateCategory,
+  bulkUpdateRateCategories,
   moveRateCategory,
   deleteRateCategory,
   createTaskType,
@@ -441,18 +442,23 @@ router.post("/rate-categories", requireStaff, (req, res) => {
   res.redirect("/settings?s=rates&flash=saved");
 });
 
+// 분류 인라인 통합 저장 — ⚠️`/:id`보다 먼저 선언해야 한다(뒤에 두면 :id가 "bulk"를 먹는다).
+router.post("/rate-categories/bulk", requireStaff, (req, res) => {
+  bulkUpdateRateCategories(req.body);
+  res.redirect("/settings?s=rates&flash=saved");
+});
+
 router.post("/rate-categories/:id", requireStaff, (req, res) => {
   try {
     updateRateCategory(Number(req.params.id), { name: req.body.cat_name, kind: req.body.kind });
   } catch (e) {
     if (e.message === "CATEGORY_NAME_REQUIRED") return res.redirect("/settings?s=rates");
-    if (e.message === "CATEGORY_LOCKED") return res.redirect("/settings?s=rates&notice=" + encodeURIComponent("기본 분류는 수정할 수 없습니다.") + "&notice_warn=1");
     throw e;
   }
   res.redirect("/settings?s=rates&flash=saved");
 });
 
-// 분류 순서 이동(위/아래) — 정렬 UI(2026-07-09 관리 개선). 잠긴 기본 분류도 순서는 이동 가능.
+// 분류 순서 이동(위/아래) — 정렬 UI(2026-07-09 관리 개선).
 router.post("/rate-categories/:id/move", requireStaff, (req, res) => {
   moveRateCategory(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
   res.redirect("/settings?s=rates");
@@ -462,7 +468,6 @@ router.post("/rate-categories/:id/delete", requireStaff, (req, res) => {
   try {
     deleteRateCategory(Number(req.params.id));
   } catch (e) {
-    if (e.message === "CATEGORY_LOCKED") return res.redirect("/settings?s=rates&notice=" + encodeURIComponent("기본 분류는 삭제할 수 없습니다.") + "&notice_warn=1");
     if (e.message === "CATEGORY_IN_USE") return res.redirect("/settings?s=rates&notice=" + encodeURIComponent("이 분류를 쓰는 단가 항목이 있어 삭제할 수 없습니다. 먼저 그 항목들을 다른 분류로 옮기거나 삭제하세요.") + "&notice_warn=1");
     throw e;
   }
