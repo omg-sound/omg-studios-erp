@@ -101,11 +101,16 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
   else if (cur === "alerts") pane = alertsSection(chief);
   else pane = systemTab(chief);
 
+  // 읽기 폭 해제는 **여러 열의 인라인 편집 표가 있는 화면만**(장소·요금표·작업 종류) — 그 표는 768px 안에서
+  // 열이 잘려 순서·삭제 버튼에 손이 안 닿는다. 나머지는 폼·상태판이라 읽기 폭(max-w-content)이 맞다
+  // (전 화면을 열었더니 스튜디오 정보 같은 폼이 화면 끝까지 늘어나 시선이 흩어졌다 — 2026-07-29 사용자 지적).
+  const TABLE_SCREENS = new Set(["rooms", "rates", "tasks"]);
+
   const left = `<div class="p-2">${settingsMenu(cur, warnCount)}</div>`; // card 없이 여백만 — 연락처·업체 좌측 목록과 같은 평평한 모양(.cl-listwrap .card 평탄화는 그 래퍼 안에서만 적용돼 여기선 안 먹는다)
   const right = `<div class="space-y-3">${flashBanner(req.query)}${pane}</div>`;
   const body = `
     ${pageHeader({ title: "환경설정" })}
-    ${contactPanes({ left, right, hasSelection, backHref: "/settings", backLabel: "환경설정 메뉴", widthKey: "setListW", narrowList: true, rightWide: true })}`;
+    ${contactPanes({ left, right, hasSelection, backHref: "/settings", backLabel: "환경설정 메뉴", widthKey: "setListW", narrowList: true, rightWide: TABLE_SCREENS.has(cur) })}`;
   res.send(layout({ title: "환경설정", user: req.user, current: "/settings", body, wide: true }));
 }));
 
