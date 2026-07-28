@@ -85,14 +85,19 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
   const chief = isChief(req.user);
   const warnCount = systemWarnings().length;
 
+  // ⚠️ `SETTING_BLOCK`만 두른 섹션 함수(roomsSection·studioInfoSection·studioCalendarSection·driveStorageSection·
+  // googleContactsSection)는 **바깥 카드를 호출부가 준다는 전제**로 만들어졌다(옛 4탭 라우터가 그룹마다
+  // `<section class="card">`로 감쌌다). 재설계에서 그 래퍼가 빠져 rooms(기본 화면)·studio·google 세 화면이
+  // 배경·테두리 없이 맨바닥에 렌더됐다(최종 리뷰가 잡음) → 여기서 감싼다. 나머지 화면은 스스로 카드를 두른다.
+  const card = (html) => `<section class="card space-y-4">${html}</section>`;
   let pane;
-  if (cur === "rooms") pane = roomsSection();
+  if (cur === "rooms") pane = card(roomsSection());
   else if (cur === "rates") pane = ratesPane();
   else if (cur === "tasks") pane = taskTypesPane();
   else if (cur === "booking") pane = bookingDefaultsSection();
   else if (cur === "users") pane = peopleTab(req.user);
-  else if (cur === "studio") pane = studioInfoSection();
-  else if (cur === "google") pane = (await studioCalendarSection(chief)) + driveStorageSection() + googleContactsSection(chief);
+  else if (cur === "studio") pane = card(studioInfoSection());
+  else if (cur === "google") pane = card((await studioCalendarSection(chief)) + driveStorageSection() + googleContactsSection(chief));
   else if (cur === "alerts") pane = alertsSection(chief);
   else pane = systemTab(chief);
 
@@ -325,7 +330,7 @@ router.post("/users", requireChief, (req, res) => {
       ensureContactForHouseUser(info.lastInsertRowid); // 하우스 엔지니어 → 연동 연락처+성·이름 보장
     }
   }
-  res.redirect("/settings?s=users&flash=saved"); // 기본 탭=환경설정으로 바뀌어(2026-07-09) 담당자 탭 명시 복귀
+  res.redirect("/settings?s=users&flash=saved"); // 저장 후 그 설정 화면으로 복귀(2026-07-28 재설계 규약)
 });
 
 router.post("/users/:id/role", requireChief, (req, res) => {

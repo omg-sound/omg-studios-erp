@@ -38,11 +38,29 @@ test("옛 탭 이름이 사용자 노출 문구에 남아 있지 않다", () => 
   assert.ok(!/tab=settings|tab=content|tab=people/.test(src.replace(/TAB_MAP[\s\S]{0,200}/, "")), "옛 tab= 리다이렉트 잔재 없음(호환 매핑 제외)");
 });
 
+// ⚠️ `data-dirty-save` 마커만 세면 그 마커를 안 쓰는 화면(예약 기본값·알림·스튜디오 정보)은 **항상 0이라 무조건 통과**한다
+// (최종 리뷰가 '3/6 화면에서 이 테스트가 공허하다'고 지적). 그래서 **'저장' 성격의 제출 버튼 자체**를 센다 —
+// 추가·삭제·이동·업로드·테스트 발송 같은 액션 버튼은 라벨이 달라 걸리지 않고, 폼을 다시 쪼개면 즉시 실패한다.
 test("화면당 값-편집 저장 버튼은 1개 이하", () => {
   const panes = { 장소: V.roomsSection(), 요금표: V.ratesPane(), "작업 종류": V.taskTypesPane(), "예약 기본값": V.bookingDefaultsSection(), 알림: V.alertsSection(true), "스튜디오 정보": V.studioInfoSection() };
   for (const [name, html] of Object.entries(panes)) {
-    const saves = (html.match(/data-dirty-save/g) || []).length;
-    assert.ok(saves <= 1, `${name}: 값 편집 저장 버튼 ${saves}개(1개 이하여야 함)`);
+    // <button ...>저장</button> / <button ...>통합 저장</button> — '저장'으로 끝나는 라벨만(‘분류 추가’·‘테스트 발송’ 등 제외).
+    const saveButtons = (html.match(/<button[^>]*>[^<]*저장<\/button>/g) || []);
+    assert.ok(saveButtons.length <= 1, `${name}: 저장 버튼 ${saveButtons.length}개(1개 이하여야 함) — ${saveButtons.join(" | ")}`);
+  }
+});
+
+// 화면 골격: 9화면 모두 카드 안에 담겨야 한다. `SETTING_BLOCK`만 두른 섹션(장소·스튜디오 정보·구글 연동)은
+// **바깥 카드를 호출부가 준다는 전제**라, 라우터가 안 감싸면 맨바닥에 렌더된다(재설계 첫 구현에서 기본 화면인
+// 장소가 그랬고 최종 리뷰가 잡았다). 렌더 결과에 카드가 있는지로 잠근다.
+test("모든 설정 화면이 카드 안에 렌더된다(맨바닥 렌더 방지)", () => {
+  const wrapped = (html) => /class="[^"]*\bcard\b/.test(html);
+  const selfCarded = { 요금표: V.ratesPane(), "작업 종류": V.taskTypesPane(), "예약 기본값": V.bookingDefaultsSection(), 알림: V.alertsSection(true) };
+  for (const [name, html] of Object.entries(selfCarded)) assert.ok(wrapped(html), `${name}: 스스로 카드를 두른다`);
+  // 아래 셋은 라우터가 감싸 준다 — 함수 자체엔 카드가 없다는 사실을 명시적으로 잠가, 나중에 누가 라우터의
+  // 래퍼를 지우면 이 테스트가 '왜 감싸야 하는지'를 알려 준다.
+  for (const [name, html] of Object.entries({ 장소: V.roomsSection(), "스튜디오 정보": V.studioInfoSection() })) {
+    assert.ok(!wrapped(html), `${name}: 카드는 라우터가 씌운다(settings.routes.js의 card() 참조)`);
   }
 });
 

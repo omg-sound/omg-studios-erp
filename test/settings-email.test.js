@@ -72,7 +72,7 @@ test("청구 알림 이메일: 치프만 저장, 형식 검증, 렌더", async (
     // ④ 비우면 알림 끔 + 시스템 탭 경고.
     await post(chief, "/settings/alert-email", "alert_email=");
     assert.deepStrictEqual(mailer.getRecipients(), []);
-    const sys = await (await fetch(base + "/settings?tab=system", { headers: { cookie: chief } })).text();
+    const sys = await (await fetch(base + "/settings?s=system", { headers: { cookie: chief } })).text();
     assert.match(sys, /청구 알림 이메일 수신 주소가 없습니다/, "미설정은 시스템 탭 경고");
   } finally {
     await new Promise((r) => server.close(r));

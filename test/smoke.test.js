@@ -50,7 +50,9 @@ test("스모크: 치프 로그인 후 주요 화면 전부 200 + 역할별 권�
       "/invoices", "/invoices?filter=done", "/invoices?filter=paid", "/invoices?filter=todo",
       "/clients", "/contacts?tab=artist", "/contacts", "/contacts/new", "/equipment",
       "/workers", "/revenue", "/deliverables",
-      "/settings", "/settings?s=rates", "/settings?s=users", "/settings?s=system",
+      // 환경설정 9화면 전부(2026-07-28 재설계) — 일부만 훑으면 화면별 렌더 회귀가 샌다(카드 래퍼 누락이 실제로 그렇게 빠져나갔다).
+      "/settings", "/settings?s=rooms", "/settings?s=rates", "/settings?s=tasks", "/settings?s=booking",
+      "/settings?s=users", "/settings?s=studio", "/settings?s=google", "/settings?s=alerts", "/settings?s=system",
     ];
     for (const p of pages) {
       const r = await fetch(base + p, { headers: { cookie: chiefCookie }, redirect: "manual" });
