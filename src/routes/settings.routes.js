@@ -93,7 +93,8 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
   const card = (html) => `<section class="card space-y-4">${html}</section>`;
   let pane;
   if (cur === "rooms") pane = card(roomsSection());
-  else if (cur === "rates") pane = ratesPane();
+  // ?open=cats — 분류 관리 섹션에서 방금 무언가를 한 뒤의 복귀(접이식이 다시 접히지 않게).
+  else if (cur === "rates") pane = ratesPane({ openCats: req.query.open === "cats" });
   else if (cur === "tasks") pane = taskTypesPane();
   else if (cur === "booking") pane = bookingDefaultsSection();
   else if (cur === "users") pane = peopleTab(req.user);
@@ -439,39 +440,39 @@ router.post("/rate-categories", requireStaff, (req, res) => {
   } catch (e) {
     if (e.message !== "CATEGORY_NAME_REQUIRED") throw e; // 이름 누락은 조용히 생성 안 함
   }
-  res.redirect("/settings?s=rates&flash=saved");
+  res.redirect("/settings?s=rates&open=cats&flash=saved#cats-section");
 });
 
 // 분류 인라인 통합 저장 — ⚠️`/:id`보다 먼저 선언해야 한다(뒤에 두면 :id가 "bulk"를 먹는다).
 router.post("/rate-categories/bulk", requireStaff, (req, res) => {
   bulkUpdateRateCategories(req.body);
-  res.redirect("/settings?s=rates&flash=saved");
+  res.redirect("/settings?s=rates&open=cats&flash=saved#cats-section");
 });
 
 router.post("/rate-categories/:id", requireStaff, (req, res) => {
   try {
     updateRateCategory(Number(req.params.id), { name: req.body.cat_name, kind: req.body.kind });
   } catch (e) {
-    if (e.message === "CATEGORY_NAME_REQUIRED") return res.redirect("/settings?s=rates");
+    if (e.message === "CATEGORY_NAME_REQUIRED") return res.redirect("/settings?s=rates&open=cats#cats-section");
     throw e;
   }
-  res.redirect("/settings?s=rates&flash=saved");
+  res.redirect("/settings?s=rates&open=cats&flash=saved#cats-section");
 });
 
 // 분류 순서 이동(위/아래) — 정렬 UI(2026-07-09 관리 개선).
 router.post("/rate-categories/:id/move", requireStaff, (req, res) => {
   moveRateCategory(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?s=rates");
+  res.redirect("/settings?s=rates&open=cats#cats-section");
 });
 
 router.post("/rate-categories/:id/delete", requireStaff, (req, res) => {
   try {
     deleteRateCategory(Number(req.params.id));
   } catch (e) {
-    if (e.message === "CATEGORY_IN_USE") return res.redirect("/settings?s=rates&notice=" + encodeURIComponent("이 분류를 쓰는 단가 항목이 있어 삭제할 수 없습니다. 먼저 그 항목들을 다른 분류로 옮기거나 삭제하세요.") + "&notice_warn=1");
+    if (e.message === "CATEGORY_IN_USE") return res.redirect("/settings?s=rates&open=cats&notice=" + encodeURIComponent("이 분류를 쓰는 단가 항목이 있어 삭제할 수 없습니다. 먼저 그 항목들을 다른 분류로 옮기거나 삭제하세요.") + "&notice_warn=1#cats-section");
     throw e;
   }
-  res.redirect("/settings?s=rates&flash=deleted");
+  res.redirect("/settings?s=rates&open=cats&flash=deleted#cats-section");
 });
 
 // ── 룸(스튜디오 공간) 관리(추가·수정·순서·삭제) ──

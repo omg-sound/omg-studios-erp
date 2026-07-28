@@ -187,12 +187,18 @@ function rateCategoryActionForms(c) {
     <form id="cat-del-${c.id}" method="post" action="/settings/rate-categories/${c.id}/delete" hidden data-confirm="'${esc(c.name)}' 분류를 삭제할까요? 이 분류를 쓰는 단가 항목이 있으면 삭제할 수 없습니다."></form>`;
 }
 
-/** 분류 관리 섹션(접이식, 기본 접힘) — 추가 폼 + 목록(기본 분류/커스텀 분류). */
-function rateCategoriesSection() {
+/**
+ * 분류 관리 섹션(접이식, 기본 접힘) — 추가 폼 + 목록.
+ * `open` = 이 섹션 안에서 뭔가를 한 직후(순서 이동·추가·저장·삭제)라 **펼친 채 돌아와야 하는 상태**.
+ * 서버 렌더라 리다이렉트가 곧 새 페이지고, 그러면 details가 초기값(접힘)으로 되돌아가 ↑↓를 한 번 누를 때마다
+ * 섹션이 닫혔다(2026-07-29 사용자 리포트). 분류 라우트들이 `?open=cats#cats-section`으로 돌려보내고
+ * 여기서 그 신호를 받아 편다 — 청구 탭의 `?open=<id>`와 같은 방식이다.
+ */
+function rateCategoriesSection(open = false) {
   const cats = listRateCategories();
   const kindOpts = Object.entries(RATE_KIND_LABELS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("");
   return `
-    <details class="group mt-3 border-t border-border pt-3">
+    <details id="cats-section" class="group mt-3 border-t border-border pt-3" ${open ? "open" : ""}>
       <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-muted hover:text-fg">${detailsChevron()} 분류 관리</summary>
       <div class="mt-2 space-y-2">
         ${settingDesc(`분류는 <b>녹음·촬영·공연</b> 중 하나에 속해 세션 종류에 맞는 단가 항목을 거르는 기준입니다. 이름을 바꾸면 그 분류를 쓰는 단가 항목도 함께 따라옵니다. <b>삭제는 그 분류를 쓰는 단가 항목이 없을 때만</b> 됩니다.<br>↑↓는 <b>같은 종류 안에서만</b> 순서를 바꿉니다(종류 사이는 녹음 → 촬영 → 공연 고정). 이 순서가 요금표 목록·세션 예약 폼의 단가 항목 순서가 됩니다.`)}
@@ -212,7 +218,8 @@ function rateCategoriesSection() {
 }
 
 /** 요금표 화면 — 단가 항목(시간제 단가) + 분류 관리. 옛 contentTab의 앞부분(2026-07-28 분리). */
-function ratesPane() {
+// openCats = 분류 관리 섹션을 편 채로 렌더(그 섹션에서 방금 뭔가를 한 직후 — rateCategoriesSection 주석 참조).
+function ratesPane({ openCats = false } = {}) {
   const rates = listRateItems({ includeInactive: true });
   return `
       <section class="card space-y-4" id="rates-section">
@@ -246,7 +253,7 @@ function ratesPane() {
         </form>`)}
         ${g.actionForms}`;
         })()}
-        ${rateCategoriesSection()}
+        ${rateCategoriesSection(openCats)}
       </section>`;
 }
 
