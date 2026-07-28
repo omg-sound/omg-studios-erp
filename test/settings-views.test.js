@@ -28,7 +28,8 @@ test("단가표·작업 종류: 인라인 필드 + bulk 폼, 접이식 '수정' 
   const a = D.createRateItem({ rate_name: "뷰검사녹음", category: "스튜디오 녹음", base_hours: "3.5", base_price: "300000", extra_price: "100000" });
   D.createTaskType({ label: "뷰검사작업", billing_type: "Fixed_Per_Track", unit_price: "100000" });
   const t = db().prepare("SELECT * FROM task_types WHERE label='뷰검사작업'").get();
-  const html = V.contentTab();
+  // 2026-07-28 화면 분리 — 요금표(ratesPane)·작업 종류(taskTypesPane)는 이제 별도 화면.
+  const html = V.ratesPane() + V.taskTypesPane();
 
   assert.ok(html.includes('id="rates-section"'), "단가표 섹션 앵커");
   assert.ok(html.includes('id="task-types-section"'), "작업 종류 섹션 앵커");
@@ -78,7 +79,7 @@ test("빈 목록: 단가표·작업 종류·룸이 0건이어도 예외 없이 �
   // invalidateTaskTypeCache가 함께 호출돼 listTaskTypes가 실제로 빈 목록을 본다.
   for (const t of D.listTaskTypes({ includeInactive: true })) D.deleteTaskType(t.id);
 
-  const contentHtml = V.contentTab();
+  const contentHtml = V.ratesPane() + V.taskTypesPane();
   assert.ok(contentHtml.includes("등록된 단가 항목이 없습니다."), "단가표 빈 안내(emptyState)");
   assert.ok(contentHtml.includes("등록된 작업 종류가 없습니다."), "작업 종류 빈 안내(emptyState)");
   assert.ok(!contentHtml.includes('id="rates-bulk-form"'), "단가표 bulk 폼은 행이 있을 때만 렌더");

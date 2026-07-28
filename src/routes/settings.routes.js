@@ -40,15 +40,14 @@ const {
 const { layout, pageHeader, esc, flashBanner } = require("../views");
 const {
   peopleTab,
-  contentTab,
+  ratesPane,
+  taskTypesPane,
   driveStorageSection,
   studioCalendarSection,
   roomsSection,
-  sessionDurationSection,
-  defaultBookerSection,
+  bookingDefaultsSection,
   studioInfoSection,
-  alertWebhookSection,
-  alertEmailSection,
+  alertsSection,
   googleContactsSection,
   systemTab,
   systemWarnings,
@@ -88,13 +87,13 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
 
   let pane;
   if (cur === "rooms") pane = roomsSection();
-  else if (cur === "rates") pane = contentTab(); // TODO(Task 2): ratesPane()으로 교체(요금표만 분리)
-  else if (cur === "tasks") pane = contentTab(); // TODO(Task 2): taskTypesPane()으로 교체(작업 종류만 분리)
-  else if (cur === "booking") pane = sessionDurationSection() + defaultBookerSection(); // TODO(Task 2): bookingDefaultsSection()으로 통합
+  else if (cur === "rates") pane = ratesPane();
+  else if (cur === "tasks") pane = taskTypesPane();
+  else if (cur === "booking") pane = bookingDefaultsSection();
   else if (cur === "users") pane = peopleTab(req.user);
   else if (cur === "studio") pane = studioInfoSection();
   else if (cur === "google") pane = (await studioCalendarSection(chief)) + driveStorageSection() + googleContactsSection(chief);
-  else if (cur === "alerts") pane = alertWebhookSection(chief) + alertEmailSection(chief); // TODO(Task 2): alertsSection(chief)으로 통합
+  else if (cur === "alerts") pane = alertsSection(chief);
   else pane = systemTab(chief);
 
   const left = `<div class="p-2">${settingsMenu(cur, warnCount)}</div>`; // card 없이 여백만 — 연락처·업체 좌측 목록과 같은 평평한 모양(.cl-listwrap .card 평탄화는 그 래퍼 안에서만 적용돼 여기선 안 먹는다)
@@ -214,6 +213,16 @@ router.post("/pro-minutes", requireStaff, (req, res) => {
   res.redirect("/settings?tab=settings&flash=saved");
 });
 
+// ── 예약 기본값 통합 저장(2026-07-28 화면당 저장 하나) — 기본 세션 시간·예약 담당자·기본 장소를 한 번에.
+// 각 필드의 검증·정규화는 옛 /pro-minutes·/default-booker·/studio-location 본문과 동일(그대로 유지, 존치).
+router.post("/booking-defaults", requireStaff, (req, res) => {
+  const hours = parseFloat(req.body.pro_hours);
+  setProMinutes(Number.isFinite(hours) && hours > 0 ? Math.round(hours * 60) : null);
+  setDefaultBooker(req.body.default_booker);
+  calendar.setStudioLocation(req.body.studio_location);
+  res.redirect("/settings?s=booking&flash=saved");
+});
+
 // ── 공급자(스튜디오) 세금정보 저장 — 거래명세서 PDF용. 평문 admin_state ──
 router.post("/studio-info", requireStaff, (req, res) => {
   setStudioInfo(req.body);
@@ -234,6 +243,29 @@ router.post("/alert-webhook/test", requireChief, asyncHandler(async (req, res) =
   await alerts.notify({ type: "test", title: "[테스트] OMG Studios 알림", text: "알림 채널이 정상 연결되었습니다." });
   res.redirect("/settings?tab=settings&flash=tested");
 }));
+
+// ── 알림 통합 저장(2026-07-28 화면당 저장 하나) — 웹훅+청구 알림 이메일 한 폼. 옛 /alert-webhook·/alert-email(값 저장)은
+// 계약 유지(존치), 테스트 발송(/alert-webhook/test·/alert-email/test)은 값 편집이 아닌 액션이라 그대로 유지.
+// 이메일 형식이 잘못됐으면 웹훅까지 통째로 저장하지 않는다(한 버튼 = 원자적 저장).
+router.post("/alerts", requireChief, (req, res) => {
+  const raw = String(req.body.alert_email || "");
+  const bad = mailer.invalidRecipients(raw);
+  if (bad.length) {
+    const msg = `이메일 형식이 올바르지 않습니다: ${bad.slice(0, 3).join(", ")}`;
+    return res.redirect("/settings?s=alerts&notice=" + encodeURIComponent(msg) + "&notice_warn=1");
+  }
+
+  alerts.setWebhookUrl(req.body.webhook_url); // 암호화 저장(또는 비우면 해제) — /alert-webhook 본문과 동일
+  const url = String(req.body.webhook_url || "").trim();
+  let host = "해제";
+  if (url) { try { host = new URL(url).host; } catch { host = "(형식 오류)"; } }
+  logAudit(req.user, "settings.alert_webhook", host);
+
+  mailer.setRecipients(raw); // /alert-email 본문과 동일
+  const to = mailer.getRecipients();
+  logAudit(req.user, "settings.alert_email", to.length ? to.map(mailer.maskEmail).join(", ") : "해제");
+  res.redirect("/settings?s=alerts&flash=saved");
+});
 
 // ── 청구 알림 이메일(2026-07-14) — 수신 주소 저장/테스트. 치프 전용(외부로 나가는 알림 채널). ──
 router.post("/alert-email", requireChief, (req, res) => {
@@ -354,13 +386,13 @@ router.post("/rate-items", requireStaff, (req, res) => {
   } catch (e) {
     if (!["RATE_NAME_REQUIRED", "RATE_PRICE_REQUIRED"].includes(e.message)) throw e; // 이름·가격 누락은 조용히 생성 안 함
   }
-  res.redirect("/settings?tab=content&flash=saved");
+  res.redirect("/settings?s=rates&flash=saved");
 });
 
 // 통합 저장(2026-07-27 인라인 편집) — 섹션 전 행을 한 번에. 행별 검증·건너뜀은 데이터 계층(bulkUpdateRateItems) 규약.
 router.post("/rate-items/bulk", requireStaff, (req, res) => {
   bulkUpdateRateItems(req.body);
-  res.redirect("/settings?tab=content&flash=saved#rates-section");
+  res.redirect("/settings?s=rates&flash=saved#rates-section");
 });
 
 router.post("/rate-items/:id", requireStaff, (req, res) => {
@@ -369,24 +401,24 @@ router.post("/rate-items/:id", requireStaff, (req, res) => {
   } catch (e) {
     if (!["RATE_NAME_REQUIRED", "RATE_PRICE_REQUIRED"].includes(e.message)) throw e; // 이름·가격 누락은 조용히 생성 안 함
   }
-  res.redirect("/settings?tab=content&flash=saved");
+  res.redirect("/settings?s=rates&flash=saved");
 });
 
 // 표시 순서 이동(같은 분류 안에서 위/아래) — 분류·작업 종류와 같은 ↑↓(2026-07-26, 이전엔 이름순 강제).
 router.post("/rate-items/:id/move", requireStaff, (req, res) => {
   moveRateItem(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?tab=content#rates-section");
+  res.redirect("/settings?s=rates#rates-section");
 });
 
 // 활성/비활성 토글(2026-07-26) — active 컬럼은 있었는데 라우트가 없어 한 번 비활성이 되면 되살릴 수 없었다.
 router.post("/rate-items/:id/active", requireStaff, (req, res) => {
   setRateItemActive(Number(req.params.id), req.body.active === "1");
-  res.redirect("/settings?tab=content&flash=saved#rates-section");
+  res.redirect("/settings?s=rates&flash=saved#rates-section");
 });
 
 router.post("/rate-items/:id/delete", requireStaff, (req, res) => {
   deleteRateItem(Number(req.params.id));
-  res.redirect("/settings?tab=content&flash=deleted#rates-section");
+  res.redirect("/settings?s=rates&flash=deleted#rates-section");
 });
 
 // ── 단가표 분류 관리(2026-07-05) — 기본 분류는 잠금(locked), 치프가 추가한 분류만 수정·삭제 ──
@@ -396,35 +428,35 @@ router.post("/rate-categories", requireStaff, (req, res) => {
   } catch (e) {
     if (e.message !== "CATEGORY_NAME_REQUIRED") throw e; // 이름 누락은 조용히 생성 안 함
   }
-  res.redirect("/settings?tab=content&flash=saved");
+  res.redirect("/settings?s=rates&flash=saved");
 });
 
 router.post("/rate-categories/:id", requireStaff, (req, res) => {
   try {
     updateRateCategory(Number(req.params.id), { name: req.body.cat_name, kind: req.body.kind });
   } catch (e) {
-    if (e.message === "CATEGORY_NAME_REQUIRED") return res.redirect("/settings?tab=content");
-    if (e.message === "CATEGORY_LOCKED") return res.redirect("/settings?tab=content&notice=" + encodeURIComponent("기본 분류는 수정할 수 없습니다.") + "&notice_warn=1");
+    if (e.message === "CATEGORY_NAME_REQUIRED") return res.redirect("/settings?s=rates");
+    if (e.message === "CATEGORY_LOCKED") return res.redirect("/settings?s=rates&notice=" + encodeURIComponent("기본 분류는 수정할 수 없습니다.") + "&notice_warn=1");
     throw e;
   }
-  res.redirect("/settings?tab=content&flash=saved");
+  res.redirect("/settings?s=rates&flash=saved");
 });
 
 // 분류 순서 이동(위/아래) — 정렬 UI(2026-07-09 관리 개선). 잠긴 기본 분류도 순서는 이동 가능.
 router.post("/rate-categories/:id/move", requireStaff, (req, res) => {
   moveRateCategory(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?tab=content");
+  res.redirect("/settings?s=rates");
 });
 
 router.post("/rate-categories/:id/delete", requireStaff, (req, res) => {
   try {
     deleteRateCategory(Number(req.params.id));
   } catch (e) {
-    if (e.message === "CATEGORY_LOCKED") return res.redirect("/settings?tab=content&notice=" + encodeURIComponent("기본 분류는 삭제할 수 없습니다.") + "&notice_warn=1");
-    if (e.message === "CATEGORY_IN_USE") return res.redirect("/settings?tab=content&notice=" + encodeURIComponent("이 분류를 쓰는 단가 항목이 있어 삭제할 수 없습니다. 먼저 그 항목들을 다른 분류로 옮기거나 삭제하세요.") + "&notice_warn=1");
+    if (e.message === "CATEGORY_LOCKED") return res.redirect("/settings?s=rates&notice=" + encodeURIComponent("기본 분류는 삭제할 수 없습니다.") + "&notice_warn=1");
+    if (e.message === "CATEGORY_IN_USE") return res.redirect("/settings?s=rates&notice=" + encodeURIComponent("이 분류를 쓰는 단가 항목이 있어 삭제할 수 없습니다. 먼저 그 항목들을 다른 분류로 옮기거나 삭제하세요.") + "&notice_warn=1");
     throw e;
   }
-  res.redirect("/settings?tab=content&flash=deleted");
+  res.redirect("/settings?s=rates&flash=deleted");
 });
 
 // ── 룸(스튜디오 공간) 관리(추가·수정·순서·삭제) ──
@@ -472,13 +504,13 @@ router.post("/task-types", requireStaff, (req, res) => {
   } catch (e) {
     if (e.message !== "TASK_TYPE_LABEL_REQUIRED") throw e;
   }
-  res.redirect("/settings?tab=content&flash=saved");
+  res.redirect("/settings?s=tasks&flash=saved");
 });
 
 // 통합 저장(2026-07-27 인라인 편집) — 섹션 전 행을 한 번에. 행별 검증·건너뜀은 데이터 계층(bulkUpdateTaskTypes) 규약.
 router.post("/task-types/bulk", requireStaff, (req, res) => {
   bulkUpdateTaskTypes(req.body);
-  res.redirect("/settings?tab=content&flash=saved#task-types-section");
+  res.redirect("/settings?s=tasks&flash=saved#task-types-section");
 });
 
 router.post("/task-types/:id", requireStaff, (req, res) => {
@@ -487,18 +519,18 @@ router.post("/task-types/:id", requireStaff, (req, res) => {
   } catch (e) {
     if (e.message !== "TASK_TYPE_LABEL_REQUIRED") throw e;
   }
-  res.redirect("/settings?tab=content&flash=saved");
+  res.redirect("/settings?s=tasks&flash=saved");
 });
 
 // 작업 종류 순서 이동(위/아래) — 곡·콘텐츠 빠른추가·드롭다운 순서에 반영.
 router.post("/task-types/:id/move", requireStaff, (req, res) => {
   moveTaskType(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?tab=content#task-types-section");
+  res.redirect("/settings?s=tasks#task-types-section");
 });
 
 router.post("/task-types/:id/delete", requireStaff, (req, res) => {
   deleteTaskType(Number(req.params.id));
-  res.redirect("/settings?tab=content&flash=deleted#task-types-section");
+  res.redirect("/settings?s=tasks&flash=deleted#task-types-section");
 });
 
 // ── 구글 연락처 일괄 내보내기(치프) ── 미연동(google_resource_name NULL) 연락처를 구글 주소록에 push(1회성, 2026-07-09 사용자 요청).

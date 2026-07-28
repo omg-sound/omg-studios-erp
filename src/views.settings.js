@@ -44,6 +44,11 @@ const AUDIT_LABELS = {
 // 섹션마다 .card 하나씩(p-5 × N)이던 것을 그룹당 카드 1개 + border-t 구분으로 압축, 제목도 text-lg→text-sm).
 const SETTING_BLOCK = "space-y-3 border-t border-border pt-4 mt-4 first:mt-0 first:border-t-0 first:pt-0";
 
+/** 설정 화면 설명 — 항상 보이게(옛 explain은 <details>로 접혀 판단 정보가 클릭 뒤에 숨었다, 2026-07-28). */
+function settingDesc(html) {
+  return html ? `<p class="mb-3 text-sm leading-relaxed text-muted">${html}</p>` : "";
+}
+
 /** 단가 항목 카테고리 select 옵션 — kind(녹음/촬영/공연)별 optgroup, DB 분류 순서(2026-07-05 config 하드코딩에서 전환). current 선택 반영. */
 function rateCategoryOptions(current = "") {
   const byKind = {};
@@ -170,15 +175,14 @@ function rateCategoriesSection() {
     </details>`;
 }
 
-/** 콘텐츠 탭: 단가표·녹음 종류 + 작업 종류 카탈로그. */
-function contentTab() {
+/** 요금표 화면 — 단가 항목(시간제 단가) + 분류 관리. 옛 contentTab의 앞부분(2026-07-28 분리). */
+function ratesPane() {
   const rates = listRateItems({ includeInactive: true });
-  const taskTypes = listTaskTypes({ includeInactive: true });
   return `
       <section class="card space-y-4" id="rates-section">
         <div>
-          <h2 class="font-display text-lg font-semibold">단가표 · 녹음/촬영 종류</h2>
-          ${explain(`대관 세션(녹음·촬영)의 시간제 단가 항목을 분류(스튜디오/로케이션 녹음·촬영)별로 추가합니다. 세션 폼의 '단가 항목'에 세션 종류(녹음/촬영)에 맞춰 분류로 묶여 표시됩니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금. <b>기준 시간을 비우면 정액(회당)</b> — 시간과 무관하게 1회 = 기준 가격이며, 가격까지 비우면 <b>금액 미정</b>(플레이백 세션처럼 회당 가격이 매번 다른 항목 — 청구 생성 시 금액을 입력해 확정).<br /><b>가격 유형</b>은 청구 화면에서 금액칸을 어떻게 다룰지 정합니다 — <b>고정</b>은 기본가를 잠그고 초과 시간만 자동 가산(녹음·촬영 대관), <b>기준가</b>는 산정치를 넣어 주되 위아래로 고칠 수 있고, <b>최소가</b>는 그 아래로 못 내립니다. <b>↑↓</b>로 분류 안 표시 순서를 바꾸고, 잠시 안 쓰는 항목은 삭제 대신 <b>비활성</b>으로 두면(세션 폼에서만 숨음) 나중에 되살릴 수 있습니다.`)}
+          <h2 class="font-display text-lg font-semibold">요금표 · 녹음/촬영 종류</h2>
+          ${settingDesc(`대관 세션(녹음·촬영)의 시간제 단가 항목입니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력). <b>가격 유형</b>이 청구 화면 금액칸의 수정 범위를 정합니다(고정=잠금·기준가/최소가=조정 가능).`)}
         </div>
         <form method="post" action="/settings/rate-items" class="space-y-2 rounded-lg border border-border bg-bg p-3">
           <div class="grid gap-2 sm:grid-cols-2">
@@ -221,12 +225,17 @@ function contentTab() {
         ${g.actionForms}`;
         })()}
         ${rateCategoriesSection()}
-      </section>
+      </section>`;
+}
 
+/** 작업 종류 화면 — 곡·콘텐츠 후반작업 카탈로그. 옛 contentTab의 뒷부분(2026-07-28 분리). */
+function taskTypesPane() {
+  const taskTypes = listTaskTypes({ includeInactive: true });
+  return `
       <section class="card space-y-4" id="task-types-section">
         <div>
           <h2 class="font-display text-lg font-semibold">작업 종류 <span class="text-sm font-normal text-muted">(곡·콘텐츠 후반작업)</span></h2>
-          ${explain(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가·과금을 관리합니다. '빠른추가'를 켜면 곡·콘텐츠의 빠른 추가 버튼에 노출됩니다. <b>포스트(믹싱·보컬튠)는 시간이 아니라 작업량으로 산정</b>하므로 여기서 관리합니다 — 믹싱은 <b>기준가</b>(작업량에 따라 차등), 보컬튠은 <b>최소가</b>(작업량에 따라 상향)로 두면 청구 화면이 그 금액을 넣어 주고 수정 범위를 그에 맞게 제한합니다.`)}
+          ${settingDesc(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가를 관리합니다. '빠른추가'를 켜면 곡·콘텐츠 화면의 빠른 추가 버튼에 노출됩니다. 시간이 아니라 작업량으로 산정하는 항목이라(믹싱=기준가·보컬튠=최소가 권장) 요금표와 카탈로그가 분리돼 있습니다.`)}
         </div>
         <form method="post" action="/settings/task-types" class="space-y-2 rounded-lg border border-border bg-bg p-3">
           <input class="input py-1.5 text-sm w-full" name="label" placeholder="작업 종류명 (예: 보컬튠)" required />
@@ -316,15 +325,10 @@ async function studioCalendarSection(chief = false) {
       }
     }
   }
-  const location = `
-    <div class="border-t border-border pt-3">
-      <label class="label mb-1 text-xs">기본 장소 <span class="font-normal text-muted">(예약 시 일정 장소로 자동 입력)</span></label>
-      <form method="post" action="/settings/studio-location" class="flex gap-2">
-        <input class="input py-1.5 text-sm" name="studio_location" value="${esc(calendar.getStudioLocation())}" placeholder="예: OMG 스튜디오 (서울 ...)" />
-        <button class="btn-primary shrink-0 btn-sm" type="submit">저장</button>
-      </form>
-    </div>`;
-  return `<div class="${SETTING_BLOCK}">${title}${inner}${location}</div>`;
+  // ⚠️ '기본 장소'(예약 시 일정 장소 자동 입력)는 2026-07-28까지 이 섹션에 있었으나, 실제로는
+  //  세션 예약의 기본값(pro-minutes·default-booker와 같은 성격)이라 '예약 기본값' 화면으로 옮겼다
+  //  (bookingDefaultsSection). 이 섹션은 구글 캘린더 연동(어느 캘린더에 동기화할지)에만 집중.
+  return `<div class="${SETTING_BLOCK}">${title}${inner}</div>`;
 }
 
 /**
@@ -384,42 +388,43 @@ function roomActionForms(r) {
 }
 
 /**
- * 기본 세션 시간 — 녹음 외 세션의 소요시간 슬라이더 기본값(getProMinutes).
- * (옛 '운영시간'[예약 시작 그리드 범위] 폼은 2026-07-27 제거 — 그리드가 날짜·시간 콤보로 바뀐 뒤
- *  저장값을 읽는 화면·검증이 하나도 없어, 바꿔도 아무 일이 없는 설정이었다.)
+ * 예약 기본값 화면(2026-07-28 통합) — 기본 세션 시간·예약 담당자·기본 장소, 셋 다 새 세션을 예약할 때
+ * 자동으로 채워지는 값이라 한 폼·한 저장 버튼으로 묶는다(POST /settings/booking-defaults).
+ * '기본 장소'는 원래 구글 캘린더 섹션에 끼어 있었으나, 실제로는 세션의 캘린더 이벤트 장소 기본값(위치는
+ * eventInputForSession의 session.location 폴백)이라 예약 기본값과 같은 성격 — 여기로 옮겼다(옛 '운영시간'
+ * 폼은 2026-07-27 제거 — 그리드가 날짜·시간 콤보로 바뀐 뒤 저장값을 읽는 화면·검증이 하나도 없어졌었다).
  */
-function sessionDurationSection() {
-  return `
-    <div class="${SETTING_BLOCK}">
-      <form method="post" action="/settings/pro-minutes" class="flex flex-wrap items-end gap-2">
-        <div>
-          <label class="label-sm">기본 세션 시간 <span class="font-normal text-muted">(녹음 외 세션[믹싱·마스터링·기타]의 소요시간 슬라이더 기본값)</span></label>
-          <input class="input w-28 py-1.5 text-sm" name="pro_hours" type="number" step="0.5" min="0.5" value="${esc(String(getProMinutes() / 60))}" placeholder="3.5" />
-        </div>
-        <span class="pb-2 text-sm text-muted">시간</span>
-        <button class="btn-primary btn-sm shrink-0" type="submit">저장</button>
-      </form>
-    </div>`;
-}
-
-/** 기본 예약 담당자 — 세션 예약 폼에서 예약 담당자로 기본 선택될 담당자(이름). */
-function defaultBookerSection() {
+function bookingDefaultsSection() {
   const cur = getDefaultBooker() || "";
   const managers = listProjectManagers();
   return `
-    <div class="${SETTING_BLOCK}">
+    <section class="card space-y-4">
       <div>
-        <h2 class="text-sm font-semibold">기본 예약 담당자</h2>
-        ${explain(`새 세션 예약 폼에서 '예약 담당자'로 기본 선택됩니다.`)}
+        <h2 class="font-display text-lg font-semibold">예약 기본값</h2>
+        ${settingDesc(`새 세션을 예약할 때 자동으로 채워지는 값입니다.`)}
       </div>
-      <form method="post" action="/settings/default-booker" class="flex flex-wrap items-end gap-2">
-        <select class="input py-1.5 text-sm" name="default_booker">
-          <option value="">지정 안 함</option>
-          ${managers.map((m) => `<option value="${esc(m.name)}" ${m.name === cur ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
-        </select>
-        <button class="btn-primary btn-sm shrink-0" type="submit">저장</button>
+      <form method="post" action="/settings/booking-defaults" class="space-y-3">
+        <div>
+          <label class="label-sm">기본 세션 시간 <span class="font-normal text-muted">(녹음 외 세션[믹싱·마스터링·기타]의 소요시간 슬라이더 기본값)</span></label>
+          <div class="flex items-center gap-2">
+            <input class="input w-28 py-1.5 text-sm" name="pro_hours" type="number" step="0.5" min="0.5" value="${esc(String(getProMinutes() / 60))}" placeholder="3.5" />
+            <span class="text-sm text-muted">시간</span>
+          </div>
+        </div>
+        <div>
+          <label class="label mb-0.5 text-xs">예약 담당자 <span class="font-normal text-muted">(세션 예약 폼에서 기본 선택)</span></label>
+          <select class="input py-1.5 text-sm" name="default_booker">
+            <option value="">지정 안 함</option>
+            ${managers.map((m) => `<option value="${esc(m.name)}" ${m.name === cur ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="label mb-0.5 text-xs">기본 장소 <span class="font-normal text-muted">(예약 시 일정 장소로 자동 입력)</span></label>
+          <input class="input py-1.5 text-sm" name="studio_location" value="${esc(calendar.getStudioLocation())}" placeholder="예: OMG 스튜디오 (서울 ...)" />
+        </div>
+        <button class="btn-primary btn-sm" type="submit">저장</button>
       </form>
-    </div>`;
+    </section>`;
 }
 
 /** 공급자(스튜디오) 세금정보 — 거래명세서 PDF의 '공급자'란. */
@@ -462,60 +467,63 @@ function studioInfoSection() {
     </div>`;
 }
 
-/** 알림 채널(웹훅) — 청구 발행·자료 공유 팀 알림. URL은 암호화 저장. */
-function alertWebhookSection(chief = true) {
+/**
+ * 알림 화면(2026-07-28 통합) — 웹훅(Slack/Discord)과 청구 알림 이메일을 한 폼·한 저장 버튼으로.
+ * 테스트 발송(웹훅·이메일 각각)은 값 편집이 아니라 액션이라 별도 버튼으로 유지(POST /settings/alert-webhook/test·/alert-email/test).
+ * ⚠️둘 다 치프 전용이다 — 저장 라우트(POST /settings/alerts)는 requireChief. 스태프는 상태만 열람.
+ */
+function alertsSection(chief = true) {
   const url = alerts.getConfiguredWebhook();
   const envNote = alerts.envWebhookActive()
     ? `<p class="mt-1 text-xs text-warning">환경변수 ALERT_WEBHOOK가 설정되어 우선 적용됩니다(아래 입력값은 무시).</p>`
     : "";
-  const canTest = url || alerts.envWebhookActive();
-  // 웹훅 URL은 조직 보안 설정(알림이 외부로 나감) → 치프 전용. 스태프는 현재 설정 상태만 열람.
-  const controls = chief
-    ? `<form method="post" action="/settings/alert-webhook" class="flex gap-2">
-        <input class="input py-1.5 text-sm" name="webhook_url" value="${esc(url)}" placeholder="https://hooks.slack.com/services/..." />
-        <button class="btn-primary shrink-0 btn-sm" type="submit">저장</button>
-      </form>
-      ${canTest ? `<form method="post" action="/settings/alert-webhook/test"><button class="btn-ghost btn-sm" type="submit">테스트 알림 보내기</button></form>` : ""}`
-    : `<p class="text-sm text-muted">${url || alerts.envWebhookActive() ? "알림 웹훅이 설정되어 있습니다." : "알림 웹훅 미설정."} 변경은 <span class="text-fg">치프 엔지니어</span>만 가능합니다(알림이 외부로 전송되는 보안 설정).</p>`;
-  return `
-    <div class="${SETTING_BLOCK}">
-      <div>
-        <h2 class="text-sm font-semibold">알림 (웹훅)</h2>
-        ${explain(`청구 발행·자료 공유 시 Slack/Discord 등으로 팀 알림을 보냅니다. Incoming Webhook URL을 넣으세요(비우면 알림 끔). 저장 시 암호화됩니다.`)}
-        ${envNote}
-      </div>
-      ${controls}
-    </div>`;
-}
+  const canTestWebhook = url || alerts.envWebhookActive();
 
-/** 청구 알림 이메일(2026-07-14) — 청구 생성 시 지정 주소로 발송. 발신=스튜디오 구글 계정(지메일 API). */
-function alertEmailSection(chief = true) {
   const raw = mailer.getRecipientsRaw();
   const list = mailer.getRecipients();
   const linked = Boolean(mailer.gmailClient());
   const linkNote = !linked
     ? `<p class="mt-1 text-xs text-warning">구글 미연동 — 자료 저장(구글 Drive) 연결 후 발송됩니다.</p>`
-    : `<p class="mt-1 text-xs text-muted">발신: <span class="text-fg">${esc(config.studioDriveEmail)}</span> · 메일 권한이 없다는 오류가 나면 그 계정으로 한 번 다시 로그인하세요(새 발송 권한 반영).</p>`;
-  const status = list.length
+    : `<p class="mt-1 text-xs text-muted">발신: <span class="text-fg">${esc(config.studioDriveEmail)}</span></p>`;
+  const emailStatus = list.length
     ? `<p class="text-sm">현재 수신: <span class="font-semibold text-fg">${esc(list.join(", "))}</span> <span class="text-xs text-muted">(${list.length}명)</span></p>`
     : `<p class="text-sm text-muted">수신 주소 미설정 — 청구 알림 메일이 발송되지 않습니다.</p>`;
-  const controls = chief
-    ? `<form method="post" action="/settings/alert-email" class="flex gap-2">
-        <input class="input py-1.5 text-sm" name="alert_email" value="${esc(raw)}" placeholder="owner@omgworks.kr, chief@omgworks.kr" />
-        <button class="btn-primary shrink-0 btn-sm" type="submit">저장</button>
-      </form>
-      ${list.length ? `<form method="post" action="/settings/alert-email/test"><button class="btn-ghost btn-sm" type="submit">테스트 메일 보내기</button></form>` : ""}`
-    : `<p class="text-sm text-muted">변경은 <span class="text-fg">치프 엔지니어</span>만 가능합니다.</p>`;
-  return `
-    <div class="${SETTING_BLOCK}">
+
+  if (!chief) {
+    return `<section class="card space-y-4">
       <div>
-        <h2 class="text-sm font-semibold">청구 알림 이메일</h2>
-        ${explain(`프로젝트 청구 탭에서 청구가 생성될 때, 아래 주소로 알림 메일을 보냅니다(청구번호·청구처·아티스트·금액 + 청구서 바로가기). 여러 명은 콤마로 구분하세요. 비우면 알림을 끕니다.`)}
+        <h2 class="font-display text-lg font-semibold">알림</h2>
+        ${settingDesc(`청구 발행·자료 공유 시 팀에 알리는 두 채널(웹훅·청구 알림 이메일)입니다. 변경은 <span class="text-fg">치프 엔지니어</span>만 할 수 있습니다.`)}
+      </div>
+      <p class="text-sm text-muted">알림 웹훅 ${url || alerts.envWebhookActive() ? "설정됨" : "미설정"}</p>
+      ${emailStatus}
+    </section>`;
+  }
+
+  return `<section class="card space-y-4">
+    <div>
+      <h2 class="font-display text-lg font-semibold">알림</h2>
+      ${settingDesc(`청구 발행·자료 공유 시 팀에 알립니다 — Slack/Discord 웹훅과 청구 알림 이메일(청구번호·청구처·금액 + 바로가기)을 함께 관리합니다.`)}
+    </div>
+    <form method="post" action="/settings/alerts" class="space-y-3">
+      <div>
+        <label class="label mb-0.5 text-xs">알림 웹훅 <span class="font-normal text-muted">(Incoming Webhook URL · 비우면 끔 · 저장 시 암호화)</span></label>
+        <input class="input py-1.5 text-sm" name="webhook_url" value="${esc(url)}" placeholder="https://hooks.slack.com/services/..." />
+        ${envNote}
+      </div>
+      <div>
+        <label class="label mb-0.5 text-xs">청구 알림 이메일 <span class="font-normal text-muted">(콤마로 여러 명 · 비우면 끔)</span></label>
+        <input class="input py-1.5 text-sm" name="alert_email" value="${esc(raw)}" placeholder="owner@omgworks.kr, chief@omgworks.kr" />
         ${linkNote}
       </div>
-      ${status}
-      ${controls}
-    </div>`;
+      <button class="btn-primary btn-sm" type="submit">저장</button>
+    </form>
+    ${emailStatus}
+    <div class="flex flex-wrap gap-2 border-t border-border pt-3">
+      ${canTestWebhook ? `<form method="post" action="/settings/alert-webhook/test"><button class="btn-ghost btn-sm" type="submit">웹훅 테스트 알림 보내기</button></form>` : ""}
+      ${list.length ? `<form method="post" action="/settings/alert-email/test"><button class="btn-ghost btn-sm" type="submit">이메일 테스트 발송</button></form>` : ""}
+    </div>
+  </section>`;
 }
 
 /**
@@ -872,19 +880,19 @@ function settingsMenu(current, warnCount = 0) {
 
 module.exports = {
   peopleTab,
-  contentTab,
+  ratesPane,
+  taskTypesPane,
   driveStorageSection,
   studioCalendarSection,
   roomsSection,
-  sessionDurationSection,
-  defaultBookerSection,
+  bookingDefaultsSection,
   studioInfoSection,
-  alertWebhookSection,
-  alertEmailSection,
+  alertsSection,
   googleContactsSection,
   systemTab,
   systemWarnings,
   isBootstrapChief,
+  settingDesc,
   SETTINGS_NAV,
   SETTINGS_KEYS,
   settingsMenu,
