@@ -611,7 +611,7 @@ function trackProgressSummary(tasks) {
 function trackEditMenu(track, hasInvoiced) {
   return `
     <details class="group shrink-0 text-right">
-      <summary class="flex cursor-pointer list-none items-center justify-end text-xs text-muted hover:text-fg">${detailsChevron()}</summary>
+      <summary class="flex cursor-pointer list-none items-center justify-end gap-1 whitespace-nowrap text-xs text-muted hover:text-fg">수정 ${detailsChevron()}</summary>
       <form method="post" action="/projects/tracks/${track.id}" class="mt-2 space-y-2 rounded-lg border border-border bg-surface p-3 text-left">
         <div><label class="label mb-0.5 text-xs">아티스트</label>${artistCombo({ artist: track.artist })}</div>
         <div class="flex gap-2"><input class="input flex-1 py-1.5 text-sm" name="title" value="${esc(track.title)}" required />
