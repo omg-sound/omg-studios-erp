@@ -61,6 +61,15 @@ function settingDesc(html) {
  * 오버플로우로도 안 잡힌다(바깥이 잘라 버려 documentElement는 멀쩡하다) — 그래서 눈에 안 띄었다.
  * 폭을 더 줄이는 대신 넘칠 때만 스크롤되게 해, 어떤 폭에서도 모든 컨트롤에 도달 가능하게 만든다.
  */
+/**
+ * 단가표 한 줄의 열 폭 — **헤더·추가 행·편집 행이 같은 값을 써야** 열이 맞는다(각자 독립된 grid라 문자열이
+ * 유일한 연결 고리다). 이름은 상한을 둔다(1fr로 두면 넓은 화면에서 이름 칸만 과하게 늘어난다 — 사용자 지적).
+ * 남는 폭은 마지막(액션) 열이 흡수하고 버튼은 오른쪽 정렬이라 표가 화면 폭에 맞춰 자연스럽게 늘어난다.
+ */
+const RATE_COLS = "sm:grid-cols-[minmax(6rem,14rem)_6.5rem_3.5rem_5.5rem_3.5rem_5.5rem_4.5rem_minmax(max-content,1fr)]";
+/** 작업 종류 한 줄의 열 폭 — RATE_COLS와 같은 규칙(헤더·추가 행·편집 행 공용, 이름 상한·마지막 열이 슬랙 흡수). */
+const TASK_COLS = "sm:grid-cols-[minmax(6rem,14rem)_8rem_6.5rem_6rem_auto_minmax(max-content,1fr)]";
+
 function scrollX(inner, innerClass = "space-y-2") {
   return `<div class="overflow-x-auto"><div class="${innerClass}">${inner}</div></div>`;
 }
@@ -207,44 +216,30 @@ function ratesPane() {
           <h2 class="font-display text-lg font-semibold">요금표 · 녹음/촬영 종류</h2>
           ${settingDesc(`대관 세션(녹음·촬영)의 시간제 단가 항목입니다. 분류는 세션 종류(녹음/촬영)에 맞춰 세션 폼에 필터링돼 보입니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력). <b>가격 유형</b>이 청구 화면 금액칸의 수정 범위를 정합니다(고정=잠금·기준가/최소가=조정 가능).`)}
         </div>
-        <form method="post" action="/settings/rate-items" class="space-y-2 rounded-lg border border-border bg-bg p-3">
-          <div class="grid gap-2 sm:grid-cols-2">
-            <div><label class="label mb-0.5 text-xs">단가 항목명</label><input class="input py-1.5 text-sm" name="rate_name" placeholder="예: 보컬 녹음 · 뮤직비디오 촬영" autocomplete="off" required /></div>
-            <div><label class="label mb-0.5 text-xs">분류</label><select class="input py-1.5 text-sm" name="category">${rateCategoryOptions()}</select></div>
-          </div>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <div>
-              <label class="label mb-0.5 text-xs">기준 시간(1Pro, 시간)</label>
-              <input class="input py-1.5 text-sm" name="base_hours" inputmode="decimal" placeholder="예: 3.5" />
-            </div>
-            <div>
-              <label class="label mb-0.5 text-xs">기준 가격(원)</label>
-              <input class="input py-1.5 text-sm" name="base_price" inputmode="numeric" placeholder="예: 300000" />
-            </div>
-            <div>
-              <label class="label mb-0.5 text-xs">초과 단위(시간)</label>
-              <input class="input py-1.5 text-sm" name="extra_hours" inputmode="decimal" placeholder="예: 1" value="1" />
-            </div>
-            <div>
-              <label class="label mb-0.5 text-xs">초과 단가(원)</label>
-              <input class="input py-1.5 text-sm" name="extra_price" inputmode="numeric" placeholder="예: 100000" />
-            </div>
-            <div>
-              <label class="label mb-0.5 text-xs">가격 유형</label>
-              <select class="input py-1.5 text-sm" name="price_type">${priceTypeOptions("fixed")}</select>
-            </div>
-          </div>
-          <button class="btn-primary btn-sm" type="submit">단가 항목 추가</button>
-        </form>
         ${(() => {
           const g = ratesGroupedByCategory(rates);
-          if (!g.actionForms) return g.list; // 빈 상태
+          // 추가 폼 = 표의 **첫 행**(스프레드시트식). 옛 폼은 라벨 붙은 2열 블록 두 개라 **네 줄**을 차지해,
+          // 정작 추가된 결과는 한 줄인데 추가할 때만 화면이 딴판이었다(2026-07-29 사용자 지적).
+          // 열 제목은 바로 위 헤더 행이 대신하므로 행 자체엔 aria-label만 둔다(편집 행과 같은 규칙).
+          const addRow = `
+        <form method="post" action="/settings/rate-items" class="grid grid-cols-2 items-center gap-1.5 rounded-lg border border-border bg-bg p-2 ${RATE_COLS}">
+          <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="rate_name" placeholder="새 단가 항목명" aria-label="단가 항목명" autocomplete="off" required />
+          <select class="input py-1.5 text-sm" name="category" aria-label="분류">${rateCategoryOptions()}</select>
+          <input class="input py-1.5 text-sm" name="base_hours" inputmode="decimal" placeholder="3.5" aria-label="기준 시간(시간)" />
+          <input class="input py-1.5 text-sm" name="base_price" inputmode="numeric" placeholder="300000" aria-label="기준 가격(원)" />
+          <input class="input py-1.5 text-sm" name="extra_hours" inputmode="decimal" placeholder="1" aria-label="초과 단위(시간)" value="1" />
+          <input class="input py-1.5 text-sm" name="extra_price" inputmode="numeric" placeholder="100000" aria-label="초과 단가(원)" />
+          <select class="input py-1.5 text-sm" name="price_type" aria-label="가격 유형">${priceTypeOptions("fixed")}</select>
+          <span class="col-span-2 flex justify-end sm:col-span-1"><button class="btn-primary btn-xs whitespace-nowrap" type="submit">추가</button></span>
+        </form>`;
+          const header = `<div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid ${RATE_COLS}"><span>이름</span><span>분류</span><span>기준(h)</span><span>기준가(원)</span><span>초과(h)</span><span>초과가(원)</span><span>유형</span><span></span></div>`;
+          if (!g.actionForms) return scrollX(header + addRow) + g.list; // 빈 상태 — 추가 행은 그대로 둔다
           return `
-        <form method="post" action="/settings/rate-items/bulk" id="rates-bulk-form" class="space-y-2" data-dirty-form>
-          ${scrollX(`<div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(6rem,1fr)_6.5rem_3.5rem_5.5rem_3.5rem_5.5rem_4.5rem_auto]"><span>이름</span><span>분류</span><span>기준(h)</span><span>기준가(원)</span><span>초과(h)</span><span>초과가(원)</span><span>유형</span><span></span></div>
-          ${g.list}`)}
+        ${scrollX(`${header}${addRow}
+        <form method="post" action="/settings/rate-items/bulk" id="rates-bulk-form" class="space-y-2 pt-1" data-dirty-form>
+          ${g.list}
           <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
-        </form>
+        </form>`)}
         ${g.actionForms}`;
         })()}
         ${rateCategoriesSection()}
@@ -260,25 +255,29 @@ function taskTypesPane() {
           <h2 class="font-display text-lg font-semibold">작업 종류 <span class="text-sm font-normal text-muted">(곡·콘텐츠 후반작업)</span></h2>
           ${settingDesc(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가를 관리합니다. '빠른추가'를 켜면 곡·콘텐츠 화면의 빠른 추가 버튼에 노출됩니다. 시간이 아니라 작업량으로 산정하는 항목이라(믹싱=기준가·보컬튠=최소가 권장) 요금표와 카탈로그가 분리돼 있습니다.`)}
         </div>
-        <form method="post" action="/settings/task-types" class="space-y-2 rounded-lg border border-border bg-bg p-3">
-          <input class="input py-1.5 text-sm w-full" name="label" placeholder="작업 종류명 (예: 보컬튠)" required />
-          <div class="grid gap-2 sm:grid-cols-2">
-            <select class="input py-1.5 text-sm" name="billing_type">
-              ${BILLING_TYPES.map((b) => `<option value="${esc(b)}">${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
-            </select>
-            <input class="input py-1.5 text-sm" name="unit_price" inputmode="numeric" placeholder="기본 단가(원)" />
-            <select class="input py-1.5 text-sm" name="price_type" aria-label="가격 유형">${priceTypeOptions("fixed")}</select>
-          </div>
-          <label class="flex items-center gap-2 text-sm text-muted"><input type="checkbox" name="is_quick" value="1" /> 곡·콘텐츠 '빠른 추가' 버튼에 노출</label>
-          <button class="btn-primary btn-sm" type="submit">작업 종류 추가</button>
-        </form>
-        ${taskTypes.length ? `
-        <form method="post" action="/settings/task-types/bulk" id="task-types-bulk-form" class="space-y-1.5" data-dirty-form>
-          ${scrollX(`<div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(11rem,1.4fr)_8rem_6.5rem_6rem_auto_auto]"><span>이름</span><span>과금</span><span>기본 단가(원)</span><span>유형</span><span>빠른추가</span><span></span></div>
-          ${taskTypes.map((t) => taskTypeRow(t)).join("")}`, "space-y-1.5")}
+        ${(() => {
+          // 단가표와 같은 규칙 — 추가 폼은 표의 첫 행(한 줄), 열 제목은 헤더가 대신한다.
+          const header = `<div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid ${TASK_COLS}"><span>이름</span><span>과금</span><span>기본 단가(원)</span><span>유형</span><span>빠른추가</span><span></span></div>`;
+          const addRow = `
+        <form method="post" action="/settings/task-types" class="grid grid-cols-2 items-center gap-1.5 rounded-lg border border-border bg-bg p-2 ${TASK_COLS}">
+          <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="label" placeholder="새 작업 종류명 (예: 보컬튠)" aria-label="작업 종류명" required />
+          <select class="input py-1.5 text-sm" name="billing_type" aria-label="과금">
+            ${BILLING_TYPES.map((b) => `<option value="${esc(b)}">${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
+          </select>
+          <input class="input py-1.5 text-sm" name="unit_price" inputmode="numeric" placeholder="200000" aria-label="기본 단가(원)" />
+          <select class="input py-1.5 text-sm" name="price_type" aria-label="가격 유형">${priceTypeOptions("fixed")}</select>
+          <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-muted"><input type="checkbox" name="is_quick" value="1" /> 빠른추가</label>
+          <span class="col-span-2 flex justify-end sm:col-span-1"><button class="btn-primary btn-xs whitespace-nowrap" type="submit">추가</button></span>
+        </form>`;
+          if (!taskTypes.length) return scrollX(header + addRow, "space-y-1.5") + emptyState("등록된 작업 종류가 없습니다.");
+          return `
+        ${scrollX(`${header}${addRow}
+        <form method="post" action="/settings/task-types/bulk" id="task-types-bulk-form" class="space-y-1.5 pt-1" data-dirty-form>
+          ${taskTypes.map((t) => taskTypeRow(t)).join("")}
           <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
-        </form>
-        ${taskTypes.map((t) => taskTypeActionForms(t)).join("")}` : emptyState("등록된 작업 종류가 없습니다.")}
+        </form>`, "space-y-1.5")}
+        ${taskTypes.map((t) => taskTypeActionForms(t)).join("")}`;
+        })()}
       </section>`;
 }
 
@@ -623,7 +622,7 @@ function rateItemRow(r) {
   const extraHours = r.extra_minutes ? r.extra_minutes / 60 : 1;
   const cat = r.category || RECORDING_CATEGORIES[0];
   return `
-    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(6rem,1fr)_6.5rem_3.5rem_5.5rem_3.5rem_5.5rem_4.5rem_auto] ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
+    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 ${RATE_COLS} ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
       <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="rate_name_${r.id}" value="${esc(r.name)}" aria-label="단가 항목명" autocomplete="off" required />
       <select class="input py-1.5 text-sm" name="category_${r.id}" aria-label="분류">${rateCategoryOptions(cat)}</select>
       <input class="input py-1.5 text-sm" name="base_hours_${r.id}" inputmode="decimal" value="${esc(String(baseHours))}" aria-label="기준 시간(시간)" placeholder="기준(h)" />
@@ -653,7 +652,7 @@ function rateItemActionForms(r) {
 /** 작업 종류 행 = 한 줄 인라인 편집(2026-07-27 통합 저장). */
 function taskTypeRow(t) {
   return `
-    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(11rem,1.4fr)_8rem_6.5rem_6rem_auto_auto]" id="task-type-${t.id}">
+    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 ${TASK_COLS}" id="task-type-${t.id}">
       <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="label_${t.id}" value="${esc(t.label)}" aria-label="작업 종류명" required />
       <select class="input py-1.5 text-sm" name="billing_type_${t.id}" aria-label="과금">
         ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
