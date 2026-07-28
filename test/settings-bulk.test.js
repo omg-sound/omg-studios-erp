@@ -37,19 +37,18 @@ test("bulkUpdateRateItems: 여러 행 동시 갱신·미참여 행 불변·임�
   assert.equal(db().prepare("SELECT COUNT(*) c FROM rate_items WHERE name='유령'").get().c, 0, "임의 id 주입 무시(행 생성 없음)");
 });
 
-test("bulkUpdateRooms: 이름·상위·체크박스 갱신, 미전송 체크박스=해제(0)", () => {
-  const top = D.createRoom({ room_name: "벌크상위", bookable: "1" });
+test("bulkUpdateRooms: 이름·체크박스 갱신, 미전송 체크박스=해제(0)", () => {
+  const other = D.createRoom({ room_name: "벌크미참여", bookable: "1" });
   const r1 = D.createRoom({ room_name: "벌크룸1", bookable: "1", is_external: "1" });
   D.bulkUpdateRooms({
-    [`room_name_${r1.id}`]: "벌크룸1-개명", [`parent_id_${r1.id}`]: String(top.id),
+    [`room_name_${r1.id}`]: "벌크룸1-개명",
     // bookable·is_external 미전송 = 체크 해제
   });
   const after = db().prepare("SELECT * FROM rooms WHERE id=?").get(r1.id);
   assert.equal(after.name, "벌크룸1-개명");
-  assert.equal(after.parent_id, top.id);
-  assert.equal(after.bookable, 0, "미전송 체크박스 = 0 (상위 지정 시 강제 0 규칙과도 일치)");
+  assert.equal(after.bookable, 0, "미전송 체크박스 = 0");
   assert.equal(after.is_external, 0, "미전송 체크박스 = 0");
-  assert.equal(db().prepare("SELECT name FROM rooms WHERE id=?").get(top.id).name, "벌크상위", "미참여 행 불변");
+  assert.equal(db().prepare("SELECT name FROM rooms WHERE id=?").get(other.id).name, "벌크미참여", "미참여 행 불변");
 });
 
 test("bulkUpdateTaskTypes: 갱신 + sort_order 보존(updateTaskType의 100 리셋 잠복 버그 방어)", () => {

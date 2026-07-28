@@ -529,10 +529,9 @@ function init() {
   addColumn("sessions", "end_date", "TEXT"); // 종일 다일(multi-day) 일정의 종료 날짜(NULL=session_date와 같은 날 = 단일일). 종일에서만 의미.
   addColumn("sessions", "location", "TEXT"); // 외부 장소 주소(구글 주소 등). 스튜디오 룸이면 NULL(기본 장소 사용). 외부 장소(rooms.is_external)일 때만 입력.
   addColumn("rooms", "is_external", "INTEGER NOT NULL DEFAULT 0"); // 외부 장소(주소 입력 대상). 세션 폼에서 이 장소 선택 시 주소 필드 노출.
-  // ── 룸 계층·예약 대상(2026-07-26 룸 명칭 체계) ──
-  // Studio A는 Control Room A + Booth A를 합친 상위 단위이고 그 둘은 Studio A의 하위로만 존재한다.
-  // 예약은 최상위 단위로만 잡으므로 하위 공간과 Lounge는 bookable=0(세션 폼 장소 목록에서 제외).
-  // parent_id는 FK 없음(room_id·director_party_id와 같은 ALTER 한계) — 삭제 시 코드가 하위 parent_id를 NULL로 정리.
+  // ── 예약 대상(2026-07-26 룸 명칭 체계) ── 작업 공간이 아닌 장소(Lounge 등)는 bookable=0(세션 폼 장소 목록에서 제외).
+  // parent_id는 **레거시 컬럼**(2026-07-28 계층 폐지 — 읽는 코드 0). 신선 DB에도 그대로 만든다:
+  // 컬럼을 빼면 옛 DB와 스키마가 갈리고, rooms_drop_hierarchy_v1이 이 컬럼을 조회하므로 존재해야 한다.
   addColumn("rooms", "parent_id", "INTEGER");
   addColumn("rooms", "bookable", "INTEGER NOT NULL DEFAULT 1");
   // ── 가격 유형·표시 순서(2026-07-26 과금 체계 개편) ──
@@ -733,6 +732,24 @@ function init() {
   if (!getState("surcharges_drop_v1")) {
     d.exec("DROP TABLE IF EXISTS surcharges");
     setState("surcharges_drop_v1", "done");
+  }
+  // 룸 계층 폐지(2026-07-28 사용자 지시). 하위 공간은 예약 대상이 아니라 어떤 판단에도 쓰이지 않고
+  // 관리 화면에서 자리만 차지했다 → 계층 코드 제거 + 하위로 만들어 뒀던 행 삭제.
+  // ⚠️세션이 그 장소로 잡혀 있으면 room_id를 NULL로 밀어야 하는데(deleteRoom과 같은 의미), 그건
+  // 조용한 데이터 변경이라 **참조 세션이 없을 때만 지우고** 있으면 남긴다(사람이 보고 판단하도록).
+  // rooms.parent_id는 레거시 컬럼으로 잔존(읽는 코드 0).
+  if (!getState("rooms_drop_hierarchy_v1")) {
+    const orphans = d.prepare("SELECT id, name FROM rooms WHERE parent_id IS NOT NULL").all();
+    for (const r of orphans) {
+      const used = d.prepare("SELECT COUNT(*) n FROM sessions WHERE room_id = ?").get(r.id).n;
+      if (used > 0) {
+        d.prepare("UPDATE rooms SET parent_id = NULL WHERE id = ?").run(r.id); // 계층만 풀고 행은 보존
+        console.log(`[migrate] 룸 계층 폐지 — '${r.name}'은 세션 ${used}건이 참조해 삭제하지 않고 최상위로 전환`);
+      } else {
+        d.prepare("DELETE FROM rooms WHERE id = ?").run(r.id);
+      }
+    }
+    setState("rooms_drop_hierarchy_v1", "done");
   }
   // 레거시 마이그레이션은 1회만. 신규 프로젝트(project_type 있음)는 services=NULL이 정상이므로,
   // 매 부팅 재실행되면 memo 추론으로 유령 곡·작업을 주입한다 → admin_state 플래그로 1회 게이트.
@@ -1005,10 +1022,9 @@ function seedDefaultCatalogs() {
  * **id를 보존하는 UPDATE만 한다** — 룸·단가 항목을 지웠다 만들면 `sessions.room_id`·`sessions.rate_item_id`가
  * 끊겨 기존 예약이 '장소 미지정'이 되고 청구 이력의 근거가 사라진다(그래서 rename + 부족분 INSERT 구조).
  *
- * 룸: Studio A(= Control Room A + Booth A의 상위) / Studio B(편집) / Studio C(믹싱) / Lounge(예약 대상 아님).
+ * 룸: Studio A / Studio B(편집) / Studio C(믹싱) / Lounge(예약 대상 아님). (계층은 2026-07-28 폐지.)
  * 금지 표기(Hall·Live Booth·Lobby·Room A/B/C·A룸/B룸/C룸)는 **정확 일치하는 것만** 새 명칭으로 옮긴다.
- * Hall·Live Booth는 Studio A로 — 라이브 부스에서의 녹음은 규칙상 Studio A 예약이고, 하위 공간(bookable=0)으로
- * 옮기면 그 룸으로 잡힌 기존 세션이 예약 불가 장소를 참조하게 된다. 모르는 이름은 **손대지 않는다**
+ * Hall·Live Booth는 Studio A로 — 라이브 부스에서의 녹음은 규칙상 Studio A 예약이다. 모르는 이름은 **손대지 않는다**
  * (이제 환경설정에서 이름을 고칠 수 있으니 추측 rename보다 사람이 고치는 게 안전하다 — 남은 목록은 로그로).
  *
  * 포스트(믹싱·보컬튠)는 rate_items가 아니라 **task_types**에 시드한다 — 이 ERP는 세션(대관)=rate_items,
@@ -1022,7 +1038,7 @@ function applyPricingRoomsV2() {
 
   // ── 룸 ──
   const roomByName = (name) => d.prepare("SELECT * FROM rooms WHERE name = ?").get(name) || null;
-  // 옛 표기 → 새 명칭. 최상위 단위로만 옮긴다(하위 공간·Lounge는 예약 대상이 아니라 rename 목적지로 부적합).
+  // 옛 표기 → 새 명칭. 작업 공간으로만 옮긴다(Lounge는 예약 대상이 아니라 rename 목적지로 부적합).
   const ROOM_ALIASES = [
     [["메인 룸", "A룸", "Room A", "Hall", "Live Booth", "라이브 부스"], "Studio A"],
     [["B룸", "Room B"], "Studio B"],
@@ -1037,22 +1053,20 @@ function applyPricingRoomsV2() {
       d.prepare("UPDATE rooms SET name = ? WHERE id = ?").run(target, row.id);
     }
   }
-  // 계층·예약 대상 확정. 이름이 이미 있으면 속성만 맞추고(사용자가 만들어 둔 행 재사용), 없으면 새로 만든다.
+  // 예약 대상·순서 확정. 이름이 이미 있으면 속성만 맞추고(사용자가 만들어 둔 행 재사용), 없으면 새로 만든다.
+  // ⚠️계층(parent_id)은 2026-07-28 폐지 — 이 시드는 더 이상 하위 룸을 만들지 않는다(아래 rooms_drop_hierarchy_v1이 정리).
   const ROOM_TREE = [
-    { name: "Studio A", parent: null, bookable: 1, sort: 10 },
-    { name: "Control Room A", parent: "Studio A", bookable: 0, sort: 11 }, // 오퍼레이팅·믹싱
-    { name: "Booth A", parent: "Studio A", bookable: 0, sort: 12 },        // 흡음 수음
-    { name: "Studio B", parent: null, bookable: 1, sort: 20 },             // 편집 전용
-    { name: "Studio C", parent: null, bookable: 1, sort: 30 },             // 믹싱 전용
-    { name: "Lounge", parent: null, bookable: 0, sort: 40 },               // 대기·접객(작업 공간 아님)
+    { name: "Studio A", bookable: 1, sort: 10 },
+    { name: "Studio B", bookable: 1, sort: 20 }, // 편집 전용
+    { name: "Studio C", bookable: 1, sort: 30 }, // 믹싱 전용
+    { name: "Lounge", bookable: 0, sort: 40 },   // 대기·접객(작업 공간 아님)
   ];
   for (const r of ROOM_TREE) {
-    const parentId = r.parent ? (roomByName(r.parent) || {}).id || null : null;
     const cur = roomByName(r.name);
     if (cur) {
-      d.prepare("UPDATE rooms SET parent_id = ?, bookable = ?, sort_order = ?, active = 1 WHERE id = ?").run(parentId, r.bookable, r.sort, cur.id);
+      d.prepare("UPDATE rooms SET bookable = ?, sort_order = ?, active = 1 WHERE id = ?").run(r.bookable, r.sort, cur.id);
     } else {
-      d.prepare("INSERT INTO rooms (name, parent_id, bookable, sort_order, active, is_external) VALUES (?, ?, ?, ?, 1, 0)").run(r.name, parentId, r.bookable, r.sort);
+      d.prepare("INSERT INTO rooms (name, bookable, sort_order, active, is_external) VALUES (?, ?, ?, 1, 0)").run(r.name, r.bookable, r.sort);
     }
   }
 

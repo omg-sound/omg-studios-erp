@@ -10,7 +10,7 @@ const { listRooms, getRoom, listSessionSegments, getDefaultBooker, getProMinutes
 /**
  * 룸 목록 보장 — 인자로 받으면 그대로, 아니면 **예약 대상 장소**만 조회(폴백).
  * projects.routes.js 등 rooms를 넘기지 않는 호출부에서도 룸 select가 채워지도록 한다(순환참조 없음: data는 views.sessions를 require하지 않음).
- * 예약은 최상위 단위로만 잡는다 — Control Room A·Booth A 같은 하위 공간과 Lounge는 여기서 제외된다(bookable=0).
+ * 작업 공간이 아닌 장소(Lounge 등)는 여기서 제외된다(bookable=0).
  */
 function resolveRooms(rooms) {
   return Array.isArray(rooms) ? rooms : listRooms({ bookableOnly: true });

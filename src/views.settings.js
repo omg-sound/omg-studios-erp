@@ -329,67 +329,42 @@ async function studioCalendarSection(chief = false) {
 
 /**
  * 룸(스튜디오 공간) 관리 — 추가·이름 수정·순서 이동·삭제. 룸별 시간 겹침 검사의 기준.
- * 목록은 상위 룸 아래에 하위 공간을 들여써 계층을 보여준다(Studio A → Control Room A · Booth A).
+ * 계층(상위/하위)은 2026-07-28 폐지 — 목록은 sort_order 한 축의 평면 나열이다(src/data/rooms.js 참조).
  */
 function roomsSection() {
   const rooms = listRooms({ includeInactive: true });
-  const tops = rooms.filter((r) => !r.parent_id);
-  const kids = (id) => rooms.filter((r) => r.parent_id === id);
-  // 계층 순서(상위 → 그 하위들)로 물질화. 상위가 삭제돼 고아가 된 행은 맨 뒤에 붙인다(안 보이면 고칠 수도 없다).
-  const listed = new Set();
-  const ordered = [];
-  for (const t of tops) {
-    ordered.push({ room: t, depth: 0 });
-    listed.add(t.id);
-    for (const k of kids(t.id)) { ordered.push({ room: k, depth: 1 }); listed.add(k.id); }
-  }
-  for (const r of rooms) if (!listed.has(r.id)) ordered.push({ room: r, depth: 0 });
-  const rows = ordered.length ? ordered.map((o) => roomRow(o.room, o.depth, tops)).join("") : emptyState("등록된 룸이 없습니다.");
+  const rows = rooms.length ? rooms.map((r) => roomRow(r)).join("") : emptyState("등록된 룸이 없습니다.");
   return `
     <div class="${SETTING_BLOCK}" id="rooms-section">
       <div>
         <h2 class="text-sm font-semibold">장소 (스튜디오 룸 · 외부)</h2>
-        ${explain(`세션 예약 시 장소를 지정하면 <span class="text-fg">같은 장소끼리만 시간 겹침을 검사</span>합니다(다른 장소는 같은 시간 병렬 예약 허용). <span class="text-fg">예약 대상</span>이 아닌 장소는 세션 폼의 장소 목록에 나오지 않습니다 — 예약은 최상위 단위로만 잡기 때문에 <b>Control Room A·Booth A 같은 하위 공간과 Lounge는 여기서 빠집니다</b>(하위 공간은 상위를 지정하면 자동으로 예약 대상에서 제외). 이름은 <b>수정</b>할 수 있어요(id가 그대로라 그 장소로 잡힌 세션이 유지됩니다 — 지웠다 만들면 '장소 미지정'이 됩니다). <span class="text-fg">외부 장소</span>로 표시하면 세션 폼에서 주소 입력칸이 나오고 캘린더 일정 장소로 쓰입니다.`)}
+        ${explain(`세션 예약 시 장소를 지정하면 <span class="text-fg">같은 장소끼리만 시간 겹침을 검사</span>합니다(다른 장소는 같은 시간 병렬 예약 허용). <span class="text-fg">예약 대상</span>이 아닌 장소(예: Lounge)는 세션 폼의 장소 목록에 나오지 않습니다. 이름은 <b>수정</b>할 수 있어요(id가 그대로라 그 장소로 잡힌 세션이 유지됩니다 — 지웠다 만들면 '장소 미지정'이 됩니다). <span class="text-fg">외부 장소</span>로 표시하면 세션 폼에서 주소 입력칸이 나오고 캘린더 일정 장소로 쓰입니다.`)}
       </div>
       <form method="post" action="/settings/rooms" class="flex flex-wrap items-center gap-2">
         <input class="input py-1.5 text-sm" name="room_name" placeholder="장소 이름 (예: Studio D · 외부일정)" autocomplete="off" required />
-        <select class="input py-1.5 text-sm" name="parent_id">${roomParentOptions(tops, null, null)}</select>
         <label class="flex cursor-pointer items-center gap-1.5 text-sm"><input type="checkbox" name="bookable" value="1" checked class="h-4 w-4 rounded border-border text-primary" /> 예약 대상</label>
         <label class="flex cursor-pointer items-center gap-1.5 text-sm"><input type="checkbox" name="is_external" value="1" class="h-4 w-4 rounded border-border text-primary" /> 외부 장소(주소 입력)</label>
         <button class="btn-primary shrink-0 btn-sm" type="submit">장소 추가</button>
       </form>
-      ${ordered.length ? `
+      ${rooms.length ? `
       <form method="post" action="/settings/rooms/bulk" id="rooms-bulk-form" class="space-y-1.5" data-dirty-form>
         ${rows}
         <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
       </form>
-      ${ordered.map((o) => roomActionForms(o.room)).join("")}` : rows}
+      ${rooms.map((r) => roomActionForms(r)).join("")}` : rows}
     </div>`;
 }
 
-/** 상위 룸 select 옵션('상위 없음' + 최상위 룸들). 자기 자신은 제외(자기 밑에 자기를 둘 수 없다). */
-function roomParentOptions(tops, current, selfId) {
-  const cur = current == null ? "" : String(current);
-  const opts = [`<option value="" ${cur === "" ? "selected" : ""}>상위 없음(최상위)</option>`];
-  for (const t of tops) {
-    if (selfId && t.id === selfId) continue;
-    opts.push(`<option value="${t.id}" ${cur === String(t.id) ? "selected" : ""}>${esc(t.name)} 하위</option>`);
-  }
-  return opts.join("");
-}
-
 /**
- * 룸 행 = 한 줄 인라인 편집(2026-07-27 통합 저장 / 2026-07-28 wide에서 한 줄 보정). 계층 들여쓰기 유지, 배지는 필드가 보이므로 제거.
+ * 룸 행 = 한 줄 인라인 편집(2026-07-27 통합 저장 / 2026-07-28 wide에서 한 줄 보정 · 계층 폐지로 들여쓰기 제거).
  * ⚠️읽기 폭(768)에서는 `flex-wrap`+이름칸 `flex-1`(상한 없음)이 남는 폭을 전부 먹어 한 룸이 3줄로 감겼다 —
  * wide 전환으로 여유 폭은 생겼지만, 데스크톱에서 확실히 한 줄이 되도록 `sm:flex-nowrap` + 이름칸 상한(`sm:max-w-xs`)을 더한다.
  * 모바일(<640px)은 현행 flex-wrap 그대로(감김 허용).
  */
-function roomRow(r, depth = 0, tops = []) {
+function roomRow(r) {
   return `
-    <div class="flex flex-wrap items-center gap-2 rounded-lg bg-bg p-2 sm:flex-nowrap ${depth ? "ml-4 sm:ml-6" : ""}" id="room-${r.id}">
-      ${depth ? `<span class="shrink-0 text-muted" aria-hidden="true">└</span>` : ""}
+    <div class="flex flex-wrap items-center gap-2 rounded-lg bg-bg p-2 sm:flex-nowrap" id="room-${r.id}">
       <input class="input min-w-36 flex-1 py-1.5 text-sm sm:max-w-xs" name="room_name_${r.id}" value="${esc(r.name)}" aria-label="장소 이름" autocomplete="off" required />
-      <select class="input py-1.5 text-sm sm:w-auto sm:shrink-0" name="parent_id_${r.id}" aria-label="상위 룸">${roomParentOptions(tops, r.parent_id, r.id)}</select>
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm sm:shrink-0"><input type="checkbox" name="bookable_${r.id}" value="1" ${r.bookable ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 예약 대상</label>
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm sm:shrink-0"><input type="checkbox" name="is_external_${r.id}" value="1" ${r.is_external ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 외부</label>
       <span class="ml-auto flex shrink-0 items-center gap-1">

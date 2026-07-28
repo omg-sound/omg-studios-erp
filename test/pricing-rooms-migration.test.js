@@ -21,24 +21,21 @@ test.after(() => cleanupDb(process.env.DB_PATH, db()));
 const room = (name) => db().prepare("SELECT * FROM rooms WHERE name = ?").get(name);
 const rate = (name) => db().prepare("SELECT * FROM rate_items WHERE name = ?").get(name);
 
-test("룸: 4개 최상위 + Studio A 하위 2개 + Lounge", () => {
-  for (const name of ["Studio A", "Studio B", "Studio C", "Lounge", "Control Room A", "Booth A"]) {
+// 계층 폐지(2026-07-28) — 시드는 평면 4개만 만들고, 하위로 만들어 뒀던 Control Room A·Booth A는
+// rooms_drop_hierarchy_v1이 지운다(그 장소로 잡힌 세션이 있으면 지우지 않고 최상위로 전환).
+test("룸: Studio A·B·C + Lounge 4개, 하위 룸은 없다", () => {
+  for (const name of ["Studio A", "Studio B", "Studio C", "Lounge"]) {
     assert.ok(room(name), `${name} 없음`);
   }
-  const a = room("Studio A");
-  assert.equal(room("Control Room A").parent_id, a.id, "Control Room A는 Studio A 하위");
-  assert.equal(room("Booth A").parent_id, a.id, "Booth A는 Studio A 하위");
-  assert.equal(a.parent_id, null, "Studio A는 최상위");
-  assert.equal(room("Studio B").parent_id, null);
-  assert.equal(room("Studio C").parent_id, null);
+  assert.ok(!room("Control Room A"), "Control Room A는 계층 폐지로 삭제됨");
+  assert.ok(!room("Booth A"), "Booth A는 계층 폐지로 삭제됨");
+  assert.equal(db().prepare("SELECT COUNT(*) n FROM rooms WHERE parent_id IS NOT NULL").get().n, 0, "계층 행 없음");
 });
 
-test("룸: 예약은 최상위 단위로만 — 하위 공간과 Lounge는 bookable=0", () => {
+test("룸: 예약 대상 — 작업 공간만 1, Lounge는 0", () => {
   assert.equal(room("Studio A").bookable, 1);
   assert.equal(room("Studio B").bookable, 1);
   assert.equal(room("Studio C").bookable, 1);
-  assert.equal(room("Control Room A").bookable, 0, "Control Room A 단독 예약 불가");
-  assert.equal(room("Booth A").bookable, 0, "Booth A 단독 예약 불가");
   assert.equal(room("Lounge").bookable, 0, "Lounge는 작업 공간이 아님");
 });
 

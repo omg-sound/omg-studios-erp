@@ -52,17 +52,20 @@ test("단가표·작업 종류: 인라인 필드 + bulk 폼, 접이식 '수정' 
   assert.ok(formSegment(html, 'id="rates-bulk-form"').includes("data-dirty-save"), "통합 저장 버튼 dirty 패턴");
 });
 
-test("룸: 인라인 필드 + bulk 폼 + 계층 들여쓰기 유지, 중첩 폼 없음", () => {
-  const top = D.createRoom({ room_name: "뷰검사스튜디오", bookable: "1" });
-  const kid = D.createRoom({ room_name: "뷰검사부스", parent_id: String(top.id) });
+test("룸: 인라인 필드 + bulk 폼, 계층 UI 없음, 중첩 폼 없음", () => {
+  const a = D.createRoom({ room_name: "뷰검사스튜디오", bookable: "1" });
+  const b = D.createRoom({ room_name: "뷰검사부스" });
   const html = V.roomsSection();
 
   assert.ok(html.includes('id="rooms-section"'), "룸 섹션 앵커");
   assert.ok(html.includes('action="/settings/rooms/bulk"'), "룸 bulk 폼");
-  assert.ok(html.includes(`name="room_name_${top.id}"`) && html.includes(`name="parent_id_${kid.id}"`) && html.includes(`name="bookable_${top.id}"`), "룸 행 인라인 입력");
+  assert.ok(html.includes(`name="room_name_${a.id}"`) && html.includes(`name="bookable_${a.id}"`) && html.includes(`name="is_external_${b.id}"`), "룸 행 인라인 입력");
   assert.ok(!html.includes(">수정 "), "접이식 '수정' 토글 제거");
+  // 계층 폐지(2026-07-28) — 상위 룸 select·들여쓰기 마커가 남아 있으면 안 된다.
+  assert.ok(!html.includes("parent_id"), "상위 룸 select 없음");
+  assert.ok(!html.includes("상위 없음"), "상위 룸 옵션 문구 없음");
   assert.ok(!formSegment(html, 'id="rooms-bulk-form"').slice(1).includes("<form"), "룸 bulk 폼 안에 중첩 폼 없음");
-  for (const fid of [`room-mv-u-${top.id}`, `room-del-${kid.id}`]) {
+  for (const fid of [`room-mv-u-${a.id}`, `room-del-${b.id}`]) {
     assert.ok(html.includes(`form="${fid}"`) && html.includes(`id="${fid}"`), `액션 폼 짝 ${fid}`);
   }
 });
