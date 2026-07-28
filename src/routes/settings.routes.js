@@ -115,7 +115,7 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
     ${tabBar}
     <div class="space-y-3">${tabContent}</div>`;
 
-  res.send(layout({ title: "환경설정", user: req.user, current: "/settings", body })); // 읽기 폭(max-w-content 768) — 폼·설정 카드(2026-07-16 통일, 사용자 선택=읽기 폭. 1024→768 시선 집중)
+  res.send(layout({ title: "환경설정", user: req.user, current: "/settings", body, wide: true })); // wide(2026-07-28 사용자 결정) — 단가표·룸·작업 종류 인라인 편집 표가 들어와 '폼 읽기'에서 '목록 편집'으로 성격이 바뀌어, 읽기 폭(768)에선 한 줄 인라인 편집이 뭉개졌다(이름칸 26px 등). /settings/drive-check는 단순 점검 페이지라 read 폭 그대로.
 }));
 
 /** 파일 버퍼 매직바이트 검증(Content-Type 스푸핑 방어). */

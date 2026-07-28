@@ -214,7 +214,7 @@ function contentTab() {
           if (!g.actionForms) return g.list; // 빈 상태
           return `
         <form method="post" action="/settings/rate-items/bulk" id="rates-bulk-form" class="space-y-2" data-dirty-form>
-          <div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(0,1.3fr)_7.5rem_4rem_6rem_4rem_6rem_5.5rem_auto]"><span>이름</span><span>분류</span><span>기준(h)</span><span>기준가(원)</span><span>초과(h)</span><span>초과가(원)</span><span>유형</span><span></span></div>
+          <div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(11rem,1.3fr)_8rem_4.5rem_6.5rem_4.5rem_6.5rem_5.5rem_10rem]"><span>이름</span><span>분류</span><span>기준(h)</span><span>기준가(원)</span><span>초과(h)</span><span>초과가(원)</span><span>유형</span><span></span></div>
           ${g.list}
           <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
         </form>
@@ -242,7 +242,7 @@ function contentTab() {
         </form>
         ${taskTypes.length ? `
         <form method="post" action="/settings/task-types/bulk" id="task-types-bulk-form" class="space-y-1.5" data-dirty-form>
-          <div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(0,1.4fr)_8rem_6.5rem_6rem_auto_auto]"><span>이름</span><span>과금</span><span>기본 단가(원)</span><span>유형</span><span>빠른추가</span><span></span></div>
+          <div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(11rem,1.4fr)_8rem_6.5rem_6rem_auto_auto]"><span>이름</span><span>과금</span><span>기본 단가(원)</span><span>유형</span><span>빠른추가</span><span></span></div>
           ${taskTypes.map((t) => taskTypeRow(t)).join("")}
           <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
         </form>
@@ -378,16 +378,21 @@ function roomParentOptions(tops, current, selfId) {
   return opts.join("");
 }
 
-/** 룸 행 = 한 줄 인라인 편집(2026-07-27 통합 저장). 계층 들여쓰기 유지, 배지는 필드가 보이므로 제거. */
+/**
+ * 룸 행 = 한 줄 인라인 편집(2026-07-27 통합 저장 / 2026-07-28 wide에서 한 줄 보정). 계층 들여쓰기 유지, 배지는 필드가 보이므로 제거.
+ * ⚠️읽기 폭(768)에서는 `flex-wrap`+이름칸 `flex-1`(상한 없음)이 남는 폭을 전부 먹어 한 룸이 3줄로 감겼다 —
+ * wide 전환으로 여유 폭은 생겼지만, 데스크톱에서 확실히 한 줄이 되도록 `sm:flex-nowrap` + 이름칸 상한(`sm:max-w-xs`)을 더한다.
+ * 모바일(<640px)은 현행 flex-wrap 그대로(감김 허용).
+ */
 function roomRow(r, depth = 0, tops = []) {
   return `
-    <div class="flex flex-wrap items-center gap-2 rounded-lg bg-bg p-2 ${depth ? "ml-4 sm:ml-6" : ""}" id="room-${r.id}">
+    <div class="flex flex-wrap items-center gap-2 rounded-lg bg-bg p-2 sm:flex-nowrap ${depth ? "ml-4 sm:ml-6" : ""}" id="room-${r.id}">
       ${depth ? `<span class="shrink-0 text-muted" aria-hidden="true">└</span>` : ""}
-      <input class="input min-w-36 flex-1 py-1.5 text-sm" name="room_name_${r.id}" value="${esc(r.name)}" aria-label="장소 이름" autocomplete="off" required />
-      <select class="input py-1.5 text-sm" name="parent_id_${r.id}" aria-label="상위 룸">${roomParentOptions(tops, r.parent_id, r.id)}</select>
-      <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm"><input type="checkbox" name="bookable_${r.id}" value="1" ${r.bookable ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 예약 대상</label>
-      <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm"><input type="checkbox" name="is_external_${r.id}" value="1" ${r.is_external ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 외부</label>
-      <span class="ml-auto flex items-center gap-1">
+      <input class="input min-w-36 flex-1 py-1.5 text-sm sm:max-w-xs" name="room_name_${r.id}" value="${esc(r.name)}" aria-label="장소 이름" autocomplete="off" required />
+      <select class="input py-1.5 text-sm sm:w-auto sm:shrink-0" name="parent_id_${r.id}" aria-label="상위 룸">${roomParentOptions(tops, r.parent_id, r.id)}</select>
+      <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm sm:shrink-0"><input type="checkbox" name="bookable_${r.id}" value="1" ${r.bookable ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 예약 대상</label>
+      <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm sm:shrink-0"><input type="checkbox" name="is_external_${r.id}" value="1" ${r.is_external ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 외부</label>
+      <span class="ml-auto flex shrink-0 items-center gap-1">
         <button class="btn-ghost btn-xs px-2" type="submit" form="room-mv-u-${r.id}" aria-label="위로 이동">↑</button>
         <button class="btn-ghost btn-xs px-2" type="submit" form="room-mv-d-${r.id}" aria-label="아래로 이동">↓</button>
         <button class="btn-ghost btn-xs text-danger" type="submit" form="room-del-${r.id}">삭제</button>
@@ -610,7 +615,7 @@ function rateItemRow(r) {
   const extraHours = r.extra_minutes ? r.extra_minutes / 60 : 1;
   const cat = r.category || RECORDING_CATEGORIES[0];
   return `
-    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(0,1.3fr)_7.5rem_4rem_6rem_4rem_6rem_5.5rem_auto] ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
+    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(11rem,1.3fr)_8rem_4.5rem_6.5rem_4.5rem_6.5rem_5.5rem_10rem] ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
       <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="rate_name_${r.id}" value="${esc(r.name)}" aria-label="단가 항목명" autocomplete="off" required />
       <select class="input py-1.5 text-sm" name="category_${r.id}" aria-label="분류">${rateCategoryOptions(cat)}</select>
       <input class="input py-1.5 text-sm" name="base_hours_${r.id}" inputmode="decimal" value="${esc(String(baseHours))}" aria-label="기준 시간(시간)" placeholder="기준(h)" />
@@ -640,7 +645,7 @@ function rateItemActionForms(r) {
 /** 작업 종류 행 = 한 줄 인라인 편집(2026-07-27 통합 저장). */
 function taskTypeRow(t) {
   return `
-    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(0,1.4fr)_8rem_6.5rem_6rem_auto_auto]" id="task-type-${t.id}">
+    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(11rem,1.4fr)_8rem_6.5rem_6rem_auto_auto]" id="task-type-${t.id}">
       <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="label_${t.id}" value="${esc(t.label)}" aria-label="작업 종류명" required />
       <select class="input py-1.5 text-sm" name="billing_type_${t.id}" aria-label="과금">
         ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
