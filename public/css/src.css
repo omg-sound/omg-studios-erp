@@ -229,6 +229,9 @@
      26rem = 좁은 창(<sm) 전체 폭에서 상호가 안 잘리던 폭을 데스크톱 기본값으로(사용자 스샷 기준).
      폴백만 바꾸므로 드래그 저장값(--cl-list-w)이 있으면 그쪽이 이긴다. */
   .cl-panes.cl-list-wide .cl-col-left { width: var(--cl-list-w, 26rem); }
+  /* 반대로 좁게(2026-07-29 환경설정) — 항목 9개·짧은 라벨이라 18rem은 남고, 그 여유가 오른쪽 인라인 편집 표를
+     잘라 순서·삭제 버튼에 손이 안 닿게 만들었다(실측). 폴백만 바꾸므로 드래그 저장값이 있으면 그쪽이 이긴다. */
+  .cl-panes.cl-list-narrow .cl-col-left { width: var(--cl-list-w, 14rem); }
   /* 리사이저는 **선 없이** — 조절 가능함은 커서(col-resize)로만 알린다(2026-07-18 사용자 요청 — hover 파란 선도 제거). */
   .cl-resizer { flex: 0 0 auto; width: 9px; cursor: col-resize; align-self: stretch; }
   .cl-resizer:focus-visible { outline: none; }

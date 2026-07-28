@@ -49,6 +49,29 @@ function settingDesc(html) {
   return html ? `<p class="mb-3 text-sm leading-relaxed text-muted">${html}</p>` : "";
 }
 
+/**
+ * 설정 화면의 저장 줄 — dirty 패턴(바뀐 게 없으면 흐리고, 바뀌면 강조 + 미저장 힌트).
+ * ⚠️`data-dirty-form`과 짝이다: 폼에 마커가 없으면 강조도, 다른 설정으로 이동할 때의 미저장 경고도 없다
+ * (재설계 실측에서 예약 기본값·알림·스튜디오 정보 세 폼이 그 상태였다 — 통합 저장의 약속이 반만 지켜졌었다).
+ */
+/**
+ * 인라인 편집 표를 **자체 가로 스크롤 영역**에 담는다.
+ * ⚠️행이 고정 rem 열로 짜여 있어 좁은 패널에서는 줄어들지 않고 **잘린다** — 2026-07-29 실측에서 요금표 행(963px)이
+ * 패널(729px) 밖으로 나가 순서·삭제 버튼에 손이 닿지 않았고, 1024px에서는 세 표 모두 그랬다. 페이지 가로
+ * 오버플로우로도 안 잡힌다(바깥이 잘라 버려 documentElement는 멀쩡하다) — 그래서 눈에 안 띄었다.
+ * 폭을 더 줄이는 대신 넘칠 때만 스크롤되게 해, 어떤 폭에서도 모든 컨트롤에 도달 가능하게 만든다.
+ */
+function scrollX(inner, innerClass = "space-y-2") {
+  return `<div class="overflow-x-auto"><div class="${innerClass}">${inner}</div></div>`;
+}
+
+function saveRow(label = "저장") {
+  return `<div class="flex items-center gap-2">
+    <button class="btn-primary btn-sm transition" type="submit" data-dirty-save>${esc(label)}</button>
+    <span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span>
+  </div>`;
+}
+
 /** 단가 항목 카테고리 select 옵션 — kind(녹음/촬영/공연)별 optgroup, DB 분류 순서(2026-07-05 config 하드코딩에서 전환). current 선택 반영. */
 function rateCategoryOptions(current = "") {
   const byKind = {};
@@ -218,8 +241,8 @@ function ratesPane() {
           if (!g.actionForms) return g.list; // 빈 상태
           return `
         <form method="post" action="/settings/rate-items/bulk" id="rates-bulk-form" class="space-y-2" data-dirty-form>
-          <div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(11rem,1.3fr)_8rem_4.5rem_6.5rem_4.5rem_6.5rem_5.5rem_10rem]"><span>이름</span><span>분류</span><span>기준(h)</span><span>기준가(원)</span><span>초과(h)</span><span>초과가(원)</span><span>유형</span><span></span></div>
-          ${g.list}
+          ${scrollX(`<div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(6rem,1fr)_6.5rem_3.5rem_5.5rem_3.5rem_5.5rem_4.5rem_auto]"><span>이름</span><span>분류</span><span>기준(h)</span><span>기준가(원)</span><span>초과(h)</span><span>초과가(원)</span><span>유형</span><span></span></div>
+          ${g.list}`)}
           <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
         </form>
         ${g.actionForms}`;
@@ -251,8 +274,8 @@ function taskTypesPane() {
         </form>
         ${taskTypes.length ? `
         <form method="post" action="/settings/task-types/bulk" id="task-types-bulk-form" class="space-y-1.5" data-dirty-form>
-          <div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(11rem,1.4fr)_8rem_6.5rem_6rem_auto_auto]"><span>이름</span><span>과금</span><span>기본 단가(원)</span><span>유형</span><span>빠른추가</span><span></span></div>
-          ${taskTypes.map((t) => taskTypeRow(t)).join("")}
+          ${scrollX(`<div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid sm:grid-cols-[minmax(11rem,1.4fr)_8rem_6.5rem_6rem_auto_auto]"><span>이름</span><span>과금</span><span>기본 단가(원)</span><span>유형</span><span>빠른추가</span><span></span></div>
+          ${taskTypes.map((t) => taskTypeRow(t)).join("")}`, "space-y-1.5")}
           <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
         </form>
         ${taskTypes.map((t) => taskTypeActionForms(t)).join("")}` : emptyState("등록된 작업 종류가 없습니다.")}
@@ -352,7 +375,7 @@ function roomsSection() {
       </form>
       ${rooms.length ? `
       <form method="post" action="/settings/rooms/bulk" id="rooms-bulk-form" class="space-y-1.5" data-dirty-form>
-        ${rows}
+        ${scrollX(rows, "space-y-1.5")}
         <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
       </form>
       ${rooms.map((r) => roomActionForms(r)).join("")}` : rows}
@@ -374,7 +397,7 @@ function roomRow(r) {
       <span class="ml-auto flex shrink-0 items-center gap-1">
         <button class="btn-ghost btn-xs px-2" type="submit" form="room-mv-u-${r.id}" aria-label="위로 이동">↑</button>
         <button class="btn-ghost btn-xs px-2" type="submit" form="room-mv-d-${r.id}" aria-label="아래로 이동">↓</button>
-        <button class="btn-ghost btn-xs text-danger" type="submit" form="room-del-${r.id}">삭제</button>
+        <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="room-del-${r.id}">삭제</button>
       </span>
     </div>`;
 }
@@ -403,7 +426,7 @@ function bookingDefaultsSection() {
         <h2 class="font-display text-lg font-semibold">예약 기본값</h2>
         ${settingDesc(`새 세션을 예약할 때 자동으로 채워지는 값입니다.`)}
       </div>
-      <form method="post" action="/settings/booking-defaults" class="space-y-3">
+      <form method="post" action="/settings/booking-defaults" class="space-y-3" data-dirty-form>
         <div>
           <label class="label-sm">기본 세션 시간 <span class="font-normal text-muted">(녹음 외 세션[믹싱·마스터링·기타]의 소요시간 슬라이더 기본값)</span></label>
           <div class="flex items-center gap-2">
@@ -422,7 +445,7 @@ function bookingDefaultsSection() {
           <label class="label mb-0.5 text-xs">기본 장소 <span class="font-normal text-muted">(예약 시 일정 장소로 자동 입력)</span></label>
           <input class="input py-1.5 text-sm" name="studio_location" value="${esc(calendar.getStudioLocation())}" placeholder="예: OMG 스튜디오 (서울 ...)" />
         </div>
-        <button class="btn-primary btn-sm" type="submit">저장</button>
+        ${saveRow()}
       </form>
     </section>`;
 }
@@ -439,7 +462,7 @@ function studioInfoSection() {
         <h2 class="text-sm font-semibold">공급자(스튜디오) 세금정보</h2>
         ${settingDesc(`발행된 청구의 <span class="text-fg">거래명세서 PDF</span> '공급자'란에 들어갑니다. (세금계산서가 아닌 참고용 문서)`)}
       </div>
-      <form method="post" action="/settings/studio-info" class="space-y-2">
+      <form method="post" action="/settings/studio-info" class="space-y-2" data-dirty-form>
         <div class="grid gap-2 sm:grid-cols-2">
           ${field("studio_biz_name", "상호", "OMG 스튜디오")}
           ${field("studio_biz_no", "사업자등록번호", "000-00-00000")}
@@ -449,7 +472,7 @@ function studioInfoSection() {
           ${field("studio_biz_item", "종목", "음반녹음")}
         </div>
         <div><label class="label mb-0.5 text-xs">사업장 주소</label><input class="input py-1.5 text-sm" name="studio_address" value="${esc(s.studio_address || "")}" /></div>
-        <button class="btn-primary btn-sm" type="submit">공급자 정보 저장</button>
+        ${saveRow("공급자 정보 저장")}
       </form>
       <div class="border-t border-border pt-4">
         <label class="label mb-1 text-xs">로고 <span class="font-normal text-muted">(거래명세서 PDF 우측 상단 · PNG/JPG, 최대 2MB)</span></label>
@@ -457,8 +480,10 @@ function studioInfoSection() {
           ? `<div class="mb-2"><img src="${esc(logo)}" alt="로고" class="max-h-20 rounded border border-border bg-white p-2" /></div>`
           : `<p class="mb-2 text-xs text-muted">등록된 로고가 없습니다.</p>`}
         <div class="flex flex-wrap items-center gap-2">
-          <form method="post" action="/settings/studio-logo" enctype="multipart/form-data" class="flex items-center gap-2">
-            <input class="text-sm" type="file" name="logo" accept="image/png,image/jpeg" required />
+          <!-- ⚠️파일 입력은 고유 폭이 커서(파일명·버튼 포함) 좁은 화면에서 폼을 밀어낸다 — 390px에서 16px 넘쳤다.
+               min-w-0 + flex-1로 남는 폭에 맞추고, 좁으면 업로드 버튼이 아랫줄로 감기게 한다. -->
+          <form method="post" action="/settings/studio-logo" enctype="multipart/form-data" class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <input class="min-w-0 flex-1 text-sm sm:flex-none" type="file" name="logo" accept="image/png,image/jpeg" required />
             <button class="btn-primary btn-sm" type="submit">로고 업로드</button>
           </form>
           ${logo ? `<form method="post" action="/settings/studio-logo/delete" data-confirm="로고를 삭제할까요?"><button class="btn-ghost btn-xs text-danger" type="submit">로고 삭제</button></form>` : ""}
@@ -505,7 +530,7 @@ function alertsSection(chief = true) {
       <h2 class="font-display text-lg font-semibold">알림</h2>
       ${settingDesc(`청구 발행·자료 공유 시 팀에 알립니다 — Slack/Discord 웹훅과 청구 알림 이메일(청구번호·청구처·금액 + 바로가기)을 함께 관리합니다.`)}
     </div>
-    <form method="post" action="/settings/alerts" class="space-y-3">
+    <form method="post" action="/settings/alerts" class="space-y-3" data-dirty-form>
       <div>
         <label class="label mb-0.5 text-xs">알림 웹훅 <span class="font-normal text-muted">(Incoming Webhook URL · 비우면 끔 · 저장 시 암호화)</span></label>
         <input class="input py-1.5 text-sm" name="webhook_url" value="${esc(url)}" placeholder="https://hooks.slack.com/services/..." />
@@ -516,7 +541,7 @@ function alertsSection(chief = true) {
         <input class="input py-1.5 text-sm" name="alert_email" value="${esc(raw)}" placeholder="owner@omgworks.kr, chief@omgworks.kr" />
         ${linkNote}
       </div>
-      <button class="btn-primary btn-sm" type="submit">저장</button>
+      ${saveRow()}
     </form>
     ${emailStatus}
     <div class="flex flex-wrap gap-2 border-t border-border pt-3">
@@ -598,7 +623,7 @@ function rateItemRow(r) {
   const extraHours = r.extra_minutes ? r.extra_minutes / 60 : 1;
   const cat = r.category || RECORDING_CATEGORIES[0];
   return `
-    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(11rem,1.3fr)_8rem_4.5rem_6.5rem_4.5rem_6.5rem_5.5rem_10rem] ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
+    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 sm:grid-cols-[minmax(6rem,1fr)_6.5rem_3.5rem_5.5rem_3.5rem_5.5rem_4.5rem_auto] ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
       <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="rate_name_${r.id}" value="${esc(r.name)}" aria-label="단가 항목명" autocomplete="off" required />
       <select class="input py-1.5 text-sm" name="category_${r.id}" aria-label="분류">${rateCategoryOptions(cat)}</select>
       <input class="input py-1.5 text-sm" name="base_hours_${r.id}" inputmode="decimal" value="${esc(String(baseHours))}" aria-label="기준 시간(시간)" placeholder="기준(h)" />
@@ -611,7 +636,7 @@ function rateItemRow(r) {
         <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-u-${r.id}" aria-label="위로 이동">↑</button>
         <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-d-${r.id}" aria-label="아래로 이동">↓</button>
         <button class="btn-ghost btn-xs whitespace-nowrap" type="submit" form="rate-act-${r.id}">${r.active ? "비활성" : "활성"}</button>
-        <button class="btn-ghost btn-xs text-danger" type="submit" form="rate-del-${r.id}">삭제</button>
+        <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="rate-del-${r.id}">삭제</button>
       </span>
     </div>`;
 }
@@ -639,7 +664,7 @@ function taskTypeRow(t) {
       <span class="col-span-2 flex items-center justify-end gap-1 sm:col-span-1">
         <button class="btn-ghost btn-xs px-2" type="submit" form="tt-mv-u-${t.id}" aria-label="위로 이동">↑</button>
         <button class="btn-ghost btn-xs px-2" type="submit" form="tt-mv-d-${t.id}" aria-label="아래로 이동">↓</button>
-        <button class="btn-ghost btn-xs text-danger" type="submit" form="tt-del-${t.id}">삭제</button>
+        <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="tt-del-${t.id}">삭제</button>
       </span>
     </div>`;
 }
@@ -715,7 +740,7 @@ function systemWarnings() {
   if (config.googleConfigured && !drive.isOAuthLinked()) warns.push("구글 계정 미연동 — 메일 발송·캘린더·연락처 연동이 동작하지 않습니다.");
   if (!getState("studio_calendar_id")) warns.push("스튜디오 캘린더 미설정 — 세션의 구글 캘린더 자동 연동이 꺼져 있습니다.");
   // 청구 알림 메일(2026-07-14): 수신 주소가 없으면 청구가 발행돼도 아무에게도 안 간다(조용한 장애 클래스).
-  if (!mailer.getRecipients().length) warns.push("청구 알림 이메일 수신 주소가 없습니다 — 청구가 발행돼도 알림이 발송되지 않습니다(환경설정 > 일반 > 알림).");
+  if (!mailer.getRecipients().length) warns.push("청구 알림 이메일 수신 주소가 없습니다 — 청구가 발행돼도 알림이 발송되지 않습니다(환경설정 > 알림).");
   return warns;
 }
 
@@ -755,7 +780,7 @@ function systemTab(chief) {
         <span>청구 알림 메일 ${badge(mailer.isConfigured(), `수신 ${mailer.getRecipients().length}명`, "미설정")}</span>
       </div>
       ${oauthAcct ? `<p class="mt-2 text-xs text-muted">연동 계정 <span class="text-fg">${esc(oauthAcct)}</span></p>` : ""}
-      <p class="mt-1 text-xs text-muted">자료 저장은 전용 서비스 계정, 나머지는 위 구글 계정 OAuth 를 씁니다. 세부 설정은 일반 탭에서.</p>
+      <p class="mt-1 text-xs text-muted">자료 저장은 전용 서비스 계정, 나머지는 위 구글 계정 OAuth 를 씁니다.</p>
     </section>`;
 
   // 백업 — 마지막 백업 시각·크기·보관 개수 + 수동 백업(치프).

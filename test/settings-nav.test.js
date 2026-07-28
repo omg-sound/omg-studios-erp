@@ -36,6 +36,14 @@ test("옛 탭 이름이 사용자 노출 문구에 남아 있지 않다", () => 
   const src = fs.readFileSync(path.join(__dirname, "../src/routes/settings.routes.js"), "utf8");
   assert.ok(!/SETTINGS_TABS/.test(src), "옛 탭 정의 제거");
   assert.ok(!/tab=settings|tab=content|tab=people/.test(src.replace(/TAB_MAP[\s\S]{0,200}/, "")), "옛 tab= 리다이렉트 잔재 없음(호환 매핑 제외)");
+
+  // 화면 안내 문구도 함께 — 시스템 경고가 "환경설정 > 일반 > 알림"으로, 구글 연동 카드가 "세부 설정은 일반 탭에서"로
+  // 없는 탭을 가리키고 있었다(실측·육안에서 발견). 주석은 옛 구조를 설명할 수 있으니 문자열 리터럴만 본다.
+  const views = fs.readFileSync(path.join(__dirname, "../src/views.settings.js"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+  for (const stale of ["일반 탭", "콘텐츠 탭", "담당자 탭", "> 일반 >"]) {
+    assert.ok(!views.includes(stale), `옛 탭 이름 '${stale}'이 화면 문구에 남아 있음`);
+  }
 });
 
 // ⚠️ `data-dirty-save` 마커만 세면 그 마커를 안 쓰는 화면(예약 기본값·알림·스튜디오 정보)은 **항상 0이라 무조건 통과**한다
@@ -47,6 +55,17 @@ test("화면당 값-편집 저장 버튼은 1개 이하", () => {
     // <button ...>저장</button> / <button ...>통합 저장</button> — '저장'으로 끝나는 라벨만(‘분류 추가’·‘테스트 발송’ 등 제외).
     const saveButtons = (html.match(/<button[^>]*>[^<]*저장<\/button>/g) || []);
     assert.ok(saveButtons.length <= 1, `${name}: 저장 버튼 ${saveButtons.length}개(1개 이하여야 함) — ${saveButtons.join(" | ")}`);
+  }
+});
+
+// 저장 버튼이 하나인 것만으로는 부족하다 — 그 버튼이 dirty 패턴에 걸려 있어야 (a)안 바꾸면 흐리고 (b)바꾼 채
+// 다른 설정으로 옮기면 경고가 뜬다. 재설계 직후 실측에서 예약 기본값·알림·스튜디오 정보 세 화면이 저장 버튼은
+// 있는데 마커가 없어 둘 다 안 됐다(약속의 절반이 조용히 빠진 상태). 폼·버튼 양쪽 마커를 함께 잠근다.
+test("값-편집 저장 폼은 dirty 패턴(폼 마커 + 저장 버튼 마커)을 쓴다", () => {
+  const panes = { 장소: V.roomsSection(), 요금표: V.ratesPane(), "작업 종류": V.taskTypesPane(), "예약 기본값": V.bookingDefaultsSection(), 알림: V.alertsSection(true), "스튜디오 정보": V.studioInfoSection() };
+  for (const [name, html] of Object.entries(panes)) {
+    assert.ok(/<button[^>]*data-dirty-save/.test(html), `${name}: 저장 버튼에 data-dirty-save`);
+    assert.ok(/<form[^>]*data-dirty-form/.test(html), `${name}: 저장 폼에 data-dirty-form`);
   }
 });
 

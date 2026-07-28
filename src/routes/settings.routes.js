@@ -105,7 +105,7 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
   const right = `<div class="space-y-3">${flashBanner(req.query)}${pane}</div>`;
   const body = `
     ${pageHeader({ title: "환경설정" })}
-    ${contactPanes({ left, right, hasSelection, backHref: "/settings", backLabel: "환경설정 메뉴", widthKey: "setListW" })}`;
+    ${contactPanes({ left, right, hasSelection, backHref: "/settings", backLabel: "환경설정 메뉴", widthKey: "setListW", narrowList: true, rightWide: true })}`;
   res.send(layout({ title: "환경설정", user: req.user, current: "/settings", body, wide: true }));
 }));
 

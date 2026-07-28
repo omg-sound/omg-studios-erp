@@ -11,7 +11,7 @@ const { kstYmd } = require("./lib/date"); // DB는 UTC — 표시는 KST(2026-07
  * (pageHeader의 back은 전 폭에서 보이므로 이건 lg:hidden이라야 데스크톱에서 중복되지 않는다.)
  * @param {{left:string, right:string, hasSelection:boolean, backHref?:string, backLabel?:string}} o
  */
-function contactPanes({ left, right, hasSelection, backHref = "", backLabel = "", widthKey = "clListW", heightClass = "lg:h-[calc(100vh-11rem)]", wideList = false }) {
+function contactPanes({ left, right, hasSelection, backHref = "", backLabel = "", widthKey = "clListW", heightClass = "lg:h-[calc(100vh-11rem)]", wideList = false, narrowList = false, rightWide = false }) {
   const leftCls = hasSelection ? "hidden lg:flex" : "block lg:flex"; // lg에선 flex-col(검색 고정 + 목록 스크롤)
   const rightCls = hasSelection ? "block" : "hidden lg:block";
   const back = hasSelection && backHref
@@ -26,10 +26,13 @@ function contactPanes({ left, right, hasSelection, backHref = "", backLabel = ""
   // wideList = 목록 **기본** 폭만 넓게(.cl-list-wide가 var 폴백을 22rem으로 교체). 저장키를 분리해도 CSS 기본값 18rem은
   // .cl-col-left 한 규칙이라 화면 간 공유되므로, 매출처럼 이름+금액+건수를 담는 목록만 넓히려면 이 훅이 필요하다.
   // 드래그 저장값(--cl-list-w)이 있으면 항상 그쪽이 이긴다(폴백은 미저장일 때만 쓰인다).
-  return `<div class="cl-panes${wideList ? " cl-list-wide" : ""} lg:flex lg:gap-2 ${heightClass}" data-cl-panes data-cl-width-key="${esc(widthKey)}">
+  // rightWide = 오른쪽 패널의 읽기 폭 제한(max-w-content, 768px) 해제. 기본은 읽기 폭이 맞다(사람·업체 상세는 읽는
+  // 화면이다). 다만 **환경설정처럼 오른쪽이 여러 열의 인라인 편집 표**면 768px 안에서 열이 잘려 순서·삭제 버튼에
+  // 손이 닿지 않는다(2026-07-29 실측: 요금표 행 963px가 726px 패널에 잘림) — 그 화면만 이 훅으로 폭을 연다.
+  return `<div class="cl-panes${wideList ? " cl-list-wide" : ""}${narrowList ? " cl-list-narrow" : ""} lg:flex lg:gap-2 ${heightClass}" data-cl-panes data-cl-width-key="${esc(widthKey)}">
       <div class="${leftCls} cl-col-left lg:shrink-0 lg:min-h-0 lg:flex-col">${left}</div>
       <div class="cl-resizer hidden lg:block" data-cl-resizer role="separator" aria-orientation="vertical" tabindex="0" aria-label="목록 폭 조절" title="드래그로 목록 폭 조절"></div>
-      <div class="${rightCls} min-w-0 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pl-2 lg:pr-1">${back}<div class="max-w-content">${right}</div></div>
+      <div class="${rightCls} min-w-0 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pl-2 lg:pr-1">${back}<div class="${rightWide ? "" : "max-w-content"}">${right}</div></div>
     </div>`;
 }
 
