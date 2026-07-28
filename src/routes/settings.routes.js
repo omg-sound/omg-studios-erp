@@ -79,7 +79,10 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
     const q = new URLSearchParams(req.query); q.delete("tab"); q.set("s", TAB_MAP[req.query.tab]);
     return res.redirect(`/settings?${q.toString()}`);
   }
-  const cur = SETTINGS_KEYS.includes(req.query.s) ? req.query.s : "rooms";
+  // cur(그릴 화면)과 hasSelection(모바일에서 메뉴/화면 중 뭘 보일지)은 분리 — ?s= 없으면 데스크톱은
+  // 기본 화면(rooms)을 오른쪽에 채우지만, 모바일은 메뉴부터 보여야 한다(연락처·업체의 상세 id 유무와 동일한 판정).
+  const hasSelection = !!req.query.s && SETTINGS_KEYS.includes(req.query.s);
+  const cur = hasSelection ? req.query.s : "rooms";
   const chief = isChief(req.user);
   const warnCount = systemWarnings().length;
 
@@ -94,11 +97,11 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
   else if (cur === "alerts") pane = alertWebhookSection(chief) + alertEmailSection(chief); // TODO(Task 2): alertsSection(chief)으로 통합
   else pane = systemTab(chief);
 
-  const left = `<div class="card p-2">${settingsMenu(cur, warnCount)}</div>`;
+  const left = `<div class="p-2">${settingsMenu(cur, warnCount)}</div>`; // card 없이 여백만 — 연락처·업체 좌측 목록과 같은 평평한 모양(.cl-listwrap .card 평탄화는 그 래퍼 안에서만 적용돼 여기선 안 먹는다)
   const right = `<div class="space-y-3">${flashBanner(req.query)}${pane}</div>`;
   const body = `
     ${pageHeader({ title: "환경설정" })}
-    ${contactPanes({ left, right, hasSelection: true, backHref: "/settings", backLabel: "환경설정", widthKey: "setListW" })}`;
+    ${contactPanes({ left, right, hasSelection, backHref: "/settings", backLabel: "환경설정 메뉴", widthKey: "setListW" })}`;
   res.send(layout({ title: "환경설정", user: req.user, current: "/settings", body, wide: true }));
 }));
 
