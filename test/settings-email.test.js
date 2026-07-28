@@ -63,7 +63,7 @@ test("청구 알림 이메일: 치프만 저장, 형식 검증, 렌더", async (
     assert.strictEqual(ok.status, 302);
     assert.deepStrictEqual(mailer.getRecipients(), ["owner@omgworks.kr", "chief@omgworks.kr"]);
 
-    const page = await fetch(base + "/settings?tab=settings", { headers: { cookie: chief } });
+    const page = await fetch(base + "/settings?s=alerts", { headers: { cookie: chief } });
     const html = await page.text();
     assert.match(html, /청구 알림 이메일/);
     assert.match(html, /owner@omgworks\.kr, chief@omgworks\.kr/);

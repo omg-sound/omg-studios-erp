@@ -53,7 +53,10 @@ const {
   systemTab,
   systemWarnings,
   isBootstrapChief,
+  SETTINGS_KEYS,
+  settingsMenu,
 } = require("../views.settings");
+const { contactPanes } = require("../views.contacts");
 const { asyncHandler } = require("../lib/async");
 const { logAudit } = require("../lib/audit"); // 파괴적·재무 액션 기록(fail-safe)
 const multer = require("multer");
@@ -69,53 +72,34 @@ const { eventInputForSession } = require("./sessions.routes"); // 캘린더 재�
 
 const router = express.Router();
 
-// 탭 순서·기본 탭 = 환경설정(2026-07-09 사용자 요청 — 이전 담당자 우선에서 전환).
-const SETTINGS_TABS = [
-  { key: "settings", label: "일반" },
-  { key: "content", label: "콘텐츠" },
-  { key: "people", label: "담당자" },
-  { key: "system", label: "시스템" }, // 연동·백업·데이터 상태 + 감사 로그(2026-07-09 관리 개선) — 경고 있으면 라벨에 ⚠️
-];
-
 router.get("/", requireStaff, asyncHandler(async (req, res) => {
-  const tab = SETTINGS_TABS.some((t) => t.key === req.query.tab) ? req.query.tab : "settings";
-  const warnCount = systemWarnings().length; // 시스템 탭 경고 배지(백업 침묵·연동 꺼짐 등 — 조용한 장애 가시화)
-  const tabBar = `<div class="mb-4 flex gap-1 overflow-x-auto border-b border-border">
-      ${SETTINGS_TABS.map((t) => `<a href="/settings?tab=${t.key}" class="shrink-0 border-b-2 px-4 py-2 text-sm ${t.key === tab ? "border-primary font-semibold text-fg" : "border-transparent text-muted hover:text-fg"}">${esc(t.label)}${t.key === "system" && warnCount ? ` <span class="text-warning">⚠️${warnCount}</span>` : ""}</a>`).join("")}
-    </div>`;
-
-  let tabContent;
-  if (tab === "people") tabContent = peopleTab(req.user);
-  else if (tab === "content") tabContent = contentTab();
-  else if (tab === "system") tabContent = systemTab(isChief(req.user));
-  else {
-    // 환경설정 = 성격별 4그룹(2026-07-09 관리 개선 — 8개 섹션 한 줄 스크롤이라 찾기 어렵던 것):
-    // 스튜디오 운영 / 구글 연동 / 문서·청구 / 알림. 상단 앵커 네비로 점프.
-    const groups = [
-      { id: "ops", label: "스튜디오 운영", html: roomsSection() + sessionDurationSection() + defaultBookerSection() },
-      { id: "google", label: "구글 연동", html: (await studioCalendarSection(isChief(req.user))) + driveStorageSection() + googleContactsSection(isChief(req.user)) },
-      { id: "docs", label: "문서 · 청구", html: studioInfoSection() },
-      { id: "alerts", label: "알림", html: alertWebhookSection(isChief(req.user)) + alertEmailSection(isChief(req.user)) },
-    ];
-    const anchorNav = `<nav class="mb-1 flex flex-wrap gap-1.5" aria-label="환경설정 바로가기">
-        ${groups.map((g) => `<a href="#set-${g.id}" class="badge badge-neutral hover:text-fg">${esc(g.label)}</a>`).join("")}
-      </nav>`;
-    // 그룹당 카드 1개(섹션은 SETTING_BLOCK border-t 구분) — 섹션마다 카드+큰 제목이라 자리를 너무 차지하던 것 압축(2026-07-09 사용자 요청).
-    tabContent = anchorNav + groups
-      .map((g) => `<div id="set-${g.id}" class="scroll-mt-4">
-          <h2 class="mb-2 mt-5 border-b border-border pb-1.5 font-display text-base font-semibold">${esc(g.label)}</h2>
-          <section class="card">${g.html}</section>
-        </div>`)
-      .join("");
+  // 옛 ?tab= 링크 호환(리다이렉트·북마크·코드 잔재) — 새 키로 302.
+  const TAB_MAP = { settings: "rooms", content: "rates", people: "users", system: "system" };
+  if (req.query.tab && TAB_MAP[req.query.tab]) {
+    const q = new URLSearchParams(req.query); q.delete("tab"); q.set("s", TAB_MAP[req.query.tab]);
+    return res.redirect(`/settings?${q.toString()}`);
   }
+  const cur = SETTINGS_KEYS.includes(req.query.s) ? req.query.s : "rooms";
+  const chief = isChief(req.user);
+  const warnCount = systemWarnings().length;
 
+  let pane;
+  if (cur === "rooms") pane = roomsSection();
+  else if (cur === "rates") pane = contentTab(); // TODO(Task 2): ratesPane()으로 교체(요금표만 분리)
+  else if (cur === "tasks") pane = contentTab(); // TODO(Task 2): taskTypesPane()으로 교체(작업 종류만 분리)
+  else if (cur === "booking") pane = sessionDurationSection() + defaultBookerSection(); // TODO(Task 2): bookingDefaultsSection()으로 통합
+  else if (cur === "users") pane = peopleTab(req.user);
+  else if (cur === "studio") pane = studioInfoSection();
+  else if (cur === "google") pane = (await studioCalendarSection(chief)) + driveStorageSection() + googleContactsSection(chief);
+  else if (cur === "alerts") pane = alertWebhookSection(chief) + alertEmailSection(chief); // TODO(Task 2): alertsSection(chief)으로 통합
+  else pane = systemTab(chief);
+
+  const left = `<div class="card p-2">${settingsMenu(cur, warnCount)}</div>`;
+  const right = `<div class="space-y-3">${flashBanner(req.query)}${pane}</div>`;
   const body = `
-    ${flashBanner(req.query)}
-    ${pageHeader({ title: "환경설정", desc: "일반 · 콘텐츠 · 담당자 · 시스템" })}
-    ${tabBar}
-    <div class="space-y-3">${tabContent}</div>`;
-
-  res.send(layout({ title: "환경설정", user: req.user, current: "/settings", body, wide: true })); // wide(2026-07-28 사용자 결정) — 단가표·룸·작업 종류 인라인 편집 표가 들어와 '폼 읽기'에서 '목록 편집'으로 성격이 바뀌어, 읽기 폭(768)에선 한 줄 인라인 편집이 뭉개졌다(이름칸 26px 등). /settings/drive-check는 단순 점검 페이지라 read 폭 그대로.
+    ${pageHeader({ title: "환경설정" })}
+    ${contactPanes({ left, right, hasSelection: true, backHref: "/settings", backLabel: "환경설정", widthKey: "setListW" })}`;
+  res.send(layout({ title: "환경설정", user: req.user, current: "/settings", body, wide: true }));
 }));
 
 /** 파일 버퍼 매직바이트 검증(Content-Type 스푸핑 방어). */

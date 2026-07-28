@@ -50,7 +50,7 @@ test("스모크: 치프 로그인 후 주요 화면 전부 200 + 역할별 권�
       "/invoices", "/invoices?filter=done", "/invoices?filter=paid", "/invoices?filter=todo",
       "/clients", "/contacts?tab=artist", "/contacts", "/contacts/new", "/equipment",
       "/workers", "/revenue", "/deliverables",
-      "/settings", "/settings?tab=content", "/settings?tab=people", "/settings?tab=system",
+      "/settings", "/settings?s=rates", "/settings?s=users", "/settings?s=system",
     ];
     for (const p of pages) {
       const r = await fetch(base + p, { headers: { cookie: chiefCookie }, redirect: "manual" });

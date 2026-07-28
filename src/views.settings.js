@@ -827,6 +827,49 @@ function systemTab(chief) {
   return warnCard + integrations + backupCard + dataCard + appCard + auditCard + (chief ? accessCard : "");
 }
 
+/**
+ * 환경설정 메뉴(2026-07-28 재설계) — 손 가는 순서로 그룹화. 그룹 헤더는 라벨일 뿐 클릭 대상이 아니다.
+ * 각 항목의 부제는 '이름만 보고 뭐가 들었는지 모르는' 문제의 직접 해법이라 비워 두지 말 것.
+ */
+const SETTINGS_NAV = [
+  { group: "자주 쓰는 것", items: [
+    { key: "rooms", label: "장소", desc: "룸·외부 장소" },
+    { key: "rates", label: "요금표", desc: "녹음·촬영 단가 + 분류" },
+    { key: "tasks", label: "작업 종류", desc: "믹싱·보컬튠 등" },
+    { key: "booking", label: "예약 기본값", desc: "기본 세션 시간·예약 담당자" },
+  ] },
+  { group: "가끔 보는 것", items: [
+    { key: "users", label: "스태프 계정", desc: "로그인 허용·역할" },
+    { key: "studio", label: "스튜디오 정보", desc: "사업자·로고(거래명세서)" },
+  ] },
+  { group: "한 번만 하는 것", items: [
+    { key: "google", label: "구글 연동", desc: "캘린더·Drive·연락처" },
+    { key: "alerts", label: "알림", desc: "청구 메일·웹훅" },
+  ] },
+  { group: "상태 보기", items: [
+    { key: "system", label: "시스템", desc: "백업·연동·감사 로그" },
+  ] },
+];
+
+const SETTINGS_KEYS = SETTINGS_NAV.flatMap((g) => g.items.map((i) => i.key));
+
+/** 좌측 설정 메뉴(마스터). 연락처 이름 목록과 같은 자리·같은 조작감. */
+function settingsMenu(current, warnCount = 0) {
+  return SETTINGS_NAV
+    .map((g) => `
+      <div class="px-1 pb-1 pt-3 text-xs font-medium text-muted first:pt-1">${esc(g.group)}</div>
+      ${g.items.map((i) => {
+        const on = i.key === current;
+        const warn = i.key === "system" && warnCount ? ` <span class="text-warning">⚠️${warnCount}</span>` : "";
+        return `<a href="/settings?s=${i.key}" ${on ? 'aria-current="page"' : ""}
+            class="block rounded-lg px-3 py-2 ${on ? "bg-elevated font-medium text-fg" : "text-fg/90 hover:bg-elevated/60"}">
+            <span class="block text-sm">${esc(i.label)}${warn}</span>
+            <span class="block text-xs text-muted">${esc(i.desc)}</span>
+          </a>`;
+      }).join("")}`)
+    .join("");
+}
+
 module.exports = {
   peopleTab,
   contentTab,
@@ -842,4 +885,7 @@ module.exports = {
   systemTab,
   systemWarnings,
   isBootstrapChief,
+  SETTINGS_NAV,
+  SETTINGS_KEYS,
+  settingsMenu,
 }; // 내부 전용: rateCategoryOptions·listUsers·ratesGroupedByCategory·rateCategoryManageRow·rateCategoriesSection·roomRow·roomActionForms·roomParentOptions·userRow·priceTypeOptions·rateItemRow·rateItemActionForms·taskTypeRow·taskTypeActionForms(위 export 함수들이 클로저로 사용)
