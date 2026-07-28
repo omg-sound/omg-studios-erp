@@ -15,17 +15,17 @@
 
 const { db } = require("../db");
 
-const KINDS = ["recording", "filming", "performance"]; // ⚠️배열 순서가 곧 화면 표시 순서다(녹음 → 촬영 → 공연).
+const KINDS = ["recording", "filming", "performance"];
 
-// 종류 정렬 순위 — 예전엔 `ORDER BY kind`(문자열)이라 **filming < performance < recording** 알파벳순으로
-// 촬영·공연이 녹음보다 위에 고정됐다(2026-07-29 사용자 리포트 '녹음을 위로 못 옮긴다'). ↑↓는 같은 종류
-// 안에서만 자리를 바꾸므로 사용자가 손댈 방법이 아예 없었다. 게다가 분류 select만 다른 순서(녹음 먼저)를
-// 써서 화면마다 순서가 달랐다 — 여기서 한 번 정해 전 화면이 같은 순서를 쓰게 한다.
-const KIND_RANK = KINDS.map((k, i) => `WHEN '${k}' THEN ${i}`).join(" ");
-
-/** 전체 분류(종류[녹음→촬영→공연] → sort_order → 이름순). 세션 폼·관리 화면 공용. */
+/**
+ * 전체 분류 — **한 축의 자유 순서**(sort_order → 이름). 종류(kind)로 묶지 않는다.
+ * 2026-07-29 사용자 결정: 요금표를 '분류 → 항목' 2단 트리로 바꾸며 종류별 묶음 자체를 없앴다. 예전엔
+ * `ORDER BY kind`가 먼저라 촬영 분류를 녹음 분류 사이에 둘 수 없었고(↑↓도 같은 종류 안에서만 움직였다),
+ * 그 종류 순서마저 영어 문자열 알파벳순이라 녹음이 맨 아래로 밀려 있었다 — 제약이 겹겹이었다.
+ * 종류는 이제 분류의 **속성**일 뿐이다(세션 종류에 맞는 항목을 거르는 데만 쓴다).
+ */
 function listRateCategories() {
-  return db().prepare(`SELECT * FROM rate_categories ORDER BY CASE kind ${KIND_RANK} ELSE 99 END, sort_order, name COLLATE NOCASE`).all();
+  return db().prepare("SELECT * FROM rate_categories ORDER BY sort_order, name COLLATE NOCASE").all();
 }
 
 function getRateCategory(id) {
@@ -69,14 +69,13 @@ function deleteRateCategory(id) {
 }
 
 /**
- * 분류 순서 이동(같은 kind 안에서 위/아래 한 칸, 2026-07-09 관리 개선 — 정렬 UI).
- * 현재 표시 순서(kind→sort_order→이름)를 물질화해 이웃과 자리를 바꾸고 sort_order를 10 간격으로 재부여
- * (999 기본값 중복 상태에서도 결정적으로 동작).
+ * 분류 순서 이동(위/아래 한 칸) — **종류 경계를 넘는다**(2026-07-29 자유 배치). 현재 표시 순서를 물질화해
+ * 이웃과 자리를 바꾸고 sort_order를 10 간격으로 재부여(중복 값 상태에서도 결정적으로 동작).
  */
 function moveRateCategory(id, dir) {
   const cur = db().prepare("SELECT * FROM rate_categories WHERE id = ?").get(Number(id));
   if (!cur) return;
-  const rows = db().prepare("SELECT id FROM rate_categories WHERE kind = ? ORDER BY sort_order, name COLLATE NOCASE").all(cur.kind);
+  const rows = db().prepare("SELECT id FROM rate_categories ORDER BY sort_order, name COLLATE NOCASE").all();
   const i = rows.findIndex((r) => r.id === cur.id);
   const j = dir === "up" ? i - 1 : i + 1;
   if (i < 0 || j < 0 || j >= rows.length) return;

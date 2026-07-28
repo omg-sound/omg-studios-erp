@@ -33,7 +33,8 @@ test("단가표·작업 종류: 인라인 필드 + bulk 폼, 접이식 '수정' 
 
   assert.ok(html.includes('id="rates-section"'), "단가표 섹션 앵커");
   assert.ok(html.includes('id="task-types-section"'), "작업 종류 섹션 앵커");
-  assert.ok(html.includes('action="/settings/rate-items/bulk"'), "단가표 bulk 폼");
+  // 2026-07-29 트리 전환 — 요금표는 분류 행과 항목 행을 **한 폼**(/settings/rates/bulk)에서 함께 저장한다.
+  assert.ok(html.includes('action="/settings/rates/bulk"'), "요금표 트리 통합 저장 폼");
   assert.ok(html.includes('action="/settings/task-types/bulk"'), "작업 종류 bulk 폼");
   assert.ok(html.includes(`name="rate_name_${a.id}"`) && html.includes(`name="base_price_${a.id}"`) && html.includes(`name="price_type_${a.id}"`), "단가표 행 = <필드>_<id> 인라인 입력");
   assert.ok(html.includes(`name="label_${t.id}"`) && html.includes(`name="unit_price_${t.id}"`), "작업 종류 행 인라인 입력");
@@ -79,10 +80,15 @@ test("빈 목록: 단가표·작업 종류·룸이 0건이어도 예외 없이 �
   // invalidateTaskTypeCache가 함께 호출돼 listTaskTypes가 실제로 빈 목록을 본다.
   for (const t of D.listTaskTypes({ includeInactive: true })) D.deleteTaskType(t.id);
 
+  // 항목만 0인 상태 — 분류는 남아 있으므로 트리는 그려지고 각 분류가 '항목 없음'을 보여준다.
+  assert.ok(V.ratesPane().includes("항목 없음"), "항목 0인 분류는 '항목 없음'");
+
+  db().exec("DELETE FROM rate_categories;");
   const contentHtml = V.ratesPane() + V.taskTypesPane();
-  assert.ok(contentHtml.includes("등록된 단가 항목이 없습니다."), "단가표 빈 안내(emptyState)");
+  // 트리 전환 후 요금표의 '비었다'는 **분류가 하나도 없을 때**다(항목은 분류 아래에 붙는다).
+  assert.ok(contentHtml.includes("등록된 분류가 없습니다."), "요금표 빈 안내(emptyState)");
   assert.ok(contentHtml.includes("등록된 작업 종류가 없습니다."), "작업 종류 빈 안내(emptyState)");
-  assert.ok(!contentHtml.includes('id="rates-bulk-form"'), "단가표 bulk 폼은 행이 있을 때만 렌더");
+  // 분류가 0개여도 트리 폼 자체는 남는다(빈 안내를 그 안에 그린다) — 분류 추가 폼으로 곧장 이어지게.
   assert.ok(!contentHtml.includes('id="task-types-bulk-form"'), "작업 종류 bulk 폼은 행이 있을 때만 렌더");
 
   const roomsHtml = V.roomsSection();

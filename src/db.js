@@ -1010,6 +1010,21 @@ function seedDefaultCatalogs() {
     setState("rate_categories_seed_v1", "done");
   }
 
+  // 분류 순서를 **한 축으로 평탄화**(2026-07-29 — 요금표 2단 트리 전환). 예전 순서는 kind로 먼저 갈렸고
+  // moveRateCategory가 kind별로 (idx+1)*10을 부여해 **sort_order 값이 종류마다 겹쳤다**(녹음 10·촬영 10…).
+  // 종류 묶음을 없앤 뒤 그대로 두면 겹친 값끼리 이름순으로 섞여 순서가 뒤죽박죽이 된다 → 마지막으로 보이던
+  // 순서(녹음 → 촬영 → 공연, 그 안은 sort_order·이름)를 그대로 물질화해 10 간격으로 다시 매긴다.
+  if (!getState("rate_categories_flat_order_v1")) {
+    const rank = { recording: 0, filming: 1, performance: 2 };
+    const rows = d.prepare("SELECT id, kind, sort_order, name FROM rate_categories").all()
+      .sort((a, b) => (rank[a.kind] ?? 99) - (rank[b.kind] ?? 99)
+        || (a.sort_order || 0) - (b.sort_order || 0)
+        || a.name.localeCompare(b.name));
+    const upd = d.prepare("UPDATE rate_categories SET sort_order = ? WHERE id = ?");
+    rows.forEach((r, i) => upd.run((i + 1) * 10, r.id));
+    setState("rate_categories_flat_order_v1", "done");
+  }
+
   const hasManager = d.prepare("SELECT id FROM project_managers LIMIT 1").get();
   if (!hasManager) {
     d.prepare("INSERT INTO project_managers (name, active) VALUES (?, 1)").run("스튜디오 관리자");
