@@ -16,7 +16,7 @@ const {
   getProMinutes,
   getDefaultBooker,
 } = require("./data");
-const { esc, formatBytes, emptyState, detailsChevron, explain } = require("./views");
+const { esc, formatBytes, emptyState, detailsChevron } = require("./views");
 const drive = require("./drive");
 const calendar = require("./calendar");
 const alerts = require("./notify");
@@ -94,7 +94,7 @@ function peopleTab(currentUser) {
       <section class="card space-y-4">
         <div>
           <h2 class="font-display text-lg font-semibold">하우스 엔지니어 <span class="text-sm font-normal text-muted">(로그인 계정)</span></h2>
-          ${explain(`등록한 구글 계정만 로그인할 수 있고, <span class="text-fg">작업 담당자에 자동으로 포함</span>됩니다. 치프는 전체, 스태프는 프로젝트·작업·자료까지.`)}
+          ${settingDesc(`등록한 구글 계정만 로그인할 수 있고, <span class="text-fg">작업 담당자에 자동으로 포함</span>됩니다. 치프는 전체, 스태프는 프로젝트·작업·자료까지.`)}
         </div>
         ${addForm}
         <div class="space-y-2">${userRows}</div>
@@ -164,7 +164,7 @@ function rateCategoriesSection() {
     <details class="group mt-3 border-t border-border pt-3">
       <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-muted hover:text-fg">${detailsChevron()} 분류 관리</summary>
       <div class="mt-2 space-y-2">
-        ${explain(`분류는 <b>녹음·촬영·공연</b> 중 하나에 속해 세션 종류에 맞는 단가 항목을 거르는 기준이 됩니다. <b>기본 분류(스튜디오/로케이션 녹음·스튜디오 촬영·공연)는 수정·삭제할 수 없습니다.</b> 새로 추가한 분류만 이름·소속을 바꾸거나(사용 중인 단가 항목도 함께 갱신) 삭제할 수 있어요(삭제는 그 분류를 쓰는 단가 항목이 없을 때만).`)}
+        ${settingDesc(`분류는 <b>녹음·촬영·공연</b> 중 하나에 속해 세션 종류에 맞는 단가 항목을 거르는 기준입니다. <b>기본 분류는 수정·삭제할 수 없고</b>, 새로 추가한 분류만 고치거나 지울 수 있습니다(그 분류를 쓰는 단가 항목이 없을 때만 삭제).`)}
         <form method="post" action="/settings/rate-categories" class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-bg p-3">
           <input class="input py-1.5 text-sm flex-1" name="cat_name" placeholder="새 분류명 (예: 야외 촬영)" autocomplete="off" required />
           <select class="input py-1.5 text-sm" name="kind">${kindOpts}</select>
@@ -182,7 +182,7 @@ function ratesPane() {
       <section class="card space-y-4" id="rates-section">
         <div>
           <h2 class="font-display text-lg font-semibold">요금표 · 녹음/촬영 종류</h2>
-          ${settingDesc(`대관 세션(녹음·촬영)의 시간제 단가 항목입니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력). <b>가격 유형</b>이 청구 화면 금액칸의 수정 범위를 정합니다(고정=잠금·기준가/최소가=조정 가능).`)}
+          ${settingDesc(`대관 세션(녹음·촬영)의 시간제 단가 항목입니다. 분류는 세션 종류(녹음/촬영)에 맞춰 세션 폼에 필터링돼 보입니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력). <b>가격 유형</b>이 청구 화면 금액칸의 수정 범위를 정합니다(고정=잠금·기준가/최소가=조정 가능).`)}
         </div>
         <form method="post" action="/settings/rate-items" class="space-y-2 rounded-lg border border-border bg-bg p-3">
           <div class="grid gap-2 sm:grid-cols-2">
@@ -282,7 +282,7 @@ function driveStorageSection() {
   return `<div class="${SETTING_BLOCK}">
     <div>
       <h2 class="text-sm font-semibold">자료 저장 (구글 Drive)</h2>
-      ${explain(`첨부 서류·자료 전달 파일의 실제 저장 위치. 조직 소유 <span class="text-fg">공유 드라이브</span>에 두어, 담당자 계정이 바뀌거나 사라져도 서류가 남도록 했습니다. 주민등록증 사본 등 민감 서류가 들어가므로 이 드라이브는 홈페이지 등 다른 앱과 분리돼 있습니다.`)}
+      ${settingDesc(`첨부 서류·자료 전달 파일의 저장 위치. 조직 소유 <span class="text-fg">공유 드라이브</span>라 담당자 계정이 바뀌어도 서류가 남습니다(민감 서류가 있어 다른 앱과 분리).`)}
     </div>
     ${status}${migrate}${check}
   </div>`;
@@ -292,7 +292,7 @@ function driveStorageSection() {
 async function studioCalendarSection(chief = false) {
   const title = `<div>
       <h2 class="text-sm font-semibold">스튜디오 캘린더 (구글)</h2>
-      ${explain(`<span class="text-fg font-medium">세션을 예약하면 이 캘린더에 일정이 자동 생성·수정·삭제됩니다.</span> <span class="text-warning font-medium">'사용 안 함'으로 두면 캘린더 자동 연동이 꺼집니다</span> — 구글 캘린더로 넘기려면 반드시 스튜디오 캘린더를 선택하세요. <span class="text-muted">스튜디오 전용 캘린더를 권장</span>합니다(개인 일정과 섞이지 않게).`)}
+      ${settingDesc(`<span class="text-fg font-medium">세션을 예약하면 이 캘린더에 일정이 자동 생성·수정·삭제됩니다.</span> <span class="text-warning font-medium">'사용 안 함'이면 자동 연동이 꺼집니다.</span> 개인 일정과 섞이지 않게 스튜디오 전용 캘린더를 권장합니다.`)}
     </div>`;
   let inner;
   if (!config.googleConfigured) {
@@ -342,7 +342,7 @@ function roomsSection() {
     <div class="${SETTING_BLOCK}" id="rooms-section">
       <div>
         <h2 class="text-sm font-semibold">장소 (스튜디오 룸 · 외부)</h2>
-        ${explain(`세션 예약 시 장소를 지정하면 <span class="text-fg">같은 장소끼리만 시간 겹침을 검사</span>합니다(다른 장소는 같은 시간 병렬 예약 허용). <span class="text-fg">예약 대상</span>이 아닌 장소(예: Lounge)는 세션 폼의 장소 목록에 나오지 않습니다. 이름은 <b>수정</b>할 수 있어요(id가 그대로라 그 장소로 잡힌 세션이 유지됩니다 — 지웠다 만들면 '장소 미지정'이 됩니다). <span class="text-fg">외부 장소</span>로 표시하면 세션 폼에서 주소 입력칸이 나오고 캘린더 일정 장소로 쓰입니다.`)}
+        ${settingDesc(`<span class="text-fg">같은 장소끼리만</span> 세션 시간 겹침을 검사합니다(다른 장소는 같은 시간에 나란히 예약 가능). <b>예약 대상</b>을 끄면 세션 폼 장소 목록에서 빠지고(예: Lounge), <b>외부</b>로 표시하면 주소 입력칸이 나옵니다. 이름은 고쳐도 그 장소로 잡힌 세션이 유지됩니다(지웠다 만들면 '장소 미지정'이 됩니다).`)}
       </div>
       <form method="post" action="/settings/rooms" class="flex flex-wrap items-center gap-2">
         <input class="input py-1.5 text-sm" name="room_name" placeholder="장소 이름 (예: Studio D · 외부일정)" autocomplete="off" required />
@@ -437,7 +437,7 @@ function studioInfoSection() {
     <div class="${SETTING_BLOCK}">
       <div>
         <h2 class="text-sm font-semibold">공급자(스튜디오) 세금정보</h2>
-        ${explain(`발행된 청구의 <span class="text-fg">거래명세서 PDF</span> '공급자'란에 들어갑니다. (세금계산서가 아닌 참고용 문서)`)}
+        ${settingDesc(`발행된 청구의 <span class="text-fg">거래명세서 PDF</span> '공급자'란에 들어갑니다. (세금계산서가 아닌 참고용 문서)`)}
       </div>
       <form method="post" action="/settings/studio-info" class="space-y-2">
         <div class="grid gap-2 sm:grid-cols-2">
@@ -673,7 +673,7 @@ function googleContactsSection(chief) {
   <div class="${SETTING_BLOCK}">
     <div>
       <h2 class="text-sm font-semibold">구글 연락처</h2>
-      ${explain(`앱에서 연락처를 만들거나 수정하면 구글 주소록에 자동 반영(push)됩니다. 아래 버튼은 아직 구글에 없는 기존 연락처를 한 번에 내보내는 1회성 작업입니다. 실패분은 서버 로그([people])에 남습니다.`)}
+      ${settingDesc(`앱에서 연락처를 만들거나 고치면 구글 주소록에 자동 반영됩니다. 아래 버튼은 아직 구글에 없는 기존 연락처를 한 번에 내보내는 1회성 작업입니다.`)}
     </div>
     ${status}
     ${action}
@@ -769,7 +769,7 @@ function systemTab(chief) {
         ${chief ? `<form method="post" action="/settings/backup-now"><button class="btn-ghost btn-sm" type="submit">지금 백업</button></form>` : ""}
       </div>
       <p class="mt-1 text-sm text-muted">${backupLine}</p>
-      ${explain(`매일 03:00 KST cron이 VACUUM INTO 스냅샷을 만들고(14일 보존) Drive 연동 시 오프사이트 사본을 올립니다. 복구 절차는 DEPLOY.md §9.`)}
+      ${settingDesc(`매일 03:00 KST에 자동 백업(14일 보존)하고 Drive 연동 시 오프사이트 사본도 올립니다. 복구 절차는 DEPLOY.md §9.`)}
     </section>`;
 
   // 데이터 현황 — DB 크기·주요 테이블 카운트·로컬 잔존 파일.
@@ -844,7 +844,7 @@ const SETTINGS_NAV = [
     { key: "rooms", label: "장소", desc: "룸·외부 장소" },
     { key: "rates", label: "요금표", desc: "녹음·촬영 단가 + 분류" },
     { key: "tasks", label: "작업 종류", desc: "믹싱·보컬튠 등" },
-    { key: "booking", label: "예약 기본값", desc: "기본 세션 시간·예약 담당자" },
+    { key: "booking", label: "예약 기본값", desc: "기본 세션 시간·예약 담당자·기본 장소" },
   ] },
   { group: "가끔 보는 것", items: [
     { key: "users", label: "스태프 계정", desc: "로그인 허용·역할" },

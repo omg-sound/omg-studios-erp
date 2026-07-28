@@ -222,7 +222,7 @@ function contactExtras(p) {
     ownerClients.length ? `<div><span class="text-muted">대표 업체</span> ${ownerClients.map((oc) => `<a href="/clients/${oc.id}"${OUT} class="text-primary hover:underline">${esc(oc.name)} ↗</a>`).join(", ")}</div>` : "",
     linkedManager
       ? `<div><span class="text-muted">담당자 연동</span> ${linkedManager.user_id != null
-          ? `<span class="badge badge-info">하우스 엔지니어</span> <a href="/settings?tab=people"${OUT} class="text-primary hover:underline">${esc(linkedManager.name)} ↗</a>`
+          ? `<span class="badge badge-info">하우스 엔지니어</span> <a href="/settings?s=users"${OUT} class="text-primary hover:underline">${esc(linkedManager.name)} ↗</a>`
           : `<span class="badge badge-neutral">외주 작업자</span> <a href="/workers/${linkedManager.id}"${OUT} class="text-primary hover:underline">${esc(linkedManager.name)} ↗</a>`}</div>`
       : "",
   ].filter(Boolean).join("");

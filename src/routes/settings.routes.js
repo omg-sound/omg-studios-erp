@@ -121,15 +121,15 @@ router.post("/studio-logo", requireStaff, logoUpload.single("logo"), (req, res) 
     if (!checkMagicBytes(f.buffer, mime)) return res.status(400).send("PNG 또는 JPG 이미지만 업로드할 수 있습니다.");
     setStudioLogo(`data:${mime};base64,${f.buffer.toString("base64")}`);
   }
-  res.redirect("/settings?tab=settings&flash=saved");
+  res.redirect("/settings?s=studio&flash=saved");
 });
 router.post("/default-booker", requireStaff, (req, res) => {
   setDefaultBooker(req.body.default_booker);
-  res.redirect("/settings?tab=settings&flash=saved");
+  res.redirect("/settings?s=booking&flash=saved");
 });
 // Drive 저장 폴더 점검 — 실제 Drive API로 폴더 존재 확인 + 바로가기 링크. 없으면 생성.
 router.get("/drive-check", requireStaff, asyncHandler(async (req, res) => {
-  if (!drive.isLinked()) return res.redirect("/settings?tab=settings&flash=drive_unlinked");
+  if (!drive.isLinked()) return res.redirect("/settings?s=google&flash=drive_unlinked");
   const driveN = driveFileCount();
   let card;
   try {
@@ -156,7 +156,7 @@ router.get("/drive-check", requireStaff, asyncHandler(async (req, res) => {
       <p class="text-xs text-muted">서비스 계정 설정(GOOGLE_SA_KEY·DRIVE_ERP_DRIVE_ID·DRIVE_ERP_ROOT_FOLDER_ID)이나 공유 드라이브 폴더 권한을 확인하세요.</p></div>`;
   }
   const body = `
-    ${pageHeader({ title: "Drive 폴더 점검", desc: "첨부·자료 파일이 저장되는 실제 구글 Drive 폴더", back: { href: "/settings?tab=settings", label: "환경설정" } })}
+    ${pageHeader({ title: "Drive 폴더 점검", desc: "첨부·자료 파일이 저장되는 실제 구글 Drive 폴더", back: { href: "/settings?s=google", label: "환경설정" } })}
     ${card}`;
   res.send(layout({ title: "Drive 폴더 점검", user: req.user, current: "/settings", body }));
 }));
@@ -164,20 +164,20 @@ router.get("/drive-check", requireStaff, asyncHandler(async (req, res) => {
 // 로컬 저장 파일(client_files·deliverables)을 구글 Drive로 이관. Drive 연동 필요.
 router.post("/migrate-drive", requireStaff, asyncHandler(async (req, res) => {
   const r = await migrateLocalFilesToDrive();
-  if (!r.ok) return res.redirect("/settings?tab=settings&flash=drive_unlinked");
+  if (!r.ok) return res.redirect("/settings?s=google&flash=drive_unlinked");
   // 결과는 섹션 재렌더(남은 로컬 수)로 확인. 실패분이 있으면 로그.
   if (r.failed.length) console.warn("[migrate-drive] failed:", JSON.stringify(r.failed));
-  res.redirect(`/settings?tab=settings&flash=${r.failed.length ? "drive_partial" : "drive_done"}`);
+  res.redirect(`/settings?s=google&flash=${r.failed.length ? "drive_partial" : "drive_done"}`);
 }));
 router.post("/studio-logo/delete", requireStaff, (req, res) => {
   setStudioLogo(null);
-  res.redirect("/settings?tab=settings&flash=deleted");
+  res.redirect("/settings?s=studio&flash=deleted");
 });
 
 // ── 스튜디오 캘린더 선택 저장 ──
 router.post("/studio-calendar", requireStaff, (req, res) => {
   calendar.setStudioCalendarId(req.body.calendar_id);
-  res.redirect("/settings?tab=settings&flash=saved");
+  res.redirect("/settings?s=google&flash=saved");
 });
 
 // ── 기존 캘린더 일정 재동기화(1회성 관리 액션) — 제목·설명 포맷을 최신 로직으로 다시 적용 ──
@@ -197,20 +197,20 @@ router.post("/resync-calendar", requireChief, asyncHandler(async (req, res) => {
     }
   }
   const notice = `캘린더 재동기화 완료 — 성공 ${ok}건${fail ? ` · 실패 ${fail}건` : ""}(총 ${rows.length}건)`;
-  res.redirect(`/settings?tab=settings&notice=${encodeURIComponent(notice)}${fail ? "&notice_warn=1" : ""}`);
+  res.redirect(`/settings?s=google&notice=${encodeURIComponent(notice)}${fail ? "&notice_warn=1" : ""}`);
 }));
 
-// ── 예약 일정 기본 장소 저장 ──
+// ── 예약 일정 기본 장소 저장(레거시 단독 라우트 — 화면은 /booking-defaults 통합 폼을 씀, 존치) ──
 router.post("/studio-location", requireStaff, (req, res) => {
   calendar.setStudioLocation(req.body.studio_location);
-  res.redirect("/settings?tab=settings&flash=saved");
+  res.redirect("/settings?s=booking&flash=saved");
 });
 
-// ── 기본 1Pro 시간(분) 저장 — 시간 입력 → 분 변환 ──
+// ── 기본 1Pro 시간(분) 저장 — 시간 입력 → 분 변환(레거시 단독 라우트 — 화면은 /booking-defaults 통합 폼을 씀, 존치) ──
 router.post("/pro-minutes", requireStaff, (req, res) => {
   const hours = parseFloat(req.body.pro_hours);
   setProMinutes(Number.isFinite(hours) && hours > 0 ? Math.round(hours * 60) : null);
-  res.redirect("/settings?tab=settings&flash=saved");
+  res.redirect("/settings?s=booking&flash=saved");
 });
 
 // ── 예약 기본값 통합 저장(2026-07-28 화면당 저장 하나) — 기본 세션 시간·예약 담당자·기본 장소를 한 번에.
@@ -226,22 +226,22 @@ router.post("/booking-defaults", requireStaff, (req, res) => {
 // ── 공급자(스튜디오) 세금정보 저장 — 거래명세서 PDF용. 평문 admin_state ──
 router.post("/studio-info", requireStaff, (req, res) => {
   setStudioInfo(req.body);
-  res.redirect("/settings?tab=settings&flash=saved");
+  res.redirect("/settings?s=studio&flash=saved");
 });
 
-// ── 알림 웹훅 설정/테스트 ──
+// ── 알림 웹훅 설정/테스트(레거시 단독 라우트 — 화면은 /alerts 통합 폼을 씀, 존치) ──
 router.post("/alert-webhook", requireChief, (req, res) => {
   alerts.setWebhookUrl(req.body.webhook_url); // 암호화 저장(또는 비우면 해제)
   const url = String(req.body.webhook_url || "").trim();
   let host = "해제";
   if (url) { try { host = new URL(url).host; } catch { host = "(형식 오류)"; } }
   logAudit(req.user, "settings.alert_webhook", host); // 외부로 나가는 채널 — URL 전체는 비밀이라 host만
-  res.redirect("/settings?tab=settings&flash=saved");
+  res.redirect("/settings?s=alerts&flash=saved");
 });
 
 router.post("/alert-webhook/test", requireChief, asyncHandler(async (req, res) => {
   await alerts.notify({ type: "test", title: "[테스트] OMG Studios 알림", text: "알림 채널이 정상 연결되었습니다." });
-  res.redirect("/settings?tab=settings&flash=tested");
+  res.redirect("/settings?s=alerts&flash=tested");
 }));
 
 // ── 알림 통합 저장(2026-07-28 화면당 저장 하나) — 웹훅+청구 알림 이메일 한 폼. 옛 /alert-webhook·/alert-email(값 저장)은
@@ -267,19 +267,19 @@ router.post("/alerts", requireChief, (req, res) => {
   res.redirect("/settings?s=alerts&flash=saved");
 });
 
-// ── 청구 알림 이메일(2026-07-14) — 수신 주소 저장/테스트. 치프 전용(외부로 나가는 알림 채널). ──
+// ── 청구 알림 이메일(2026-07-14, 레거시 단독 라우트 — 화면은 /alerts 통합 폼을 씀, 존치) — 수신 주소 저장/테스트. 치프 전용(외부로 나가는 알림 채널). ──
 router.post("/alert-email", requireChief, (req, res) => {
   const raw = String(req.body.alert_email || "");
   const bad = mailer.invalidRecipients(raw);
   if (bad.length) {
     const msg = `이메일 형식이 올바르지 않습니다: ${bad.slice(0, 3).join(", ")}`;
-    return res.redirect("/settings?tab=settings&notice=" + encodeURIComponent(msg) + "&notice_warn=1");
+    return res.redirect("/settings?s=alerts&notice=" + encodeURIComponent(msg) + "&notice_warn=1");
   }
   mailer.setRecipients(raw);
   const to = mailer.getRecipients();
   // 청구 PII가 상시 나가는 채널이라 변경 이력을 남긴다(주소는 마스킹 — 감사 로그에 평문 금지).
   logAudit(req.user, "settings.alert_email", to.length ? to.map(mailer.maskEmail).join(", ") : "해제");
-  res.redirect("/settings?tab=settings&flash=saved");
+  res.redirect("/settings?s=alerts&flash=saved");
 });
 
 router.post("/alert-email/test", requireChief, asyncHandler(async (req, res) => {
@@ -290,7 +290,7 @@ router.post("/alert-email/test", requireChief, asyncHandler(async (req, res) => 
   const msg = r.ok
     ? `테스트 메일을 보냈습니다(${r.sent}명) — 수신함을 확인하세요.`
     : `테스트 메일 발송 실패: ${r.skipped === "not_linked" ? "구글 미연동" : r.skipped === "no_recipients" ? "수신 주소 없음" : "메일 권한을 확인하세요(스튜디오 계정 재로그인)"}`;
-  res.redirect("/settings?tab=settings&notice=" + encodeURIComponent(msg) + (r.ok ? "" : "&notice_warn=1"));
+  res.redirect("/settings?s=alerts&notice=" + encodeURIComponent(msg) + (r.ok ? "" : "&notice_warn=1"));
 }));
 
 function ensureContactForHouseUser(userId) {
@@ -312,7 +312,7 @@ router.post("/users", requireChief, (req, res) => {
       if (exists.id === req.user.id) nextRole = req.user.role;
       if (exists.role === "chief" && nextRole !== "chief") {
         const others = db().prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'chief' AND active = 1 AND id != ?").get(exists.id).n;
-        if (others === 0) return res.redirect("/settings?tab=people&flash=last_chief");
+        if (others === 0) return res.redirect("/settings?s=users&flash=last_chief");
       }
       // 이름은 비어있지 않을 때만 갱신(로그인으로 받은 Google 이름 보존)
       if (name) db().prepare("UPDATE users SET role = ?, name = ?, active = 1 WHERE id = ?").run(nextRole, name, exists.id);
@@ -325,24 +325,24 @@ router.post("/users", requireChief, (req, res) => {
       ensureContactForHouseUser(info.lastInsertRowid); // 하우스 엔지니어 → 연동 연락처+성·이름 보장
     }
   }
-  res.redirect("/settings?tab=people&flash=saved"); // 기본 탭=환경설정으로 바뀌어(2026-07-09) 담당자 탭 명시 복귀
+  res.redirect("/settings?s=users&flash=saved"); // 기본 탭=환경설정으로 바뀌어(2026-07-09) 담당자 탭 명시 복귀
 });
 
 router.post("/users/:id/role", requireChief, (req, res) => {
   const id = Number(req.params.id);
   const role = normalizeRole(req.body.role);
   const target = db().prepare("SELECT * FROM users WHERE id = ?").get(id);
-  if (!target || target.id === req.user.id) return res.redirect("/settings?tab=people&flash=saved"); // 본인 역할은 변경 불가
+  if (!target || target.id === req.user.id) return res.redirect("/settings?s=users&flash=saved"); // 본인 역할은 변경 불가
   // 최소 1명의 치프 유지: 치프를 비치프로 강등 시, 본인 제외 활성 치프가 0이면 거부
   if (target.role === "chief" && role !== "chief") {
     const others = db().prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'chief' AND active = 1 AND id != ?").get(id).n;
-    if (others === 0) return res.redirect("/settings?tab=people&flash=last_chief");
+    if (others === 0) return res.redirect("/settings?s=users&flash=last_chief");
   }
   db().prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
   if (target.role !== role) logAudit(req.user, "user.role", `${target.email} ${target.role} → ${role}`);
   syncUserToManager(findUserById(id)); // 역할 변경(owner↔치프/스태프) 시 작업 담당자 활성/이름 즉시 동기화
   ensureContactForHouseUser(id); // owner↔하우스 전환 시 연락처 연결 유지(담당자 없어도 owner 연락처 보존)
-  res.redirect("/settings?tab=people&flash=saved");
+  res.redirect("/settings?s=users&flash=saved");
 });
 
 router.post("/users/:id/delete", requireChief, (req, res) => {
@@ -354,7 +354,7 @@ router.post("/users/:id/delete", requireChief, (req, res) => {
     db().prepare("DELETE FROM users WHERE id = ?").run(id);
     logAudit(req.user, "user.delete", `${target.email} (${target.role})`);
   }
-  res.redirect("/settings?tab=people&flash=deleted");
+  res.redirect("/settings?s=users&flash=deleted");
 });
 
 // 하우스 엔지니어 정보 수정(이름·전화) — 이름은 users + 작업 담당자 동기화, 전화는 작업 담당자 행에 저장.
@@ -376,7 +376,7 @@ router.post("/users/:id/edit", requireChief, (req, res) => {
     syncManagerToParty(mgr.id); // 전화 → 연동 연락처 동기화(하우스는 이메일 제외)
     ensurePartyForManager(mgr.id); // 미연결이면 연락처 생성·연결(+성·이름 백필)
   }
-  res.redirect("/settings?tab=people&flash=saved");
+  res.redirect("/settings?s=users&flash=saved");
 });
 
 // ── 단가표(과금 항목) 관리 ──
@@ -392,7 +392,7 @@ router.post("/rate-items", requireStaff, (req, res) => {
 // 통합 저장(2026-07-27 인라인 편집) — 섹션 전 행을 한 번에. 행별 검증·건너뜀은 데이터 계층(bulkUpdateRateItems) 규약.
 router.post("/rate-items/bulk", requireStaff, (req, res) => {
   bulkUpdateRateItems(req.body);
-  res.redirect("/settings?s=rates&flash=saved#rates-section");
+  res.redirect("/settings?s=rates&flash=saved");
 });
 
 router.post("/rate-items/:id", requireStaff, (req, res) => {
@@ -407,18 +407,18 @@ router.post("/rate-items/:id", requireStaff, (req, res) => {
 // 표시 순서 이동(같은 분류 안에서 위/아래) — 분류·작업 종류와 같은 ↑↓(2026-07-26, 이전엔 이름순 강제).
 router.post("/rate-items/:id/move", requireStaff, (req, res) => {
   moveRateItem(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?s=rates#rates-section");
+  res.redirect("/settings?s=rates");
 });
 
 // 활성/비활성 토글(2026-07-26) — active 컬럼은 있었는데 라우트가 없어 한 번 비활성이 되면 되살릴 수 없었다.
 router.post("/rate-items/:id/active", requireStaff, (req, res) => {
   setRateItemActive(Number(req.params.id), req.body.active === "1");
-  res.redirect("/settings?s=rates&flash=saved#rates-section");
+  res.redirect("/settings?s=rates&flash=saved");
 });
 
 router.post("/rate-items/:id/delete", requireStaff, (req, res) => {
   deleteRateItem(Number(req.params.id));
-  res.redirect("/settings?s=rates&flash=deleted#rates-section");
+  res.redirect("/settings?s=rates&flash=deleted");
 });
 
 // ── 단가표 분류 관리(2026-07-05) — 기본 분류는 잠금(locked), 치프가 추가한 분류만 수정·삭제 ──
@@ -466,13 +466,13 @@ router.post("/rooms", requireStaff, (req, res) => {
   } catch (e) {
     if (e.message !== "ROOM_NAME_REQUIRED") throw e;
   }
-  res.redirect("/settings?tab=settings&flash=saved");
+  res.redirect("/settings?s=rooms&flash=saved");
 });
 
 // 통합 저장(2026-07-27 인라인 편집) — 섹션 전 행을 한 번에. 행별 검증·건너뜀은 데이터 계층(bulkUpdateRooms) 규약.
 router.post("/rooms/bulk", requireStaff, (req, res) => {
   bulkUpdateRooms(req.body);
-  res.redirect("/settings?tab=settings&flash=saved#rooms-section");
+  res.redirect("/settings?s=rooms&flash=saved");
 });
 
 // 이름·상위·플래그 수정(2026-07-26) — 이전엔 추가·삭제만 있어 오타를 고치려면 지웠다 만들어야 했고
@@ -483,18 +483,18 @@ router.post("/rooms/:id", requireStaff, (req, res) => {
   } catch (e) {
     if (e.message !== "ROOM_NAME_REQUIRED") throw e; // 이름 누락은 조용히 저장 안 함
   }
-  res.redirect("/settings?tab=settings&flash=saved");
+  res.redirect("/settings?s=rooms&flash=saved");
 });
 
 // 표시 순서 이동(같은 상위 안에서 위/아래 한 칸).
 router.post("/rooms/:id/move", requireStaff, (req, res) => {
   moveRoom(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?tab=settings#rooms-section");
+  res.redirect("/settings?s=rooms");
 });
 
 router.post("/rooms/:id/delete", requireStaff, (req, res) => {
   deleteRoom(Number(req.params.id)); // 참조 세션 room_id → NULL 후 행 삭제(data.deleteRoom)
-  res.redirect("/settings?tab=settings&flash=deleted#rooms-section");
+  res.redirect("/settings?s=rooms&flash=deleted");
 });
 
 // ── 작업 종류 카탈로그 관리(삭제-only) ──
@@ -510,7 +510,7 @@ router.post("/task-types", requireStaff, (req, res) => {
 // 통합 저장(2026-07-27 인라인 편집) — 섹션 전 행을 한 번에. 행별 검증·건너뜀은 데이터 계층(bulkUpdateTaskTypes) 규약.
 router.post("/task-types/bulk", requireStaff, (req, res) => {
   bulkUpdateTaskTypes(req.body);
-  res.redirect("/settings?s=tasks&flash=saved#task-types-section");
+  res.redirect("/settings?s=tasks&flash=saved");
 });
 
 router.post("/task-types/:id", requireStaff, (req, res) => {
@@ -525,12 +525,12 @@ router.post("/task-types/:id", requireStaff, (req, res) => {
 // 작업 종류 순서 이동(위/아래) — 곡·콘텐츠 빠른추가·드롭다운 순서에 반영.
 router.post("/task-types/:id/move", requireStaff, (req, res) => {
   moveTaskType(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?s=tasks#task-types-section");
+  res.redirect("/settings?s=tasks");
 });
 
 router.post("/task-types/:id/delete", requireStaff, (req, res) => {
   deleteTaskType(Number(req.params.id));
-  res.redirect("/settings?s=tasks&flash=deleted#task-types-section");
+  res.redirect("/settings?s=tasks&flash=deleted");
 });
 
 // ── 구글 연락처 일괄 내보내기(치프) ── 미연동(google_resource_name NULL) 연락처를 구글 주소록에 push(1회성, 2026-07-09 사용자 요청).
@@ -538,7 +538,7 @@ router.post("/task-types/:id/delete", requireStaff, (req, res) => {
 router.post("/push-contacts", requireChief, asyncHandler(async (req, res) => {
   const people = require("../people");
   if (!people.peopleClient()) {
-    return res.redirect("/settings?tab=settings&notice=" + encodeURIComponent("구글 연락처 미연동 — 치프 계정으로 재로그인(연락처 권한 동의) 후 다시 시도하세요.") + "&notice_warn=1");
+    return res.redirect("/settings?s=google&notice=" + encodeURIComponent("구글 연락처 미연동 — 치프 계정으로 재로그인(연락처 권한 동의) 후 다시 시도하세요.") + "&notice_warn=1");
   }
   const rows = db().prepare("SELECT id FROM parties WHERE kind='person' AND google_resource_name IS NULL ORDER BY id").all();
   let ok = 0, fail = 0;
@@ -548,7 +548,7 @@ router.post("/push-contacts", requireChief, asyncHandler(async (req, res) => {
     else fail++;
   }
   const msg = `구글 내보내기 완료 — 성공 ${ok}명${fail ? ` · 실패 ${fail}명(서버 로그 확인)` : ""}`;
-  res.redirect(`/settings?tab=settings&notice=${encodeURIComponent(msg)}${fail ? "&notice_warn=1" : ""}`);
+  res.redirect(`/settings?s=google&notice=${encodeURIComponent(msg)}${fail ? "&notice_warn=1" : ""}`);
 }));
 
 // ── 수동 DB 백업(치프, 2026-07-09 관리 개선) — cron과 동일 산출물(VACUUM INTO + uploads 스냅샷 + Drive 오프사이트 fail-safe).
@@ -568,7 +568,7 @@ router.post("/backup-now", requireChief, asyncHandler(async (req, res) => {
   } catch (e) {
     notice = `백업 실패: ${e.message}`; warn = true;
   }
-  res.redirect(`/settings?tab=system&notice=${encodeURIComponent(notice)}${warn ? "&notice_warn=1" : ""}`);
+  res.redirect(`/settings?s=system&notice=${encodeURIComponent(notice)}${warn ? "&notice_warn=1" : ""}`);
 }));
 
 module.exports = router;
