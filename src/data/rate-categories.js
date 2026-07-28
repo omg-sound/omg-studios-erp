@@ -15,11 +15,17 @@
 
 const { db } = require("../db");
 
-const KINDS = ["recording", "filming", "performance"];
+const KINDS = ["recording", "filming", "performance"]; // ⚠️배열 순서가 곧 화면 표시 순서다(녹음 → 촬영 → 공연).
 
-/** 전체 분류(kind→sort_order→이름순). 세션 폼·관리 화면 공용. */
+// 종류 정렬 순위 — 예전엔 `ORDER BY kind`(문자열)이라 **filming < performance < recording** 알파벳순으로
+// 촬영·공연이 녹음보다 위에 고정됐다(2026-07-29 사용자 리포트 '녹음을 위로 못 옮긴다'). ↑↓는 같은 종류
+// 안에서만 자리를 바꾸므로 사용자가 손댈 방법이 아예 없었다. 게다가 분류 select만 다른 순서(녹음 먼저)를
+// 써서 화면마다 순서가 달랐다 — 여기서 한 번 정해 전 화면이 같은 순서를 쓰게 한다.
+const KIND_RANK = KINDS.map((k, i) => `WHEN '${k}' THEN ${i}`).join(" ");
+
+/** 전체 분류(종류[녹음→촬영→공연] → sort_order → 이름순). 세션 폼·관리 화면 공용. */
 function listRateCategories() {
-  return db().prepare("SELECT * FROM rate_categories ORDER BY kind, sort_order, name COLLATE NOCASE").all();
+  return db().prepare(`SELECT * FROM rate_categories ORDER BY CASE kind ${KIND_RANK} ELSE 99 END, sort_order, name COLLATE NOCASE`).all();
 }
 
 function getRateCategory(id) {

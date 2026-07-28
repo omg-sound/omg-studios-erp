@@ -195,7 +195,7 @@ function rateCategoriesSection() {
     <details class="group mt-3 border-t border-border pt-3">
       <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-muted hover:text-fg">${detailsChevron()} 분류 관리</summary>
       <div class="mt-2 space-y-2">
-        ${settingDesc(`분류는 <b>녹음·촬영·공연</b> 중 하나에 속해 세션 종류에 맞는 단가 항목을 거르는 기준입니다. 이름을 바꾸면 그 분류를 쓰는 단가 항목도 함께 따라옵니다. <b>삭제는 그 분류를 쓰는 단가 항목이 없을 때만</b> 됩니다.`)}
+        ${settingDesc(`분류는 <b>녹음·촬영·공연</b> 중 하나에 속해 세션 종류에 맞는 단가 항목을 거르는 기준입니다. 이름을 바꾸면 그 분류를 쓰는 단가 항목도 함께 따라옵니다. <b>삭제는 그 분류를 쓰는 단가 항목이 없을 때만</b> 됩니다.<br>↑↓는 <b>같은 종류 안에서만</b> 순서를 바꿉니다(종류 사이는 녹음 → 촬영 → 공연 고정). 이 순서가 요금표 목록·세션 예약 폼의 단가 항목 순서가 됩니다.`)}
         <form method="post" action="/settings/rate-categories" class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2">
           <input class="input w-40 py-1 text-sm" name="cat_name" placeholder="새 분류명" aria-label="분류명" autocomplete="off" required />
           <select class="input w-32 py-1 text-sm" name="kind" aria-label="종류">${kindOpts}</select>

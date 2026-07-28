@@ -33,6 +33,20 @@ test("시드: 기본 분류 4개(스튜디오/로케이션 녹음·스튜디오 
   assert.strictEqual(rateCategoryKind("공연"), "performance");
 });
 
+// ── 종류 정렬 순서: 녹음 → 촬영 → 공연 ──
+// 예전엔 `ORDER BY kind`(문자열)이라 filming < performance < recording 알파벳순으로 촬영·공연이 위에
+// 고정됐고, ↑↓는 같은 종류 안에서만 움직여 사용자가 녹음을 위로 올릴 방법이 없었다(사용자 리포트).
+test("정렬: 종류는 녹음 → 촬영 → 공연 순(알파벳순 아님), 같은 종류 안은 sort_order", () => {
+  const kinds = listRateCategories().map((c) => c.kind);
+  const firstIdx = (k) => kinds.indexOf(k);
+  assert.ok(firstIdx("recording") < firstIdx("filming"), "녹음이 촬영보다 먼저");
+  assert.ok(firstIdx("filming") < firstIdx("performance"), "촬영이 공연보다 먼저");
+  // 같은 종류 안에서는 등장 순서가 연속이어야 한다(종류가 섞여 나오면 그룹이 깨진다).
+  const seen = [];
+  for (const k of kinds) if (seen[seen.length - 1] !== k) seen.push(k);
+  assert.strictEqual(new Set(seen).size, seen.length, "같은 종류는 한 덩어리로 모여야 한다");
+});
+
 // ── 기본 분류도 수정·삭제 가능(2026-07-29 잠금 해제) ──
 // 옛 CATEGORY_LOCKED 가드를 뺐다. 근거였던 '코드가 이름에 의존'이 사실이 아니었고(kind는 DB 조회),
 // 남은 보호는 '사용 중이면 삭제 거부'뿐이라 그게 기본 분류에도 똑같이 걸리는지까지 함께 잠근다.
