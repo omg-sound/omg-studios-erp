@@ -89,8 +89,9 @@ test("ui-guardrail: 인라인 이벤트 핸들러·javascript:·인라인 <scrip
 test("ui-guardrail: 서버 렌더 인라인 style에 치수·레이아웃 속성 금지(CSP style-src)", () => {
   const offenders = [];
   const LAYOUT = /style="[^"]*(width|height|grid-template|grid-column|grid-row|flex-basis|max-width|min-width|max-height|min-height)\s*:/i;
-  // 예외: 이메일 HTML(mailer)·PDF SVG(invoice-pdf)는 브라우저 페이지가 아니라 CSP 무관 + 인라인 style 필수(이메일 클라이언트가 요구).
-  const EXEMPT = /(mailer|invoice-pdf)\.js$/;
+  // 예외: 이메일 HTML(mailer)은 브라우저 페이지가 아니라 CSP 무관 + 인라인 style 필수(이메일 클라이언트가 요구).
+  // invoice-pdf.js는 2026-07-28 SVG→PDFKit 벡터 전환으로 더 이상 style="..." 문자열을 만들지 않는다(예외 제거).
+  const EXEMPT = /mailer\.js$/;
   for (const { f, s } of SRC_ALL) {
     if (EXEMPT.test(f)) continue;
     s.split("\n").forEach((line, i) => {

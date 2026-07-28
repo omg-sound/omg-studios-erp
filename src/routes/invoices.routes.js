@@ -244,15 +244,7 @@ router.get(["/:id/statement.pdf", "/:id/statement/:name"], requireBilling, async
   const bundle = listInvoiceItemsForInvoice(req.user, inv.id);
   const items = bundle ? bundle.rows : [];
   const client = payerView(inv).client || { name: inv.client_name || "" }; // 발행 시점 스냅샷 우선(레거시=실시간/JOIN 폴백)
-  let pdf;
-  try {
-    pdf = await renderInvoicePdf({ studio: getStudioInfo(), logo: getStudioLogo(), client, invoice: inv, items, docType });
-  } catch (e) {
-    if (e && e.message === "PDF_RENDERER_UNAVAILABLE") {
-      return res.status(503).send(errorPage({ code: 503, title: "PDF 생성 일시 불가", message: "서버 PDF 렌더러(@resvg/resvg-js)가 로드되지 않았습니다. 배포 환경의 네이티브 모듈 설치를 확인하세요. 청구 내역 자체는 정상입니다.", user: req.user }));
-    }
-    throw e;
-  }
+  const pdf = await renderInvoicePdf({ studio: getStudioInfo(), logo: getStudioLogo(), client, invoice: inv, items, docType });
   res.setHeader("Content-Type", "application/pdf");
   const fname = (docNumberWithType(inv.invoice_number, docType) || docType) + ".pdf"; // 다운로드 파일명 = 문서번호(견적서=OMG-EST-…), 미발행 초안은 유형명
   res.setHeader("Content-Disposition", `inline; filename="${fname}"; filename*=UTF-8''${encodeURIComponent(fname)}`);

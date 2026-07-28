@@ -7,7 +7,8 @@
  * ②번들 폰트에 가나·한자 글리프가 없어 일본어가 통째로 사라졌다. 둘 다 이 전환으로 해소.
  * - 좌표계: PDFKit은 SVG와 같다(원점 좌상단·y 아래로 증가) → 옛 1240×1754 좌표를 그대로 쓰고
  *   페이지에 scale(A4폭/1240)만 걸어 A4로 축소한다. **레이아웃 수치는 옛 코드와 동일**.
- * - 폰트: public/fonts의 Noto Sans KR static(한글·가나·한자·₩ 커버). PDFKit이 쓰인 글자만 서브셋.
+ * - 폰트: public/fonts의 Noto Sans CJK KR static(한글·가나·CJK 한자 전체·₩ 커버 — pan-CJK 전체 빌드,
+ *   docs/fonts-README.md 참조). PDFKit이 쓰인 글자만 서브셋해 임베드.
  * - 모든 사용자 데이터는 그대로 그린다(SVG 이스케이프 불필요 — 문자열 결합이 아니라 API 호출).
  */
 
@@ -172,7 +173,6 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
   do {
     const { draw: headDraw, tableY } = pageHeader(pages.length === 0);
     const rowsStart = tableY + HEAD_H;
-    const pageIdx = idx;
     let ry = rowsStart;
     const rows = [];
     while (idx < items.length && ry + ROW_H <= rowsEnd) {
@@ -259,10 +259,7 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
 /** 거래명세서 PDF 버퍼 생성(메모리, 디스크 임시파일 없음 — PII 최소화). */
 function renderInvoicePdf(data) {
   return new Promise((resolve, reject) => {
-    // compress:false — PDFKit 기본은 스트림을 FlateDecode로 압축하는데, 이러면 Buffer를 문자열로 스캔하는
-    // 회귀 테스트(ToUnicode CMap에 원문 코드포인트가 있는지)가 압축 바이트를 못 읽는다. 파일 크기보다
-    // "실제로 벡터 텍스트가 들어갔는지"를 항상 검증 가능하게 두는 쪽을 택한다(청구서는 대개 1~2p, 영향 미미).
-    const doc = new PDFDocument({ size: A4, margin: 0, autoFirstPage: false, compress: false, info: { Title: data && data.docType ? String(data.docType) : "거래명세서" } });
+    const doc = new PDFDocument({ size: A4, margin: 0, autoFirstPage: false, info: { Title: data && data.docType ? String(data.docType) : "거래명세서" } });
     const chunks = [];
     doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
