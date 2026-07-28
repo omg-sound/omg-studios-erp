@@ -832,9 +832,7 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
       ? `<span class="mt-0.5 block text-right text-xs text-muted">고정 · 초과·할증 자동</span>`
       : priceType === "minimum"
         ? `<span class="mt-0.5 block text-right text-xs text-muted">최소가 — 상향만</span>`
-        : priceType === "base"
-          ? `<span class="mt-0.5 block text-right text-xs text-muted">기준가 — 조정 가능</span>`
-          : "";
+        : ""; // base(기준가)는 안내 문구 없음 — 그냥 고칠 수 있는 칸이라 설명이 필요 없다(2026-07-28 사용자 요청)
     // 조정 사유 메모는 조정이 가능한 유형에만(잠긴 칸에 사유를 물으면 답할 게 없다). 청구 생성 시 근거로 스냅샷된다.
     const memoField = !locked && memoName
       ? `<input class="input mt-1 w-full py-1 text-xs" type="text" name="${memoName}" value="${esc(memo || "")}" placeholder="조정 사유(선택)" aria-label="${esc(label)} 조정 사유" />`

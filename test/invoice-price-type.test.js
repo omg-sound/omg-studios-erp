@@ -78,7 +78,7 @@ test("기준가(base) 작업: 금액 자동 입력 + 수정 가능 + 조정 사�
   assert.match(inp, /value="1000000"/, "기준가 자동 입력");
   assert.doesNotMatch(inp, /readonly/, "위아래로 조정 가능");
   assert.doesNotMatch(inp, /data-line-min/, "기준가는 하한이 없다");
-  assert.match(html, /기준가 — 조정 가능/);
+  assert.doesNotMatch(html, /기준가 — 조정 가능/, "기준가는 안내 문구 없음(2026-07-28 사용자 요청 — 그냥 고칠 수 있는 칸이라 설명 불필요)");
   assert.match(html, new RegExp(`name="task_billing_memo_${id}"`), "조정 사유 칸");
 });
 
