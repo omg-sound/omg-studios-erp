@@ -66,9 +66,9 @@ function settingDesc(html) {
  * 유일한 연결 고리다). 이름은 상한을 둔다(1fr로 두면 넓은 화면에서 이름 칸만 과하게 늘어난다 — 사용자 지적).
  * 남는 폭은 마지막(액션) 열이 흡수하고 버튼은 오른쪽 정렬이라 표가 화면 폭에 맞춰 자연스럽게 늘어난다.
  */
-const RATE_COLS = "sm:grid-cols-[minmax(6rem,14rem)_6.5rem_3.5rem_5.5rem_3.5rem_5.5rem_4.5rem_minmax(max-content,1fr)]";
+const RATE_COLS = "sm:grid-cols-[minmax(5rem,14rem)_8.5rem_3.5rem_5.5rem_3.5rem_5.5rem_5.5rem_minmax(max-content,1fr)]";
 /** 작업 종류 한 줄의 열 폭 — RATE_COLS와 같은 규칙(헤더·추가 행·편집 행 공용, 이름 상한·마지막 열이 슬랙 흡수). */
-const TASK_COLS = "sm:grid-cols-[minmax(6rem,14rem)_8rem_6.5rem_6rem_auto_minmax(max-content,1fr)]";
+const TASK_COLS = "sm:grid-cols-[minmax(5rem,14rem)_9.5rem_6.5rem_6rem_auto_minmax(max-content,1fr)]";
 
 function scrollX(inner, innerClass = "space-y-2") {
   return `<div class="overflow-x-auto"><div class="${innerClass}">${inner}</div></div>`;
