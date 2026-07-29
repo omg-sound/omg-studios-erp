@@ -50,6 +50,20 @@ function settingDesc(html) {
 }
 
 /**
+ * 제목 옆 ⓘ — hover(또는 포커스)하면 설명이 말풍선으로 뜬다(2026-07-29 사용자 요청).
+ * 설명을 상시 노출하면 판단에 필요한 정보가 보이는 대신 자주 쓰는 화면일수록 자리를 잡아먹는다 —
+ * **이미 아는 내용을 매번 읽게 되는** 화면에만 이걸 쓰고, 처음 판단이 필요한 화면은 `settingDesc` 그대로 둔다.
+ * ⚠️CSP상 인라인 스크립트가 없어 순수 CSS(.hint/.hint-body)로 연다. 마우스가 없는 환경(터치·키보드)에서도
+ * 열려야 하므로 트리거가 `tabindex="0"`을 갖고 CSS가 `:focus-within`까지 본다. `html`은 신뢰 HTML(호출부 esc 책임).
+ */
+function settingHint(html, label = "설명 보기") {
+  return `<span class="hint ml-1.5 align-middle" tabindex="0" role="note" aria-label="${esc(label)}">
+    <span class="cursor-help text-sm text-muted hover:text-fg" aria-hidden="true">ⓘ</span>
+    <span class="hint-body rounded-lg border border-border bg-surface p-3 text-xs font-normal leading-relaxed text-muted shadow-lg">${html}</span>
+  </span>`;
+}
+
+/**
  * 설정 화면의 저장 줄 — dirty 패턴(바뀐 게 없으면 흐리고, 바뀌면 강조 + 미저장 힌트).
  * ⚠️`data-dirty-form`과 짝이다: 폼에 마커가 없으면 강조도, 다른 설정으로 이동할 때의 미저장 경고도 없다
  * (재설계 실측에서 예약 기본값·알림·스튜디오 정보 세 폼이 그 상태였다 — 통합 저장의 약속이 반만 지켜졌었다).
@@ -369,8 +383,7 @@ function roomsSection() {
   return `
     <div class="${SETTING_BLOCK}" id="rooms-section">
       <div>
-        <h2 class="text-sm font-semibold">장소 (스튜디오 룸 · 외부)</h2>
-        ${settingDesc(`<span class="text-fg">같은 장소끼리만</span> 세션 시간 겹침을 검사합니다(다른 장소는 같은 시간에 나란히 예약 가능). <b>예약 대상</b>을 끄면 세션 폼 장소 목록에서 빠지고(예: Lounge), <b>외부</b>로 표시하면 주소 입력칸이 나옵니다. 이름은 고쳐도 그 장소로 잡힌 세션이 유지됩니다(지웠다 만들면 '장소 미지정'이 됩니다).`)}
+        <h2 class="mb-3 text-sm font-semibold">장소 (스튜디오 룸 · 외부)${settingHint(`<span class="text-fg">같은 장소끼리만</span> 세션 시간 겹침을 검사합니다(다른 장소는 같은 시간에 나란히 예약 가능). <b>예약 대상</b>을 끄면 세션 폼 장소 목록에서 빠지고(예: Lounge), <b>외부</b>로 표시하면 주소 입력칸이 나옵니다. 이름은 고쳐도 그 장소로 잡힌 세션이 유지됩니다(지웠다 만들면 '장소 미지정'이 됩니다).`, "장소 설정 설명")}</h2>
       </div>
       <form method="post" action="/settings/rooms" class="flex flex-wrap items-center gap-2">
         <input class="input py-1.5 text-sm" name="room_name" placeholder="장소 이름 (예: Studio D · 외부일정)" autocomplete="off" required />
