@@ -770,7 +770,8 @@ function sortCellValue(cell) {
   // positionTicks도 같은 폴백으로 위치를 잡으므로 일관. 세션 종류·룸 예약과 무관하게 프리셋 클릭 가능(사용자 요청).
   function updateProAvailability() {
     var base = baseMinutes() || proDefaultMinutes();
-    Array.prototype.forEach.call(presets, function (b) { b.disabled = base <= 0; });
+    var off = !!(allDay && allDay.checked); // 종일이면 소요 개념이 없다 — 프리셋도 함께 잠근다.
+    Array.prototype.forEach.call(presets, function (b) { b.disabled = off || base <= 0; });
     positionTicks();
   }
   // Pro 눈금을 슬라이더 값 위치에 맞춰 재배치: 1Pro=기준시간, 2Pro=×2…(기준=녹음 단가 기준시간, 없으면 스튜디오 기본).
@@ -948,12 +949,24 @@ function sortCellValue(cell) {
   // 서버가 all_day=1이면 start/end를 NULL로 저장(시간 미보유). JS는 UI만: 시간 박스·종료 날짜·소요 블록 숨김.
   // 체크박스(name="all_day")가 제출 소스라 시간값은 건드리지 않는다(해제 시 원래 시간 그대로 보존).
   function applyAllDay(on) {
-    // 종일이면 시간(콤보)·소요 UI만 숨긴다. 날짜 2개(시작·종료)는 남겨 다일 일정(예: 2/5~2/9)을 지정할 수 있게(사용자 요청).
+    // 종일이면 시간(콤보)은 숨기고 소요 블록은 **비활성**으로 둔다(2026-07-29 사용자 요청 — 라벨이 '종일'로
+    // 바뀌어 맥락이 남고, 만질 수 없으니 서버가 시간을 무시한다는 사실과 화면이 일치한다).
+    // ⚠️예전엔 durationWrap을 hidden으로 감췄는데 **세션 종류 판정(syncTypeScoped)이 같은 요소의 hidden을
+    // 각자 세팅**해, 초기화에서 나중에 도는 종류 쪽이 덮어써 종일 세션을 열면 슬라이더가 그대로 보였다
+    // (실제 발생). disabled는 그쪽과 속성이 겹치지 않아 소유권 충돌이 없다.
+    // 날짜 2개(시작·종료)는 남긴다 — 다일 종일(예: 2/5~2/9)을 지정할 수 있어야 하므로.
     Array.prototype.forEach.call(form.querySelectorAll("[data-time-combo]"), function (w) { w.hidden = on; });
     if (segBlock && on) segBlock.hidden = true; // 종일엔 구간이 성립하지 않는다(서버도 종일이면 구간을 지운다). 해제 시 syncTypeScoped가 종류로 다시 판정.
-    if (durationWrap) durationWrap.hidden = on;
+    syncDurationEnabled();
     if (durLabel) durLabel.textContent = on ? "종일" : fmtDuration(curDur);
     if (on) updateConflictWarn(); // 시간 없음 → 겹침 경고 해제
+  }
+  /** 소요 슬라이더·프리셋 활성 여부 — 종일이면 끈다. 다른 규칙(세션 종류)은 hidden을 쓰므로 서로 간섭 없음. */
+  function syncDurationEnabled() {
+    var off = !!(allDay && allDay.checked);
+    if (slider) slider.disabled = off;
+    if (durationWrap) durationWrap.classList.toggle("opacity-50", off);
+    updateProAvailability();
   }
   if (allDay) allDay.addEventListener("change", function () { applyAllDay(allDay.checked); if (!allDay.checked) syncTypeScoped(); });
   // 편집 진입 시 서버가 체크(all_day 세션)해 뒀으면 UI 반영.

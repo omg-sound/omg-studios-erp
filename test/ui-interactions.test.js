@@ -193,7 +193,14 @@ test("세션 폼(구글식): 시간 콤보(전체선택·30분 목록)·양방�
   assert.equal(allDay.getAttribute("name"), "all_day", "체크박스가 제출 소스(name=all_day)");
   allDay.checked = true; fire(win, allDay, "change");
   assert.equal(start.closest("[data-time-combo]").hidden, true, "종일 중 시간 박스 숨김");
-  assert.equal(durationWrap.hidden, true, "종일 중 소요 블록 숨김");
+  // 소요 블록은 **숨기지 않고 비활성**(2026-07-29 사용자 요청). 옛 방식(hidden)은 세션 종류 판정
+  // (syncTypeScoped)이 같은 요소의 hidden을 각자 세팅해 초기화에서 덮어써졌다 — 종일 세션을 열면
+  // 슬라이더가 그대로 보였다. disabled는 그쪽과 속성이 겹치지 않아 소유권이 하나다.
+  const durSlider = doc.querySelector("[data-duration-slider]");
+  const presets = [...doc.querySelectorAll("[data-duration-preset]")];
+  assert.equal(durSlider.disabled, true, "종일 중 소요 슬라이더 비활성");
+  assert.ok(presets.length && presets.every((b) => b.disabled), "종일 중 Pro 프리셋도 비활성");
+  assert.match(durationWrap.className, /opacity-50/, "종일 중 소요 블록 흐리게");
   assert.equal(endDate.hidden, false, "종일 중에도 종료 날짜는 남음(다일 일정 지정용)");
   assert.equal(start.value, prevStart, "종일이 시간값을 건드리지 않음(서버가 NULL로 저장)");
   // 다일 종료 날짜를 바꿔도 자동동기가 덮어쓰지 않음(사용자 지정 보존)
@@ -205,6 +212,9 @@ test("세션 폼(구글식): 시간 콤보(전체선택·30분 목록)·양방�
   allDay.checked = false; fire(win, allDay, "change");
   assert.equal(start.value, prevStart, "해제 후에도 시간 그대로");
   assert.equal(start.closest("[data-time-combo]").hidden, false, "시간 박스 다시 노출");
+  assert.equal(durSlider.disabled, false, "해제 시 소요 슬라이더 다시 활성");
+  assert.ok(presets.some((b) => !b.disabled), "해제 시 프리셋도 다시 활성");
+  assert.ok(!/opacity-50/.test(durationWrap.className), "해제 시 흐림 해제");
 });
 
 // ── ③b1 날짜/시간 콤보 팝오버 버튼 = tabindex=-1(날짜 타이핑 후 Tab이 팝오버 버튼 아닌 다음 필드[시간]로) ──
