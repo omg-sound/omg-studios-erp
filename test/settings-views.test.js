@@ -36,7 +36,7 @@ test("단가표·작업 종류: 인라인 필드 + bulk 폼, 접이식 '수정' 
   // 2026-07-29 트리 전환 — 요금표는 분류 행과 항목 행을 **한 폼**(/settings/rates/bulk)에서 함께 저장한다.
   assert.ok(html.includes('action="/settings/rates/bulk"'), "요금표 트리 통합 저장 폼");
   assert.ok(html.includes('action="/settings/task-types/bulk"'), "작업 종류 bulk 폼");
-  assert.ok(html.includes(`name="rate_name_${a.id}"`) && html.includes(`name="base_price_${a.id}"`) && html.includes(`name="price_type_${a.id}"`), "단가표 행 = <필드>_<id> 인라인 입력");
+  assert.ok(html.includes(`name="rate_name_${a.id}"`) && html.includes(`name="base_price_${a.id}"`), "단가표 행 = <필드>_<id> 인라인 입력");
   assert.ok(html.includes(`name="label_${t.id}"`) && html.includes(`name="unit_price_${t.id}"`), "작업 종류 행 인라인 입력");
   assert.ok(!html.includes(">수정 "), "접이식 '수정' 토글 제거");
 

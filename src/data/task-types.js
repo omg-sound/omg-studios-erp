@@ -12,7 +12,7 @@
 
 const crypto = require("crypto");
 const { db } = require("../db");
-const { normalizeBillingType, normalizePriceType } = require("../config");
+const { normalizeBillingType } = require("../config");
 const { parseMoney } = require("../lib/forms");
 
 const parseWon = parseMoney; // 내부 호출명 parseWon 유지(data.js와 동일 별칭)
@@ -46,11 +46,6 @@ function taskTypeUnitPrice(key) {
   const r = taskTypeCache().byKey.get(key);
   return (r && r.unit_price) || 0;
 }
-/** key → 가격 유형(fixed|base|minimum, 없으면 fixed). 청구 화면이 금액칸을 잠글지 판정. */
-function taskTypePriceType(key) {
-  const r = taskTypeCache().byKey.get(key);
-  return (r && r.price_type) || "fixed";
-}
 /** 카탈로그에 있는 key면 통과, 없으면 첫 활성 종류로 폴백(없으면 raw 유지). 신규 종류도 정규화 통과. */
 function normalizeTaskTypeDb(key) {
   const k = String(key || "").trim();
@@ -66,7 +61,6 @@ function taskTypeFields(input) {
     billing_type: normalizeBillingType(input.billing_type),
     // 가격 유형(2026-07-26) — 포스트는 시간이 아니라 작업량으로 산정하므로 금액을 어떻게 다룰지가 항목마다 다르다.
     // base=기준가(믹싱, 위아래 조정) · minimum=최소가(보컬튠, 상향만) · fixed=고정.
-    price_type: normalizePriceType(input.price_type),
     unit_price: parseWon(input.unit_price),
     is_quick: input.is_quick ? 1 : 0,
     sort_order: Number.isFinite(Number(input.sort_order)) ? Number(input.sort_order) : 100,
@@ -78,8 +72,8 @@ function createTaskType(input = {}) {
   const key = `tt_${crypto.randomBytes(5).toString("hex")}`; // 안정 불투명 key(라벨 변경에도 불변)
   db()
     .prepare(
-      `INSERT INTO task_types (key, label, task_group, billing_type, price_type, unit_price, is_quick, sort_order, active)
-       VALUES (@key,@label,@task_group,@billing_type,@price_type,@unit_price,@is_quick,@sort_order,1)`
+      `INSERT INTO task_types (key, label, task_group, billing_type, unit_price, is_quick, sort_order, active)
+       VALUES (@key,@label,@task_group,@billing_type,@unit_price,@is_quick,@sort_order,1)`
     )
     .run({ key, ...f });
   invalidateTaskTypeCache();
@@ -90,7 +84,7 @@ function updateTaskType(id, input = {}) {
   db()
     .prepare(
       `UPDATE task_types SET label=@label, task_group=@task_group, billing_type=@billing_type,
-       price_type=@price_type, unit_price=@unit_price, is_quick=@is_quick, sort_order=@sort_order WHERE id=@id`
+       unit_price=@unit_price, is_quick=@is_quick, sort_order=@sort_order WHERE id=@id`
     )
     .run({ id, ...f });
   invalidateTaskTypeCache();
@@ -118,7 +112,6 @@ function bulkUpdateTaskTypes(body = {}) {
         label: body[`label_${r.id}`],
         billing_type: body[`billing_type_${r.id}`],
         unit_price: body[`unit_price_${r.id}`],
-        price_type: body[`price_type_${r.id}`],
         is_quick: body[`is_quick_${r.id}`],
         sort_order: r.sort_order, // ⚠️ 미전송이면 taskTypeFields가 100으로 리셋 — 사용자 ↑↓ 순서 보존
       };
@@ -150,7 +143,6 @@ module.exports = {
   activeTaskTypes,
   taskTypeLabel,
   taskTypeUnitPrice,
-  taskTypePriceType,
   normalizeTaskTypeDb, // 내부 정규화용(data.js 로컬 바인딩) — 공개 API 미노출
   createTaskType,
   updateTaskType,

@@ -4,7 +4,7 @@
 
 const { db } = require("./db");
 const { isChief } = require("./auth");
-const { config, ROLES, ROLE_LABELS, BILLING_TYPES, BILLING_TYPE_LABELS, RECORDING_CATEGORIES, PRICE_TYPES, PRICE_TYPE_LABELS } = require("./config");
+const { config, ROLES, ROLE_LABELS, BILLING_TYPES, BILLING_TYPE_LABELS, RECORDING_CATEGORIES } = require("./config");
 const {
   listProjectManagers,
   listRooms,
@@ -66,9 +66,9 @@ function settingDesc(html) {
  * 유일한 연결 고리다). 이름은 상한을 둔다(1fr로 두면 넓은 화면에서 이름 칸만 과하게 늘어난다 — 사용자 지적).
  * 남는 폭은 마지막(액션) 열이 흡수하고 버튼은 오른쪽 정렬이라 표가 화면 폭에 맞춰 자연스럽게 늘어난다.
  */
-const RATE_COLS = "sm:grid-cols-[minmax(5rem,14rem)_8.5rem_3.5rem_5.5rem_3.5rem_5.5rem_5.5rem_minmax(max-content,1fr)]";
+const RATE_COLS = "sm:grid-cols-[minmax(5rem,14rem)_8.5rem_3.5rem_5.5rem_3.5rem_5.5rem_minmax(max-content,1fr)]";
 /** 작업 종류 한 줄의 열 폭 — RATE_COLS와 같은 규칙(헤더·추가 행·편집 행 공용, 이름 상한·마지막 열이 슬랙 흡수). */
-const TASK_COLS = "sm:grid-cols-[minmax(5rem,14rem)_9.5rem_6.5rem_6rem_auto_minmax(max-content,1fr)]";
+const TASK_COLS = "sm:grid-cols-[minmax(5rem,14rem)_9.5rem_6.5rem_auto_minmax(max-content,1fr)]";
 
 function scrollX(inner, innerClass = "space-y-2") {
   return `<div class="overflow-x-auto"><div class="${innerClass}">${inner}</div></div>`;
@@ -215,7 +215,6 @@ function rateItemAddRow(cat) {
       <input class="input py-1.5 text-sm" ${f} name="base_price" inputmode="numeric" placeholder="300000" aria-label="기준 가격(원)" />
       <input class="input py-1.5 text-sm" ${f} name="extra_hours" inputmode="decimal" placeholder="1" aria-label="초과 단위(시간)" value="1" />
       <input class="input py-1.5 text-sm" ${f} name="extra_price" inputmode="numeric" placeholder="100000" aria-label="초과 단가(원)" />
-      <select class="input py-1.5 text-sm" ${f} name="price_type" aria-label="가격 유형">${priceTypeOptions("fixed")}</select>
       <span class="col-span-2 flex justify-end sm:col-span-1"><button class="btn-ghost btn-xs whitespace-nowrap" type="submit" ${f}>추가</button></span>
     </div>`;
 }
@@ -238,12 +237,12 @@ function ratesPane() {
   const t = ratesTree(rates);
   const kindOpts = Object.entries(RATE_KIND_LABELS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("");
   // 열 제목 — 분류 행이 아니라 **항목 행**의 열을 설명한다(트리 안쪽 들여쓰기에 맞춰 왼쪽 여백을 준다).
-  const header = `<div class="hidden gap-1.5 px-4 text-xs text-muted sm:grid ${RATE_COLS}"><span>항목 이름</span><span>분류 이동</span><span>기준(h)</span><span>기준가(원)</span><span>초과(h)</span><span>초과가(원)</span><span>유형</span><span></span></div>`;
+  const header = `<div class="hidden gap-1.5 px-4 text-xs text-muted sm:grid ${RATE_COLS}"><span>항목 이름</span><span>분류 이동</span><span>기준(h)</span><span>기준가(원)</span><span>초과(h)</span><span>초과가(원)</span><span></span></div>`;
   return `
       <section class="card space-y-4" id="rates-section">
         <div>
           <h2 class="font-display text-lg font-semibold">요금표 · 녹음/촬영 종류</h2>
-          ${settingDesc(`대관 세션의 시간제 단가입니다. <b>분류</b>가 어미고 그 아래에 단가 항목이 들어갑니다 — 분류의 <b>세션 종류</b>(녹음·촬영·공연)가 세션 예약 폼에서 어떤 항목을 보여줄지 정합니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력). <b>가격 유형</b>이 청구 화면 금액칸의 수정 범위를 정합니다(고정=잠금·기준가/최소가=조정 가능).<br>↑↓ 순서는 자유이고(분류끼리 종류가 달라도 섞어 배치 가능) 이 순서가 세션 예약 폼의 항목 순서가 됩니다.`)}
+          ${settingDesc(`대관 세션의 시간제 단가입니다. <b>분류</b>가 어미고 그 아래에 단가 항목이 들어갑니다 — 분류의 <b>세션 종류</b>(녹음·촬영·공연)가 세션 예약 폼에서 어떤 항목을 보여줄지 정합니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력).<br>↑↓ 순서는 자유이고(분류끼리 종류가 달라도 섞어 배치 가능) 이 순서가 세션 예약 폼의 항목 순서가 됩니다.`)}
         </div>
         ${scrollX(`${header}
         <form method="post" action="/settings/rates/bulk" id="rates-bulk-form" class="space-y-2" data-dirty-form>
@@ -270,7 +269,7 @@ function taskTypesPane() {
         </div>
         ${(() => {
           // 단가표와 같은 규칙 — 추가 폼은 표의 첫 행(한 줄), 열 제목은 헤더가 대신한다.
-          const header = `<div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid ${TASK_COLS}"><span>이름</span><span>과금</span><span>기본 단가(원)</span><span>유형</span><span>빠른추가</span><span></span></div>`;
+          const header = `<div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid ${TASK_COLS}"><span>이름</span><span>과금</span><span>기본 단가(원)</span><span>빠른추가</span><span></span></div>`;
           const addRow = `
         <form method="post" action="/settings/task-types" class="grid grid-cols-2 items-center gap-1.5 rounded-lg border border-border bg-bg p-2 ${TASK_COLS}">
           <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="label" placeholder="새 작업 종류명 (예: 보컬튠)" aria-label="작업 종류명" required />
@@ -278,7 +277,6 @@ function taskTypesPane() {
             ${BILLING_TYPES.map((b) => `<option value="${esc(b)}">${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
           </select>
           <input class="input py-1.5 text-sm" name="unit_price" inputmode="numeric" placeholder="200000" aria-label="기본 단가(원)" />
-          <select class="input py-1.5 text-sm" name="price_type" aria-label="가격 유형">${priceTypeOptions("fixed")}</select>
           <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-muted"><input type="checkbox" name="is_quick" value="1" /> 빠른추가</label>
           <span class="col-span-2 flex justify-end sm:col-span-1"><button class="btn-primary btn-xs whitespace-nowrap" type="submit">추가</button></span>
         </form>`;
@@ -623,12 +621,6 @@ function userRow(u, currentUser, chief = true) {
     </div>`;
 }
 
-/** 가격 유형 select 옵션(고정·기준가·최소가). 단가 항목·작업 종류 공용. */
-function priceTypeOptions(current) {
-  const cur = PRICE_TYPES.includes(current) ? current : "fixed";
-  return PRICE_TYPES.map((k) => `<option value="${k}" ${k === cur ? "selected" : ""}>${esc(PRICE_TYPE_LABELS[k] || k)}</option>`).join("");
-}
-
 /** 단가표 행 = 한 줄 인라인 편집 필드(2026-07-27 통합 저장). 액션 버튼은 form=으로 형제 hidden 폼 참조(중첩 폼 금지). */
 function rateItemRow(r) {
   const baseHours = r.base_minutes ? r.base_minutes / 60 : "";
@@ -644,7 +636,6 @@ function rateItemRow(r) {
       <input class="input py-1.5 text-sm" name="base_price_${r.id}" inputmode="numeric" value="${esc(String(r.base_price || ""))}" aria-label="기준 가격(원)" placeholder="기준가(원)" />
       <input class="input py-1.5 text-sm" name="extra_hours_${r.id}" inputmode="decimal" value="${esc(String(extraHours))}" aria-label="초과 단위(시간)" placeholder="초과(h)" />
       <input class="input py-1.5 text-sm" name="extra_price_${r.id}" inputmode="numeric" value="${esc(String(r.extra_price || ""))}" aria-label="초과 단가(원)" placeholder="초과가(원)" />
-      <select class="input py-1.5 text-sm" name="price_type_${r.id}" aria-label="가격 유형">${priceTypeOptions(r.price_type)}</select>
       <span class="col-span-2 flex items-center justify-end gap-1 sm:col-span-1">
         ${r.active ? "" : '<span class="text-xs text-muted">(비활성)</span>'}
         <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-u-${r.id}" aria-label="위로 이동">↑</button>
@@ -673,7 +664,6 @@ function taskTypeRow(t) {
         ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
       </select>
       <input class="input py-1.5 text-sm" name="unit_price_${t.id}" inputmode="numeric" value="${esc(String(t.unit_price || ""))}" aria-label="기본 단가(원)" placeholder="기본 단가(원)" />
-      <select class="input py-1.5 text-sm" name="price_type_${t.id}" aria-label="가격 유형">${priceTypeOptions(t.price_type)}</select>
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-muted"><input type="checkbox" name="is_quick_${t.id}" value="1" ${t.is_quick ? "checked" : ""} /> 빠른추가</label>
       <span class="col-span-2 flex items-center justify-end gap-1 sm:col-span-1">
         <button class="btn-ghost btn-xs px-2" type="submit" form="tt-mv-u-${t.id}" aria-label="위로 이동">↑</button>
@@ -935,4 +925,4 @@ module.exports = {
   SETTINGS_NAV,
   SETTINGS_KEYS,
   settingsMenu,
-}; // 내부 전용: rateCategoryOptions·listUsers·ratesGroupedByCategory·rateCategoryManageRow·rateCategoriesSection·roomRow·roomActionForms·roomParentOptions·userRow·priceTypeOptions·rateItemRow·rateItemActionForms·taskTypeRow·taskTypeActionForms(위 export 함수들이 클로저로 사용)
+}; // 내부 전용: rateCategoryOptions·listUsers·ratesTree·rateCategoryRow·rateCategoryActionForms·rateItemAddRow·roomRow·roomActionForms·userRow·rateItemRow·rateItemActionForms·taskTypeRow·taskTypeActionForms(위 export 함수들이 클로저로 사용)

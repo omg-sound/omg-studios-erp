@@ -143,8 +143,6 @@ const SESSION_TYPE_RATE_KIND = { 녹음: "recording", 촬영: "filming", 공연:
 //  fixed   = 기본가 잠금(청구 화면에서 못 고침). 초과 시간만 자동 가산 — 녹음·촬영 대관.
 //  base    = 기준가를 자동 입력한 뒤 위아래로 수정 가능 — 믹싱(작업량에 따라 차등).
 //  minimum = 최소가를 자동 입력한 뒤 상향만 — 보컬튠(작업량에 따라 상향).
-const PRICE_TYPES = ["fixed", "base", "minimum"];
-const PRICE_TYPE_LABELS = { fixed: "고정", base: "기준가", minimum: "최소가" };
 // 촬영 세션의 구간(2026-07-26) — 반입·설치 / 촬영 / 철수를 각각 시작·종료 시각으로 입력한다.
 // 룸 점유는 세 구간을 아우르는 한 덩어리(sessions.start_time~end_time)이고, 요금 시간은 구간 합산이다.
 const SESSION_SEGMENT_KINDS = ["setup", "shoot", "teardown"];
@@ -266,11 +264,8 @@ module.exports = {
   FILMING_CATEGORIES,
   PERFORMANCE_CATEGORIES,
   SESSION_TYPE_RATE_KIND,
-  PRICE_TYPES,
-  PRICE_TYPE_LABELS,
   SESSION_SEGMENT_KINDS,
   SESSION_SEGMENT_LABELS,
-  normalizePriceType: (v) => normalize(v, PRICE_TYPES),
   normalizeSessionType: (v) => normalize(v, SESSION_TYPES),
   normalizeSessionStatus: (v) => normalize(v, SESSION_STATUSES),
   normalizeDeliverableKind: (v) => normalize(v, DELIVERABLE_KINDS),

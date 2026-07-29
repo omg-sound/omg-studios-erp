@@ -32,16 +32,6 @@ test.after(() => cleanupDb(process.env.DB_PATH, db()));
 
 const inCat = (cat) => listRateItems({ includeInactive: true }).filter((r) => r.category === cat).map((r) => r.name);
 
-test("가격 유형: 기본은 고정, 모르는 값도 고정으로 정규화", () => {
-  const a = createRateItem({ rate_name: "유형 테스트 A", category: "스튜디오 녹음", base_hours: "3.5", base_price: "300000" });
-  assert.equal(a.price_type, "fixed", "미지정이면 고정");
-  const b = updateRateItem(a.id, { rate_name: "유형 테스트 A", category: "스튜디오 녹음", base_hours: "3.5", base_price: "300000", price_type: "minimum" });
-  assert.equal(b.price_type, "minimum");
-  const c = updateRateItem(a.id, { rate_name: "유형 테스트 A", category: "스튜디오 녹음", base_hours: "3.5", base_price: "300000", price_type: "무엄한값" });
-  assert.equal(c.price_type, "fixed", "허용 밖 값은 고정으로");
-  deleteRateItem(a.id);
-});
-
 test("정렬: 이름 가나다순이 아니라 sort_order를 따른다", () => {
   // 마이그레이션이 솔로 녹음(10) → 드럼 · 합주 녹음(20)으로 순서를 줬다. 가나다순이면 '드럼'이 앞이다.
   const names = inCat("스튜디오 녹음");
@@ -85,18 +75,3 @@ test("활성 토글: 비활성 → 다시 활성으로 되살릴 수 있다", ()
   assert.ok(listRateItems().some((r) => r.id === solo.id));
 });
 
-test("작업 종류(포스트)도 가격 유형을 갖는다 — 믹싱=기준가·보컬튠=최소가", () => {
-  const byKey = (k) => listTaskTypes({ includeInactive: true }).find((t) => t.key === k);
-  assert.equal(byKey("Mixing").price_type, "base");
-  assert.equal(byKey("Vocal_Tuning").price_type, "minimum");
-  // 편집으로 바꿀 수 있고 캐시도 갱신된다(라벨·단가 캐시와 같은 경로).
-  updateTaskType(byKey("Mixing").id, { label: "믹싱", billing_type: "Fixed_Per_Track", unit_price: "1000000", price_type: "minimum", is_quick: "1" });
-  assert.equal(byKey("Mixing").price_type, "minimum");
-  updateTaskType(byKey("Mixing").id, { label: "믹싱", billing_type: "Fixed_Per_Track", unit_price: "1000000", price_type: "base", is_quick: "1" });
-  assert.equal(byKey("Mixing").price_type, "base");
-  // 신규 종류도 유형을 받는다.
-  createTaskType({ label: "임시 작업", billing_type: "Fixed_Per_Track", unit_price: "50000", price_type: "base" });
-  const made = listTaskTypes({ includeInactive: true }).find((t) => t.label === "임시 작업");
-  assert.equal(made.price_type, "base");
-  db().prepare("DELETE FROM task_types WHERE id = ?").run(made.id);
-});

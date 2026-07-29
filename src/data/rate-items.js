@@ -8,7 +8,6 @@
 
 const { db } = require("../db");
 const { listRateCategories } = require("./rate-categories"); // 무순환(rate-categories는 rate-items를 require하지 않음)
-const { normalizePriceType } = require("../config");
 const { parseMoney } = require("../lib/forms");
 const { durationKo } = require("../lib/date");
 
@@ -35,9 +34,6 @@ function rateFields(input) {
     base_price: parseWon(input.base_price),
     extra_minutes: parseHoursToMinutes(input.extra_hours) || 60,
     extra_price: parseWon(input.extra_price),
-    // 가격 유형(2026-07-26) — 청구 화면이 금액칸을 잠글지 결정한다.
-    // fixed=기본가 잠금(초과 시간만 자동 가산) · base=기준가 자동 입력 후 수정 가능 · minimum=최소가 자동 입력 후 상향.
-    price_type: normalizePriceType(input.price_type),
   };
 }
 
@@ -62,8 +58,8 @@ function createRateItem(input = {}) {
   if (f.base_minutes > 0 && !f.base_price && !f.extra_price) throw new Error("RATE_PRICE_REQUIRED");
   const info = db()
     .prepare(
-      `INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, price_type, sort_order, active)
-       VALUES (@name,@category,@base_minutes,@base_price,@extra_minutes,@extra_price,@price_type,900,1)`
+      `INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, sort_order, active)
+       VALUES (@name,@category,@base_minutes,@base_price,@extra_minutes,@extra_price,900,1)`
     )
     .run(f); // 새 항목은 분류 맨 뒤(이후 ↑↓로 이동)
   return db().prepare("SELECT * FROM rate_items WHERE id = ?").get(info.lastInsertRowid);
@@ -77,7 +73,7 @@ function updateRateItem(id, input = {}) {
   db()
     .prepare(
       `UPDATE rate_items SET name=@name, category=@category, base_minutes=@base_minutes, base_price=@base_price,
-       extra_minutes=@extra_minutes, extra_price=@extra_price, price_type=@price_type WHERE id=@id`
+       extra_minutes=@extra_minutes, extra_price=@extra_price WHERE id=@id`
     )
     .run({ id, ...f });
   return db().prepare("SELECT * FROM rate_items WHERE id = ?").get(id);
@@ -105,7 +101,6 @@ function bulkUpdateRateItems(body = {}) {
         base_price: body[`base_price_${id}`],
         extra_hours: body[`extra_hours_${id}`],
         extra_price: body[`extra_price_${id}`],
-        price_type: body[`price_type_${id}`],
       };
       try { updateRateItem(id, input); updated++; }
       catch (e) { if (!["RATE_NAME_REQUIRED", "RATE_PRICE_REQUIRED"].includes(e.message)) throw e; skipped++; }

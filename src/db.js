@@ -535,9 +535,9 @@ function init() {
   addColumn("rooms", "parent_id", "INTEGER");
   addColumn("rooms", "bookable", "INTEGER NOT NULL DEFAULT 1");
   // ── 가격 유형·표시 순서(2026-07-26 과금 체계 개편) ──
-  addColumn("rate_items", "price_type", "TEXT NOT NULL DEFAULT 'fixed'"); // fixed | base | minimum (config.PRICE_TYPES)
+  addColumn("rate_items", "price_type", "TEXT NOT NULL DEFAULT 'fixed'"); // 레거시(2026-07-29 가격 유형 폐기 — 읽는 코드 0)
   addColumn("rate_items", "sort_order", "INTEGER NOT NULL DEFAULT 100"); // 분류 안 표시 순서(↑↓ 이동). 기존 항목은 이름순 유지(동일 값 → 이름 tiebreak)
-  addColumn("task_types", "price_type", "TEXT NOT NULL DEFAULT 'fixed'"); // 포스트(믹싱=base·보컬튠=minimum)는 세션이 아니라 작업으로 청구하므로 여기에도 필요
+  addColumn("task_types", "price_type", "TEXT NOT NULL DEFAULT 'fixed'"); // 레거시(2026-07-29 가격 유형 폐기 — 읽는 코드 0)
   // ── 금액 조정 사유(2026-07-26) ──
   // sessions.surcharge_key/surcharge_memo는 **레거시**(2026-07-27 할증 개념 폐기 — 읽는 코드 없음).
   // 컬럼은 남긴다(sessions는 큰 테이블이고 DROP COLUMN은 이득 없이 위험만 있다 — director_contact_id와 같은 취급).

@@ -33,7 +33,7 @@ const workerSummary = require("./data/worker-summary"); // 외주 정산 요약(
 const search = require("./data/search"); // 전역 통합 검색 집계(searchAll)
 
 // 작업 종류 카탈로그: 공개 API는 아래 함수만 재export(normalizeTaskTypeDb는 내부전용이므로 spread하지 않고 명시 나열).
-const { listTaskTypes, activeTaskTypes, taskTypeLabel, taskTypeUnitPrice, taskTypePriceType, createTaskType, updateTaskType, bulkUpdateTaskTypes, moveTaskType, deleteTaskType } = taskTypes;
+const { listTaskTypes, activeTaskTypes, taskTypeLabel, taskTypeUnitPrice, createTaskType, updateTaskType, bulkUpdateTaskTypes, moveTaskType, deleteTaskType } = taskTypes;
 
 module.exports = {
   ...parties, // src/data/parties.js — 당사자 통합(사람/조직/아티스트/담당자연동)
@@ -47,7 +47,6 @@ module.exports = {
   activeTaskTypes,
   taskTypeLabel,
   taskTypeUnitPrice,
-  taskTypePriceType,
   createTaskType,
   updateTaskType,
   bulkUpdateTaskTypes,

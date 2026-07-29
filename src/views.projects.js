@@ -28,7 +28,6 @@ const {
   activeTaskTypes,
   taskTypeLabel,
   taskTypeUnitPrice,
-  taskTypePriceType,
   payerDocMeta,
   peekInvoiceNumber,
   listGroupsForPicker,
@@ -815,34 +814,20 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
     sessionRows.filter((s) => !s.waived && s.status === "완료").reduce((sum, s) => sum + (s.billing ? s.billing.amount : 0), 0); // 완료 세션만 기본 집계(예정은 체크 시 합산)
   const tax = Math.round(subtotal * 0.1);
   /**
-   * 금액칸 렌더(2026-07-26 가격 유형 반영).
-   *  fixed   = 기본가 잠금(readonly) — 초과 시간·할증은 자동 가산되므로 사람이 손댈 값이 없다.
-   *  base    = 기준가를 넣어 주고 위아래로 수정 가능 + 조정 사유 메모.
-   *  minimum = 최소가를 넣어 주고 **상향만**(min 하한) + 조정 사유 메모.
-   *
-   * ⚠️ 잠금은 **산정치가 실제로 정해졌을 때만** 건다(computed > 0). 가격 유형이 fixed라도 카탈로그
-   * 단가가 0인 항목('금액 미정' 정액 세션·단가 미정 작업 종류)은 청구 시 입력해야 하므로 잠그면
-   * 아예 청구할 수 없게 된다. 협의 감액은 청구서 할인(정액/정률) 또는 가격 유형 변경으로 한다.
+   * 금액칸 렌더 — 단가표가 산정한 금액을 넣어 주고 **항상 고칠 수 있다**(2026-07-29 사용자 결정).
+   * 옛 '가격 유형'(고정=잠금 / 기준가 / 최소가=상향만)은 폐지했다: 실제로는 협의 감액이 늘 생기는데
+   * 잠긴 칸은 그때마다 카탈로그를 고치러 가게 만들었고, 같은 감액을 '금액 수정'과 '청구서 할인' 두 경로로
+   * 할 수 있어 어느 쪽으로 잡았는지에 따라 기록이 갈렸다. 조정 사유 메모는 항상 받는다(청구 생성 시 근거로 스냅샷).
    */
-  const amountCell = (name, value, label, priceType, { memoName = "", memo = "" } = {}) => {
-    const amt = Number(value) || 0;
-    const locked = priceType === "fixed" && amt > 0;
-    const minAttr = priceType === "minimum" && amt > 0 ? ` data-line-min="${amt}"` : "";
-    const hint = locked
-      ? `<span class="mt-0.5 block text-right text-xs text-muted">고정 · 초과·할증 자동</span>`
-      : priceType === "minimum"
-        ? `<span class="mt-0.5 block text-right text-xs text-muted">최소가 — 상향만</span>`
-        : ""; // base(기준가)는 안내 문구 없음 — 그냥 고칠 수 있는 칸이라 설명이 필요 없다(2026-07-28 사용자 요청)
-    // 조정 사유 메모는 조정이 가능한 유형에만(잠긴 칸에 사유를 물으면 답할 게 없다). 청구 생성 시 근거로 스냅샷된다.
-    const memoField = !locked && memoName
+  const amountCell = (name, value, label, { memoName = "", memo = "" } = {}) => {
+    const memoField = memoName
       ? `<input class="input mt-1 w-full py-1 text-xs" type="text" name="${memoName}" value="${esc(memo || "")}" placeholder="조정 사유(선택)" aria-label="${esc(label)} 조정 사유" />`
       : "";
     return `<div class="w-28 shrink-0">
               <div class="relative">
-                <input class="input py-1 pr-7 text-right text-sm tabular ${locked ? "bg-elevated text-muted" : ""}" type="text" inputmode="numeric" name="${name}" value="${value === "" || value == null ? "" : value}" data-line-input${minAttr} placeholder="0" aria-label="${esc(label)} 금액"${locked ? " readonly" : ""} />
+                <input class="input py-1 pr-7 text-right text-sm tabular" type="text" inputmode="numeric" name="${name}" value="${value === "" || value == null ? "" : value}" data-line-input placeholder="0" aria-label="${esc(label)} 금액" />
                 <span class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted">원</span>
               </div>
-              ${hint}
               ${memoField}
             </div>`;
   };
@@ -866,7 +851,7 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
           <label for="task-cb-${task.id}" class="${LINE_LABEL} cursor-pointer font-medium">${esc(task.track_title)} · ${esc(label)}${statusTag}</label>
           <div class="${LINE_CTRL}">
             <button type="submit" formaction="${waiveAction}" formmethod="post" data-waive-btn class="btn-ghost btn-xs shrink-0 whitespace-nowrap text-muted">청구 안 함</button>
-            ${amountCell(`task_amount_${task.id}`, amt || "", label, taskTypePriceType(task.task_type), { memoName: `task_billing_memo_${task.id}`, memo: task.billing_memo })}
+            ${amountCell(`task_amount_${task.id}`, amt || "", label, { memoName: `task_billing_memo_${task.id}`, memo: task.billing_memo })}
           </div>
         </div>`;
     })
@@ -903,7 +888,7 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
           </label>
           <div class="${LINE_CTRL}">
             <button type="submit" formaction="${waiveAction}" formmethod="post" data-waive-btn class="btn-ghost btn-xs shrink-0 whitespace-nowrap text-muted">청구 안 함</button>
-            ${amountCell(`session_amount_${s.id}`, s.billing.amount == null ? "" : s.billing.amount, label, s.billing.item.price_type, { memoName: `session_billing_memo_${s.id}`, memo: s.billing_memo })}
+            ${amountCell(`session_amount_${s.id}`, s.billing.amount == null ? "" : s.billing.amount, label, { memoName: `session_billing_memo_${s.id}`, memo: s.billing_memo })}
           </div>
         </div>`;
     })

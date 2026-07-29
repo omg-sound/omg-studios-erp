@@ -59,7 +59,6 @@ test("단가: 솔로 녹음 = 1프로 210분·30만 / 초과 60분·10만 (id �
   assert.equal(r.base_price, 300000);
   assert.equal(r.extra_minutes, 60);
   assert.equal(r.extra_price, 100000);
-  assert.equal(r.price_type, "fixed");
   assert.ok(!rate("보컬 녹음"), "옛 이름이 남아 있으면 중복");
 });
 
@@ -69,16 +68,13 @@ test("단가: 드럼 · 합주 녹음 = 40만(35만에서 갱신, id 보존)", (
   assert.equal(r.id, 2);
   assert.equal(r.base_price, 400000);
   assert.equal(r.base_minutes, 210);
-  assert.equal(r.price_type, "fixed");
   assert.ok(!rate("악기+보컬 녹음(그룹)"), "옛 이름이 남아 있으면 중복");
 });
 
 test("포스트는 rate_items가 아니라 task_types에 있다(믹싱=기준가·보컬튠=최소가)", () => {
   const t = (key) => db().prepare("SELECT * FROM task_types WHERE key = ?").get(key);
   assert.equal(t("Mixing").unit_price, 1000000);
-  assert.equal(t("Mixing").price_type, "base", "작업량에 따라 차등 → 기준가");
   assert.equal(t("Vocal_Tuning").unit_price, 200000);
-  assert.equal(t("Vocal_Tuning").price_type, "minimum", "작업량에 따라 상향 → 최소가");
   // 세션 폼에서 도달 불가한 죽은 데이터를 만들지 않았는지(믹싱이 두 카탈로그에 동시 존재하면 안 됨).
   assert.ok(!rate("믹싱"), "믹싱이 단가표에도 있으면 카탈로그가 두 벌");
   assert.ok(!rate("보컬튠"), "보컬튠이 단가표에도 있으면 카탈로그가 두 벌");
