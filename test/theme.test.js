@@ -20,10 +20,12 @@ test("Claude(원본) 보존: :root 기본 색 토큰이 그대로(크림 배경�
   assert.match(SRC_CSS, /--color-primary:\s*200 121 91/, "클레이 액센트 #C8795B 유지");
 });
 
-test("요구사항1: 폰트·radius·shadow가 CSS 변수로 추출됨(Original 값)", () => {
+test("요구사항1: 폰트·radius·shadow가 CSS 변수로 추출됨", () => {
   assert.match(SRC_CSS, /--font-sans:\s*"Pretendard"/, "--font-sans 추출");
-  assert.match(SRC_CSS, /--radius-card:\s*0\.75rem/, "--radius-card=rounded-xl 값");
-  assert.match(SRC_CSS, /--radius-btn:\s*0\.5rem/, "--radius-btn=rounded-lg 값");
+  // 값 자체는 2026-07-29에 한 단계 각지게 낮췄다(사용자 요청, render.com 참조) — 이 테스트가 잠그는 건
+  // **변수로 추출돼 있고 컴포넌트가 참조한다**는 구조지 특정 수치가 아니다(수치를 박으면 톤 조정마다 깨진다).
+  assert.match(SRC_CSS, /--radius-card:\s*[\d.]+rem/, "--radius-card 정의");
+  assert.match(SRC_CSS, /--radius-btn:\s*[\d.]+rem/, "--radius-btn 정의");
   assert.match(SRC_CSS, /--shadow-card:/, "--shadow-card 추출");
   // 컴포넌트가 변수를 참조
   assert.match(SRC_CSS, /border-radius:\s*var\(--radius-card\)/, ".card가 변수 참조");

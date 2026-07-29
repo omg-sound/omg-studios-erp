@@ -44,10 +44,11 @@ typography:
   scale: "Tailwind text-* 유틸 사용(고정 스케일 미문서화 — Known Gaps 참조). 금액·시간은 .tabular(tabular-nums)."
   weight: "본문 400, 라벨·강조 500. 세리프 제목은 굵게 쓰지 않음."
 
-radius:
-  md: "0.375rem  # rounded-md — 배지"
-  lg: "0.5rem    # rounded-lg — 버튼·입력"
-  xl: "0.75rem   # rounded-xl — 카드·리스트 카드"
+radius:  # 2026-07-29 각지게 축소(사용자 요청, render.com 참조) — tailwind.config.js borderRadius 스케일
+  md: "0.1875rem # rounded-md — 배지"
+  lg: "0.25rem   # rounded-lg — 버튼·입력"
+  xl: "0.375rem  # rounded-xl — 카드·리스트 카드"
+  full: "유지     # 배지 pill·스와치·레일 등 의도적 원형"
 
 spacing:
   scale: "Tailwind 기본 스케일(4px 기반). 카드 간격 space-y-2, 폼 필드 gap-2~3."
@@ -98,7 +99,8 @@ components:
 ## Elevation & Shapes
 
 - 그림자는 **거의 쓰지 않는다.** `.card`만 은은한 2겹 그림자(`0 1px 3px /.06`, `0 1px 2px /.04`). 깊이는 주로 **border + surface 대비**로 표현.
-- 라운드 스케일: 배지 `rounded-md`, 버튼·입력 `rounded-lg`, 카드·리스트 카드 `rounded-xl`.
+- 라운드 스케일: 배지 `rounded-md`, 버튼·입력 `rounded-lg`, 카드·리스트 카드 `rounded-xl`. **값은 2026-07-29에 한 단계씩 각지게 낮췄다**(render.com 톤) — 클래스 이름은 그대로고 `tailwind.config.js`의 `borderRadius` 스케일만 바꿨다(마크업의 `rounded-lg` 126곳을 건드리지 않으려고). 팔레트별 `--radius-*`는 Apple(둥근)·Spotify/Pinterest(pill) 정체성이라 그대로 두고 기본(Linear)·`:root`만 낮췄다.
+- **모바일 edge-to-edge**(<640px): `.card`·`.inv-table-wrap`이 페이지 좌우 패딩(1rem)을 음수 마진으로 상쇄해 **화면 폭을 꽉 채우고** 좌우 보더·모서리를 없앤다(위아래 선만). ⚠️제외 3종 — 중첩 카드, 마스터-디테일 왼쪽 목록, **모바일에서도 다열인 그리드**(`grid-cols-2/3/4`, 안 빼면 셀이 넘쳐 카드끼리 겹친다).
 
 ## Components
 
