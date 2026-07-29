@@ -62,11 +62,14 @@ function settingDesc(html) {
  * 폭을 더 줄이는 대신 넘칠 때만 스크롤되게 해, 어떤 폭에서도 모든 컨트롤에 도달 가능하게 만든다.
  */
 /**
- * 작업 종류 한 줄의 열 폭 — **헤더·추가 행·편집 행이 같은 값을 써야** 열이 맞는다(각자 독립된 grid라
- * 문자열이 유일한 연결 고리다). 이름은 상한을 두고 남는 폭은 마지막(액션) 열이 흡수한다.
- * (요금표는 2026-07-29에 표를 걷고 2줄 행 + 인라인 단위로 바꿔 이런 열 상수를 쓰지 않는다 — chargeLine 참조.)
+ * 행 순서 이동 버튼(↑↓) — **행의 맨 오른쪽**에 둔다(2026-07-29 사용자 요청).
+ * 삭제·비활성 같은 라벨 버튼은 글자 수가 행마다 달라(비활성/활성, 삭제/분류 삭제) 화살표가 그 앞에 있으면
+ * 위치가 행마다 흔들린다. 맨 끝으로 보내면 오른쪽 가장자리에 맞춰 세로로 정렬된다.
  */
-const TASK_COLS = "sm:grid-cols-[minmax(5rem,14rem)_9.5rem_6.5rem_auto_minmax(max-content,1fr)]";
+function moveButtons(upFormId, downFormId) {
+  return `<button class="btn-ghost btn-xs px-2" type="submit" form="${upFormId}" aria-label="위로 이동">↑</button>
+      <button class="btn-ghost btn-xs px-2" type="submit" form="${downFormId}" aria-label="아래로 이동">↓</button>`;
+}
 
 function scrollX(inner, innerClass = "space-y-2") {
   return `<div class="overflow-x-auto"><div class="${innerClass}">${inner}</div></div>`;
@@ -159,7 +162,7 @@ function ratesTree(rates) {
     <div class="rounded-lg border border-border">
       ${rateCategoryRow(c)}
       <!-- 하위 항목은 왼쪽 선 + 들여쓰기로 어미와 구분한다(지메일 라벨식 계층 표시). -->
-      <div class="space-y-1.5 border-t border-border p-2 sm:pl-6">
+      <div class="space-y-1.5 border-t border-border py-2 pl-2 pr-1 sm:pl-6">
         ${itemRows(c.name)}
         ${rateItemAddRow(c)}
       </div>
@@ -190,9 +193,8 @@ function rateCategoryRow(c) {
     <input class="input w-48 py-1 text-sm font-semibold" name="cat_name_${c.id}" value="${esc(c.name)}" aria-label="분류명" autocomplete="off" required />
     <select class="input w-28 py-1 text-sm" name="kind_${c.id}" aria-label="세션 종류">${kindOpts}</select>
     <span class="ml-auto flex shrink-0 items-center gap-1">
-      <button class="btn-ghost btn-xs px-2" type="submit" form="cat-mv-u-${c.id}" aria-label="분류 위로 이동">↑</button>
-      <button class="btn-ghost btn-xs px-2" type="submit" form="cat-mv-d-${c.id}" aria-label="분류 아래로 이동">↓</button>
       <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="cat-del-${c.id}">분류 삭제</button>
+      ${moveButtons(`cat-mv-u-${c.id}`, `cat-mv-d-${c.id}`)}
     </span>
   </div>`;
 }
@@ -260,24 +262,24 @@ function taskTypesPane() {
       <section class="card space-y-4" id="task-types-section">
         <div>
           <h2 class="font-display text-lg font-semibold">작업 종류 <span class="text-sm font-normal text-muted">(곡·콘텐츠 후반작업)</span></h2>
-          ${settingDesc(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가를 관리합니다. '빠른추가'를 켜면 곡·콘텐츠 화면의 빠른 추가 버튼에 노출됩니다. 시간이 아니라 작업량으로 산정하는 항목이라(믹싱=기준가·보컬튠=최소가 권장) 요금표와 카탈로그가 분리돼 있습니다.`)}
+          ${settingDesc(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가를 관리합니다. '빠른추가'를 켜면 곡·콘텐츠 화면의 빠른 추가 버튼에 노출됩니다. 시간이 아니라 작업량으로 산정하는 항목이라 요금표(대관 세션)와 카탈로그가 분리돼 있습니다. 기본 단가는 작업을 만들 때 자동으로 채워지는 값이고, 실제 금액은 청구 화면에서 확정합니다.`)}
         </div>
         ${(() => {
-          // 단가표와 같은 규칙 — 추가 폼은 표의 첫 행(한 줄), 열 제목은 헤더가 대신한다.
-          const header = `<div class="hidden gap-1.5 px-2 text-xs text-muted sm:grid ${TASK_COLS}"><span>이름</span><span>과금</span><span>기본 단가(원)</span><span>빠른추가</span><span></span></div>`;
+          // 단가표와 같은 규칙 — 추가 폼은 목록의 첫 행이고 편집 행과 같은 2줄 모양이다(열 제목 줄 없음).
           const addRow = `
-        <form method="post" action="/settings/task-types" class="grid grid-cols-2 items-center gap-1.5 rounded-lg border border-border bg-bg p-2 ${TASK_COLS}">
-          <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="label" placeholder="새 작업 종류명 (예: 보컬튠)" aria-label="작업 종류명" required />
-          <select class="input py-1.5 text-sm" name="billing_type" aria-label="과금">
-            ${BILLING_TYPES.map((b) => `<option value="${esc(b)}">${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
-          </select>
-          <input class="input py-1.5 text-sm" name="unit_price" inputmode="numeric" placeholder="200000" aria-label="기본 단가(원)" />
-          <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-muted"><input type="checkbox" name="is_quick" value="1" /> 빠른추가</label>
-          <span class="col-span-2 flex justify-end sm:col-span-1"><button class="btn-primary btn-xs whitespace-nowrap" type="submit">추가</button></span>
+        <form method="post" action="/settings/task-types" class="space-y-1 rounded-lg border border-dashed border-border p-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[16rem]" name="label" placeholder="+ 새 작업 종류 이름 (예: 보컬튠)" aria-label="작업 종류명" required />
+            <select class="input w-40 py-1.5 text-sm" name="billing_type" aria-label="과금">
+              ${BILLING_TYPES.map((b) => `<option value="${esc(b)}">${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
+            </select>
+            <span class="ml-auto shrink-0"><button class="btn-ghost btn-xs whitespace-nowrap" type="submit">추가</button></span>
+          </div>
+          ${taskPriceLine({ unitPrice: "unit_price", isQuick: "is_quick" }, {})}
         </form>`;
-          if (!taskTypes.length) return scrollX(header + addRow, "space-y-1.5") + emptyState("등록된 작업 종류가 없습니다.");
+          if (!taskTypes.length) return scrollX(addRow, "space-y-1.5") + emptyState("등록된 작업 종류가 없습니다.");
           return `
-        ${scrollX(`${header}${addRow}
+        ${scrollX(`${addRow}
         <form method="post" action="/settings/task-types/bulk" id="task-types-bulk-form" class="space-y-1.5 pt-1" data-dirty-form>
           ${taskTypes.map((t) => taskTypeRow(t)).join("")}
           <div class="flex items-center gap-2"><button class="btn-primary btn-sm transition" type="submit" data-dirty-save>통합 저장</button><span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span></div>
@@ -400,9 +402,8 @@ function roomRow(r) {
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm sm:shrink-0"><input type="checkbox" name="bookable_${r.id}" value="1" ${r.bookable ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 예약 대상</label>
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm sm:shrink-0"><input type="checkbox" name="is_external_${r.id}" value="1" ${r.is_external ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 외부</label>
       <span class="ml-auto flex shrink-0 items-center gap-1">
-        <button class="btn-ghost btn-xs px-2" type="submit" form="room-mv-u-${r.id}" aria-label="위로 이동">↑</button>
-        <button class="btn-ghost btn-xs px-2" type="submit" form="room-mv-d-${r.id}" aria-label="아래로 이동">↓</button>
         <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="room-del-${r.id}">삭제</button>
+        ${moveButtons(`room-mv-u-${r.id}`, `room-mv-d-${r.id}`)}
       </span>
     </div>`;
 }
@@ -630,10 +631,9 @@ function rateItemRow(r) {
         <select class="input w-40 py-1.5 text-sm" name="category_${r.id}" aria-label="분류 이동(다른 분류로 옮기기)">${rateCategoryOptions(cat)}</select>
         <span class="ml-auto flex shrink-0 items-center gap-1">
           ${r.active ? "" : '<span class="text-xs text-muted">(비활성)</span>'}
-          <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-u-${r.id}" aria-label="위로 이동">↑</button>
-          <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-d-${r.id}" aria-label="아래로 이동">↓</button>
           <button class="btn-ghost btn-xs whitespace-nowrap" type="submit" form="rate-act-${r.id}">${r.active ? "비활성" : "활성"}</button>
           <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="rate-del-${r.id}">삭제</button>
+          ${moveButtons(`rate-mv-u-${r.id}`, `rate-mv-d-${r.id}`)}
         </span>
       </div>
       ${chargeLine({ baseHours: `base_hours_${r.id}`, basePrice: `base_price_${r.id}`, extraHours: `extra_hours_${r.id}`, extraPrice: `extra_price_${r.id}` },
@@ -682,19 +682,36 @@ function rateItemActionForms(r) {
 /** 작업 종류 행 = 한 줄 인라인 편집(2026-07-27 통합 저장). */
 function taskTypeRow(t) {
   return `
-    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 ${TASK_COLS}" id="task-type-${t.id}">
-      <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="label_${t.id}" value="${esc(t.label)}" aria-label="작업 종류명" required />
-      <select class="input py-1.5 text-sm" name="billing_type_${t.id}" aria-label="과금">
-        ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
-      </select>
-      <input class="input py-1.5 text-sm" name="unit_price_${t.id}" inputmode="numeric" value="${esc(String(t.unit_price || ""))}" aria-label="기본 단가(원)" placeholder="기본 단가(원)" />
-      <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-muted"><input type="checkbox" name="is_quick_${t.id}" value="1" ${t.is_quick ? "checked" : ""} /> 빠른추가</label>
-      <span class="col-span-2 flex items-center justify-end gap-1 sm:col-span-1">
-        <button class="btn-ghost btn-xs px-2" type="submit" form="tt-mv-u-${t.id}" aria-label="위로 이동">↑</button>
-        <button class="btn-ghost btn-xs px-2" type="submit" form="tt-mv-d-${t.id}" aria-label="아래로 이동">↓</button>
-        <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="tt-del-${t.id}">삭제</button>
-      </span>
+    <div class="space-y-1 rounded-lg bg-bg p-2" id="task-type-${t.id}">
+      <div class="flex flex-wrap items-center gap-2">
+        <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[16rem]" name="label_${t.id}" value="${esc(t.label)}" aria-label="작업 종류명" required />
+        <select class="input w-40 py-1.5 text-sm" name="billing_type_${t.id}" aria-label="과금">
+          ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
+        </select>
+        <span class="ml-auto flex shrink-0 items-center gap-1">
+          <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="tt-del-${t.id}">삭제</button>
+          ${moveButtons(`tt-mv-u-${t.id}`, `tt-mv-d-${t.id}`)}
+        </span>
+      </div>
+      ${taskPriceLine({ unitPrice: `unit_price_${t.id}`, isQuick: `is_quick_${t.id}` }, { unitPrice: t.unit_price || "", isQuick: t.is_quick })}
     </div>`;
+}
+
+/**
+ * 작업 종류의 둘째 줄 — `기본 단가 [200,000]원 · [ ] 빠른추가`. 요금표의 chargeLine과 같은 규칙
+ * (칸 사이 단위·접속사로 행 자체가 설명하게 하고 열 제목 줄은 두지 않는다, 2026-07-29).
+ */
+function taskPriceLine(names, vals = {}, formAttr = "") {
+  return `
+      <div class="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+        <span>기본 단가</span>
+        <input class="input w-28 py-1 text-right text-sm" ${formAttr} name="${names.unitPrice}" inputmode="numeric" value="${esc(String(vals.unitPrice == null ? "" : vals.unitPrice))}" aria-label="기본 단가(원)" placeholder="200000" />
+        <span>원</span>
+        <span class="px-2 text-muted">·</span>
+        <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap">
+          <input type="checkbox" ${formAttr} name="${names.isQuick}" value="1" ${vals.isQuick ? "checked" : ""} /> 곡·콘텐츠 화면에 빠른추가
+        </label>
+      </div>`;
 }
 
 /** 작업 종류 행의 형제 hidden 액션 폼(↑↓·삭제) — bulk 폼 밖에 렌더해 중첩 폼 회피. */
