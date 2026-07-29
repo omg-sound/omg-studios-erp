@@ -62,12 +62,10 @@ function settingDesc(html) {
  * 폭을 더 줄이는 대신 넘칠 때만 스크롤되게 해, 어떤 폭에서도 모든 컨트롤에 도달 가능하게 만든다.
  */
 /**
- * 단가표 한 줄의 열 폭 — **헤더·추가 행·편집 행이 같은 값을 써야** 열이 맞는다(각자 독립된 grid라 문자열이
- * 유일한 연결 고리다). 이름은 상한을 둔다(1fr로 두면 넓은 화면에서 이름 칸만 과하게 늘어난다 — 사용자 지적).
- * 남는 폭은 마지막(액션) 열이 흡수하고 버튼은 오른쪽 정렬이라 표가 화면 폭에 맞춰 자연스럽게 늘어난다.
+ * 작업 종류 한 줄의 열 폭 — **헤더·추가 행·편집 행이 같은 값을 써야** 열이 맞는다(각자 독립된 grid라
+ * 문자열이 유일한 연결 고리다). 이름은 상한을 두고 남는 폭은 마지막(액션) 열이 흡수한다.
+ * (요금표는 2026-07-29에 표를 걷고 2줄 행 + 인라인 단위로 바꿔 이런 열 상수를 쓰지 않는다 — chargeLine 참조.)
  */
-const RATE_COLS = "sm:grid-cols-[minmax(5rem,14rem)_8.5rem_3.5rem_5.5rem_3.5rem_5.5rem_minmax(max-content,1fr)]";
-/** 작업 종류 한 줄의 열 폭 — RATE_COLS와 같은 규칙(헤더·추가 행·편집 행 공용, 이름 상한·마지막 열이 슬랙 흡수). */
 const TASK_COLS = "sm:grid-cols-[minmax(5rem,14rem)_9.5rem_6.5rem_auto_minmax(max-content,1fr)]";
 
 function scrollX(inner, innerClass = "space-y-2") {
@@ -201,21 +199,21 @@ function rateCategoryRow(c) {
 
 /**
  * 분류 안의 '+ 항목 추가' 줄 — 분류가 정해져 있으므로 분류 select 없이 hidden으로 넘긴다(옛 전역 추가 행은
- * 매번 분류를 골라야 했다). 열은 편집 행과 같은 RATE_COLS를 쓰되 분류 칸 자리에 안내 텍스트를 둔다.
+ * 매번 분류를 골라야 했다). 편집 행과 같은 2줄 모양이라 추가할 때와 추가된 뒤가 같아 보인다.
  */
 function rateItemAddRow(cat) {
   // ⚠️트리 전체가 통합 저장 폼 안이라 여기에 <form>을 두면 중첩 폼이 된다(브라우저가 내부 폼을 버려
   // '추가'가 통합 저장을 제출해 버린다) — 행 액션(↑↓·삭제)과 같은 form= 참조 방식으로 뺀다.
   const f = `form="rate-add-${cat.id}"`;
   return `
-    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg border border-dashed border-border p-2 ${RATE_COLS}">
-      <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" ${f} name="rate_name" placeholder="+ 새 항목 이름" aria-label="단가 항목명" autocomplete="off" />
-      <span class="hidden text-xs text-muted sm:block">이 분류에 추가</span>
-      <input class="input py-1.5 text-sm" ${f} name="base_hours" inputmode="decimal" placeholder="3.5" aria-label="기준 시간(시간)" />
-      <input class="input py-1.5 text-sm" ${f} name="base_price" inputmode="numeric" placeholder="300000" aria-label="기준 가격(원)" />
-      <input class="input py-1.5 text-sm" ${f} name="extra_hours" inputmode="decimal" placeholder="1" aria-label="초과 단위(시간)" value="1" />
-      <input class="input py-1.5 text-sm" ${f} name="extra_price" inputmode="numeric" placeholder="100000" aria-label="초과 단가(원)" />
-      <span class="col-span-2 flex justify-end sm:col-span-1"><button class="btn-ghost btn-xs whitespace-nowrap" type="submit" ${f}>추가</button></span>
+    <div class="space-y-1 rounded-lg border border-dashed border-border p-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[16rem]" ${f} name="rate_name" placeholder="+ 새 항목 이름" aria-label="단가 항목명" autocomplete="off" />
+        <span class="text-xs text-muted">이 분류에 추가</span>
+        <span class="ml-auto shrink-0"><button class="btn-ghost btn-xs whitespace-nowrap" type="submit" ${f}>추가</button></span>
+      </div>
+      ${chargeLine({ baseHours: "base_hours", basePrice: "base_price", extraHours: "extra_hours", extraPrice: "extra_price" },
+                   { baseHours: "", basePrice: "", extraHours: 1, extraPrice: "" }, f)}
     </div>`;
 }
 
@@ -236,16 +234,13 @@ function ratesPane() {
   const rates = listRateItems({ includeInactive: true });
   const t = ratesTree(rates);
   const kindOpts = Object.entries(RATE_KIND_LABELS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("");
-  // 열 제목 — 분류 행이 아니라 **항목 행**의 열을 설명한다(트리 안쪽 들여쓰기에 맞춰 왼쪽 여백을 준다).
-  const header = `<div class="hidden gap-1.5 px-4 text-xs text-muted sm:grid ${RATE_COLS}"><span>항목 이름</span><span>분류 이동</span><span>기준(h)</span><span>기준가(원)</span><span>초과(h)</span><span>초과가(원)</span><span></span></div>`;
   return `
       <section class="card space-y-4" id="rates-section">
         <div>
           <h2 class="font-display text-lg font-semibold">요금표 · 녹음/촬영 종류</h2>
           ${settingDesc(`대관 세션의 시간제 단가입니다. <b>분류</b>가 어미고 그 아래에 단가 항목이 들어갑니다 — 분류의 <b>세션 종류</b>(녹음·촬영·공연)가 세션 예약 폼에서 어떤 항목을 보여줄지 정합니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력).<br>↑↓ 순서는 자유이고(분류끼리 종류가 달라도 섞어 배치 가능) 이 순서가 세션 예약 폼의 항목 순서가 됩니다.`)}
         </div>
-        ${scrollX(`${header}
-        <form method="post" action="/settings/rates/bulk" id="rates-bulk-form" class="space-y-2" data-dirty-form>
+        ${scrollX(`        <form method="post" action="/settings/rates/bulk" id="rates-bulk-form" class="space-y-2" data-dirty-form>
           ${t.list}
           ${saveRow("통합 저장")}
         </form>`)}
@@ -629,21 +624,50 @@ function rateItemRow(r) {
   // 기본 분류를 개명·삭제할 수 있게 된 뒤(2026-07-29) DB에 없는 이름을 고르게 된다.
   const cat = r.category || (listRateCategories()[0] || {}).name || RECORDING_CATEGORIES[0];
   return `
-    <div class="grid grid-cols-2 items-center gap-1.5 rounded-lg bg-bg p-2 ${RATE_COLS} ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
-      <input class="input py-1.5 text-sm col-span-2 sm:col-span-1" name="rate_name_${r.id}" value="${esc(r.name)}" aria-label="단가 항목명" autocomplete="off" required />
-      <select class="input py-1.5 text-sm" name="category_${r.id}" aria-label="분류 이동(다른 분류로 옮기기)">${rateCategoryOptions(cat)}</select>
-      <input class="input py-1.5 text-sm" name="base_hours_${r.id}" inputmode="decimal" value="${esc(String(baseHours))}" aria-label="기준 시간(시간)" placeholder="기준(h)" />
-      <input class="input py-1.5 text-sm" name="base_price_${r.id}" inputmode="numeric" value="${esc(String(r.base_price || ""))}" aria-label="기준 가격(원)" placeholder="기준가(원)" />
-      <input class="input py-1.5 text-sm" name="extra_hours_${r.id}" inputmode="decimal" value="${esc(String(extraHours))}" aria-label="초과 단위(시간)" placeholder="초과(h)" />
-      <input class="input py-1.5 text-sm" name="extra_price_${r.id}" inputmode="numeric" value="${esc(String(r.extra_price || ""))}" aria-label="초과 단가(원)" placeholder="초과가(원)" />
-      <span class="col-span-2 flex items-center justify-end gap-1 sm:col-span-1">
-        ${r.active ? "" : '<span class="text-xs text-muted">(비활성)</span>'}
-        <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-u-${r.id}" aria-label="위로 이동">↑</button>
-        <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-d-${r.id}" aria-label="아래로 이동">↓</button>
-        <button class="btn-ghost btn-xs whitespace-nowrap" type="submit" form="rate-act-${r.id}">${r.active ? "비활성" : "활성"}</button>
-        <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="rate-del-${r.id}">삭제</button>
-      </span>
+    <div class="space-y-1 rounded-lg bg-bg p-2 ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
+      <div class="flex flex-wrap items-center gap-2">
+        <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[16rem]" name="rate_name_${r.id}" value="${esc(r.name)}" aria-label="단가 항목명" autocomplete="off" required />
+        <select class="input w-40 py-1.5 text-sm" name="category_${r.id}" aria-label="분류 이동(다른 분류로 옮기기)">${rateCategoryOptions(cat)}</select>
+        <span class="ml-auto flex shrink-0 items-center gap-1">
+          ${r.active ? "" : '<span class="text-xs text-muted">(비활성)</span>'}
+          <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-u-${r.id}" aria-label="위로 이동">↑</button>
+          <button class="btn-ghost btn-xs px-2" type="submit" form="rate-mv-d-${r.id}" aria-label="아래로 이동">↓</button>
+          <button class="btn-ghost btn-xs whitespace-nowrap" type="submit" form="rate-act-${r.id}">${r.active ? "비활성" : "활성"}</button>
+          <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="rate-del-${r.id}">삭제</button>
+        </span>
+      </div>
+      ${chargeLine({ baseHours: `base_hours_${r.id}`, basePrice: `base_price_${r.id}`, extraHours: `extra_hours_${r.id}`, extraPrice: `extra_price_${r.id}` },
+                   { baseHours, basePrice: r.base_price || "", extraHours, extraPrice: r.extra_price || "" })}
     </div>`;
+}
+
+/**
+ * 요금 줄(둘째 줄) — `기준 [3.5]시간 [300,000]원 · 초과 [1]시간마다 [100,000]원`.
+ * 2026-07-29 사용자 결정: 옛 7열 표는 ①열 제목이 맨 위에 한 번뿐이라 아래쪽 분류를 입력할 땐 위를
+ * 올려다봐야 했고 ②기준(h)/기준가·초과(h)/초과가가 쌍인데 네 열로 흩어져 매번 관계를 되짚어야 했으며
+ * ③헤더가 트리 밖이라 들여쓰기된 행과 17px 어긋나 있었다. 단위·접속사를 칸 사이에 넣어 **행 자체가
+ * 설명하게** 하고 열 제목 줄은 없앴다. 입력 폭은 고정이라 행끼리 세로 정렬은 그대로 유지된다.
+ * @param names 필드명 묶음(편집 행은 `_<id>` 접미, 추가 행은 접미 없음)
+ * @param vals  현재 값(추가 행은 빈 값 + 초과 단위 기본 1)
+ * @param formAttr 추가 행처럼 폼 밖 형제 폼을 가리켜야 할 때의 `form="..."`(중첩 폼 금지)
+ */
+function chargeLine(names, vals = {}, formAttr = "") {
+  const num = (name, value, label, width, ph = "") =>
+    `<input class="input ${width} py-1 text-right text-sm" ${formAttr} name="${name}" inputmode="${/price/.test(name) ? "numeric" : "decimal"}" value="${esc(String(value == null ? "" : value))}" aria-label="${esc(label)}" placeholder="${esc(ph)}" />`;
+  return `
+      <div class="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+        <span>기준</span>
+        ${num(names.baseHours, vals.baseHours, "기준 시간(시간)", "w-14", "3.5")}
+        <span>시간</span>
+        ${num(names.basePrice, vals.basePrice, "기준 가격(원)", "w-28", "300000")}
+        <span>원</span>
+        <span class="px-2 text-muted">·</span>
+        <span>초과</span>
+        ${num(names.extraHours, vals.extraHours, "초과 단위(시간)", "w-14", "1")}
+        <span>시간마다</span>
+        ${num(names.extraPrice, vals.extraPrice, "초과 단가(원)", "w-28", "100000")}
+        <span>원</span>
+      </div>`;
 }
 
 /** 단가표 행의 형제 hidden 액션 폼(↑↓·활성 토글·삭제) — bulk 폼 밖에 렌더해 중첩 폼 회피. */
