@@ -44,15 +44,12 @@ const AUDIT_LABELS = {
 // 섹션마다 .card 하나씩(p-5 × N)이던 것을 그룹당 카드 1개 + border-t 구분으로 압축, 제목도 text-lg→text-sm).
 const SETTING_BLOCK = "space-y-3 border-t border-border pt-4 mt-4 first:mt-0 first:border-t-0 first:pt-0";
 
-/** 설정 화면 설명 — 항상 보이게(옛 explain은 <details>로 접혀 판단 정보가 클릭 뒤에 숨었다, 2026-07-28). */
-function settingDesc(html) {
-  return html ? `<p class="mb-3 text-sm leading-relaxed text-muted">${html}</p>` : "";
-}
-
 /**
  * 제목 옆 ⓘ — hover(또는 포커스)하면 설명이 말풍선으로 뜬다(2026-07-29 사용자 요청).
- * 설명을 상시 노출하면 판단에 필요한 정보가 보이는 대신 자주 쓰는 화면일수록 자리를 잡아먹는다 —
- * **이미 아는 내용을 매번 읽게 되는** 화면에만 이걸 쓰고, 처음 판단이 필요한 화면은 `settingDesc` 그대로 둔다.
+ * ⚠️경위: 2026-07-28 재설계 때는 반대로 **상시 노출**이었다(옛 `explain()`이 `<details>`로 접혀 판단 정보가
+ * 클릭 뒤에 숨은 게 문제였다). 그 교정이 지나쳐 이번엔 **이미 아는 설명이 매번 화면 위를 차지**했고(요금표는
+ * 세 줄), 사용자 요청으로 설정 화면 설명을 전부 이 ⓘ로 옮겼다. 상시 노출 헬퍼(settingDesc)는 소비처가 0이
+ * 되어 제거했다 — 되살릴 일이 생기면 이 경위를 먼저 읽을 것.
  * ⚠️CSP상 인라인 스크립트가 없어 순수 CSS(.hint/.hint-body)로 연다. 마우스가 없는 환경(터치·키보드)에서도
  * 열려야 하므로 트리거가 `tabindex="0"`을 갖고 CSS가 `:focus-within`까지 본다. `html`은 신뢰 HTML(호출부 esc 책임).
  */
@@ -140,8 +137,7 @@ function peopleTab(currentUser) {
   return `
       <section class="card space-y-4">
         <div>
-          <h2 class="font-display text-lg font-semibold">하우스 엔지니어 <span class="text-sm font-normal text-muted">(로그인 계정)</span></h2>
-          ${settingDesc(`등록한 구글 계정만 로그인할 수 있고, <span class="text-fg">작업 담당자에 자동으로 포함</span>됩니다. 치프는 전체, 스태프는 프로젝트·작업·자료까지.`)}
+          <h2 class="font-display text-lg font-semibold">하우스 엔지니어 <span class="text-sm font-normal text-muted">(로그인 계정)</span>${settingHint(`등록한 구글 계정만 로그인할 수 있고, <span class="text-fg">작업 담당자에 자동으로 포함</span>됩니다. 치프는 전체, 스태프는 프로젝트·작업·자료까지.`, "하우스 엔지니어 (로그인 계정) 설명")}</h2>
         </div>
         ${addForm}
         <div class="space-y-2">${userRows}</div>
@@ -321,8 +317,7 @@ function driveStorageSection() {
     : "";
   return `<div class="${SETTING_BLOCK}">
     <div>
-      <h2 class="text-sm font-semibold">자료 저장 (구글 Drive)</h2>
-      ${settingDesc(`첨부 서류·자료 전달 파일의 저장 위치. 조직 소유 <span class="text-fg">공유 드라이브</span>라 담당자 계정이 바뀌어도 서류가 남습니다(민감 서류가 있어 다른 앱과 분리).`)}
+      <h2 class="text-sm font-semibold">자료 저장 (구글 Drive)${settingHint(`첨부 서류·자료 전달 파일의 저장 위치. 조직 소유 <span class="text-fg">공유 드라이브</span>라 담당자 계정이 바뀌어도 서류가 남습니다(민감 서류가 있어 다른 앱과 분리).`, "자료 저장 (구글 Drive) 설명")}</h2>
     </div>
     ${status}${migrate}${check}
   </div>`;
@@ -331,8 +326,7 @@ function driveStorageSection() {
 /** 스튜디오 캘린더(구글) 선택 섹션 — 세션 겹침 검사 대상. */
 async function studioCalendarSection(chief = false) {
   const title = `<div>
-      <h2 class="text-sm font-semibold">스튜디오 캘린더 (구글)</h2>
-      ${settingDesc(`<span class="text-fg font-medium">세션을 예약하면 이 캘린더에 일정이 자동 생성·수정·삭제됩니다.</span> <span class="text-warning font-medium">'사용 안 함'이면 자동 연동이 꺼집니다.</span> 개인 일정과 섞이지 않게 스튜디오 전용 캘린더를 권장합니다.`)}
+      <h2 class="text-sm font-semibold">스튜디오 캘린더 (구글)${settingHint(`<span class="text-fg font-medium">세션을 예약하면 이 캘린더에 일정이 자동 생성·수정·삭제됩니다.</span> <span class="text-warning font-medium">'사용 안 함'이면 자동 연동이 꺼집니다.</span> 개인 일정과 섞이지 않게 스튜디오 전용 캘린더를 권장합니다.`, "스튜디오 캘린더 (구글) 설명")}</h2>
     </div>`;
   let inner;
   if (!config.googleConfigured) {
@@ -438,8 +432,7 @@ function bookingDefaultsSection() {
   return `
     <section class="card space-y-4">
       <div>
-        <h2 class="font-display text-lg font-semibold">예약 기본값</h2>
-        ${settingDesc(`새 세션을 예약할 때 자동으로 채워지는 값입니다.`)}
+        <h2 class="font-display text-lg font-semibold">예약 기본값${settingHint(`새 세션을 예약할 때 자동으로 채워지는 값입니다.`, "예약 기본값 설명")}</h2>
       </div>
       <form method="post" action="/settings/booking-defaults" class="space-y-3" data-dirty-form>
         <div>
@@ -474,8 +467,7 @@ function studioInfoSection() {
   return `
     <div class="${SETTING_BLOCK}">
       <div>
-        <h2 class="text-sm font-semibold">공급자(스튜디오) 세금정보</h2>
-        ${settingDesc(`발행된 청구의 <span class="text-fg">거래명세서 PDF</span> '공급자'란에 들어갑니다. (세금계산서가 아닌 참고용 문서)`)}
+        <h2 class="text-sm font-semibold">공급자(스튜디오) 세금정보${settingHint(`발행된 청구의 <span class="text-fg">거래명세서 PDF</span> '공급자'란에 들어갑니다. (세금계산서가 아닌 참고용 문서)`, "공급자(스튜디오) 세금정보 설명")}</h2>
       </div>
       <form method="post" action="/settings/studio-info" class="space-y-2" data-dirty-form>
         <div class="grid gap-2 sm:grid-cols-2">
@@ -532,8 +524,7 @@ function alertsSection(chief = true) {
   if (!chief) {
     return `<section class="card space-y-4">
       <div>
-        <h2 class="font-display text-lg font-semibold">알림</h2>
-        ${settingDesc(`청구 발행·자료 공유 시 팀에 알리는 두 채널(웹훅·청구 알림 이메일)입니다. 변경은 <span class="text-fg">치프 엔지니어</span>만 할 수 있습니다.`)}
+        <h2 class="font-display text-lg font-semibold">알림${settingHint(`청구 발행·자료 공유 시 팀에 알리는 두 채널(웹훅·청구 알림 이메일)입니다. 변경은 <span class="text-fg">치프 엔지니어</span>만 할 수 있습니다.`, "알림 설명")}</h2>
       </div>
       <p class="text-sm text-muted">알림 웹훅 ${url || alerts.envWebhookActive() ? "설정됨" : "미설정"}</p>
       ${emailStatus}
@@ -542,8 +533,7 @@ function alertsSection(chief = true) {
 
   return `<section class="card space-y-4">
     <div>
-      <h2 class="font-display text-lg font-semibold">알림</h2>
-      ${settingDesc(`청구 발행·자료 공유 시 팀에 알립니다 — Slack/Discord 웹훅과 청구 알림 이메일(청구번호·청구처·금액 + 바로가기)을 함께 관리합니다.`)}
+      <h2 class="font-display text-lg font-semibold">알림${settingHint(`청구 발행·자료 공유 시 팀에 알립니다 — Slack/Discord 웹훅과 청구 알림 이메일(청구번호·청구처·금액 + 바로가기)을 함께 관리합니다.`, "알림 설명")}</h2>
     </div>
     <form method="post" action="/settings/alerts" class="space-y-3" data-dirty-form>
       <div>
@@ -747,8 +737,7 @@ function googleContactsSection(chief) {
   return `
   <div class="${SETTING_BLOCK}">
     <div>
-      <h2 class="text-sm font-semibold">구글 연락처</h2>
-      ${settingDesc(`앱에서 연락처를 만들거나 고치면 구글 주소록에 자동 반영됩니다. 아래 버튼은 아직 구글에 없는 기존 연락처를 한 번에 내보내는 1회성 작업입니다.`)}
+      <h2 class="text-sm font-semibold">구글 연락처${settingHint(`앱에서 연락처를 만들거나 고치면 구글 주소록에 자동 반영됩니다. 아래 버튼은 아직 구글에 없는 기존 연락처를 한 번에 내보내는 1회성 작업입니다.`, "구글 연락처 설명")}</h2>
     </div>
     ${status}
     ${action}
@@ -840,11 +829,10 @@ function systemTab(chief) {
     : `<span class="text-warning">백업 파일 없음</span>`;
   const backupCard = `<section class="card">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-sm font-semibold">DB 백업</h2>
+        <h2 class="text-sm font-semibold">DB 백업${settingHint(`매일 03:00 KST에 자동 백업(14일 보존)하고 Drive 연동 시 오프사이트 사본도 올립니다. 복구 절차는 DEPLOY.md §9.`, "DB 백업 설명")}</h2>
         ${chief ? `<form method="post" action="/settings/backup-now"><button class="btn-ghost btn-sm" type="submit">지금 백업</button></form>` : ""}
       </div>
       <p class="mt-1 text-sm text-muted">${backupLine}</p>
-      ${settingDesc(`매일 03:00 KST에 자동 백업(14일 보존)하고 Drive 연동 시 오프사이트 사본도 올립니다. 복구 절차는 DEPLOY.md §9.`)}
     </section>`;
 
   // 데이터 현황 — DB 크기·주요 테이블 카운트·로컬 잔존 파일.
@@ -967,7 +955,6 @@ module.exports = {
   systemTab,
   systemWarnings,
   isBootstrapChief,
-  settingDesc,
   SETTINGS_NAV,
   SETTINGS_KEYS,
   settingsMenu,
