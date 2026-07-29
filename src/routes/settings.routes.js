@@ -426,13 +426,13 @@ router.post("/rate-items/:id", requireStaff, (req, res) => {
 // 표시 순서 이동(같은 분류 안에서 위/아래) — 분류·작업 종류와 같은 ↑↓(2026-07-26, 이전엔 이름순 강제).
 router.post("/rate-items/:id/move", requireStaff, (req, res) => {
   moveRateItem(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?s=rates");
+  res.redirect(`/settings?s=rates#rate-item-${req.params.id}`);
 });
 
 // 활성/비활성 토글(2026-07-26) — active 컬럼은 있었는데 라우트가 없어 한 번 비활성이 되면 되살릴 수 없었다.
 router.post("/rate-items/:id/active", requireStaff, (req, res) => {
   setRateItemActive(Number(req.params.id), req.body.active === "1");
-  res.redirect("/settings?s=rates&flash=saved");
+  res.redirect(`/settings?s=rates&flash=saved#rate-item-${req.params.id}`);
 });
 
 router.post("/rate-items/:id/delete", requireStaff, (req, res) => {
@@ -469,7 +469,7 @@ router.post("/rate-categories/:id", requireStaff, (req, res) => {
 // 분류 순서 이동(위/아래) — 정렬 UI(2026-07-09 관리 개선).
 router.post("/rate-categories/:id/move", requireStaff, (req, res) => {
   moveRateCategory(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?s=rates");
+  res.redirect(`/settings?s=rates#rate-cat-${req.params.id}`);
 });
 
 router.post("/rate-categories/:id/delete", requireStaff, (req, res) => {
@@ -512,7 +512,7 @@ router.post("/rooms/:id", requireStaff, (req, res) => {
 // 표시 순서 이동(같은 상위 안에서 위/아래 한 칸).
 router.post("/rooms/:id/move", requireStaff, (req, res) => {
   moveRoom(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?s=rooms");
+  res.redirect(`/settings?s=rooms#room-${req.params.id}`);
 });
 
 router.post("/rooms/:id/delete", requireStaff, (req, res) => {
@@ -548,7 +548,7 @@ router.post("/task-types/:id", requireStaff, (req, res) => {
 // 작업 종류 순서 이동(위/아래) — 곡·콘텐츠 빠른추가·드롭다운 순서에 반영.
 router.post("/task-types/:id/move", requireStaff, (req, res) => {
   moveTaskType(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect("/settings?s=tasks");
+  res.redirect(`/settings?s=tasks#task-type-${req.params.id}`);
 });
 
 router.post("/task-types/:id/delete", requireStaff, (req, res) => {

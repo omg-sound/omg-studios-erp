@@ -199,7 +199,7 @@ function ratesTree(rates) {
  */
 function rateCategoryRow(c) {
   const kindOpts = Object.entries(RATE_KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === c.kind ? "selected" : ""}>${esc(l)}</option>`).join("");
-  return `<div class="flex flex-wrap items-center gap-2 rounded-t-lg bg-bg px-3 py-2">
+  return `<div class="flex flex-wrap items-center gap-2 rounded-t-lg bg-bg px-3 py-2" id="rate-cat-${c.id}">
     <input class="input w-48 py-1 text-sm font-semibold" name="cat_name_${c.id}" value="${esc(c.name)}" aria-label="분류명" autocomplete="off" required />
     <select class="input w-28 py-1 text-sm" name="kind_${c.id}" aria-label="세션 종류">${kindOpts}</select>
     <span class="ml-auto flex shrink-0 items-center gap-1">

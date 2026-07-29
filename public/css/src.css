@@ -191,6 +191,10 @@
 /* hover/active는 fg(전경색) 오버레이로(2026-07-18 — 팔레트마다 --color-elevated가 surface와 거의 같아
    기존 bg-elevated/60 hover가 Claude 빼고 안 보였다[Apple·Linear·Pinterest는 elevated-surface 차이 5~8]).
    fg는 어느 팔레트·라이트/다크에서도 배경과 대비되므로 hover가 항상 균일하게 보인다. */
+/* 설정 표의 행 앵커(2026-07-29) — 순서 이동·활성 토글이 `#<행 id>`로 돌아오므로, 브라우저가 그 행을
+   화면 맨 위에 딱 붙여 스크롤하면 sticky 헤더·표 제목에 가린다. 여유를 둬서 행이 맥락과 함께 보이게. */
+[id^="rate-item-"], [id^="rate-cat-"], [id^="task-type-"], [id^="room-"] { scroll-margin-top: 5rem; }
+
 /* 모바일 edge-to-edge 카드(2026-07-29 사용자 요청 — "화면이 끝까지 안 차고 보더가 떠 있다").
    페이지 컨테이너의 px-4(1rem)를 음수 마진으로 상쇄해 카드가 화면 폭을 꽉 채우고, 좌우 보더·모서리를
    없애 위아래 선만 남긴다(네이티브 앱 목록의 관습). 카드 안쪽 패딩(p-5)은 그대로라 글자는 가장자리에
