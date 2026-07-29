@@ -253,8 +253,7 @@ function ratesPane() {
   return `
       <section class="card space-y-4" id="rates-section">
         <div>
-          <h2 class="font-display text-lg font-semibold">요금표 · 녹음/촬영 종류</h2>
-          ${settingDesc(`대관 세션의 시간제 단가입니다. <b>분류</b>가 어미고 그 아래에 단가 항목이 들어갑니다 — 분류의 <b>세션 종류</b>(녹음·촬영·공연)가 세션 예약 폼에서 어떤 항목을 보여줄지 정합니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력).<br>↑↓ 순서는 자유이고(분류끼리 종류가 달라도 섞어 배치 가능) 이 순서가 세션 예약 폼의 항목 순서가 됩니다.`)}
+          <h2 class="font-display text-lg font-semibold">요금표 · 녹음/촬영 종류${settingHint(`대관 세션의 시간제 단가입니다. <b>분류</b>가 어미고 그 아래에 단가 항목이 들어갑니다 — 분류의 <b>세션 종류</b>(녹음·촬영·공연)가 세션 예약 폼에서 어떤 항목을 보여줄지 정합니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력).<br>↑↓ 순서는 자유이고(분류끼리 종류가 달라도 섞어 배치 가능) 이 순서가 세션 예약 폼의 항목 순서가 됩니다.`, "요금표 설정 설명")}</h2>
         </div>
         ${scrollX(`        <form method="post" action="/settings/rates/bulk" id="rates-bulk-form" class="space-y-2" data-dirty-form>
           ${t.list}
@@ -275,8 +274,7 @@ function taskTypesPane() {
   return `
       <section class="card space-y-4" id="task-types-section">
         <div>
-          <h2 class="font-display text-lg font-semibold">작업 종류 <span class="text-sm font-normal text-muted">(곡·콘텐츠 후반작업)</span></h2>
-          ${settingDesc(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가를 관리합니다. '빠른추가'를 켜면 곡·콘텐츠 화면의 빠른 추가 버튼에 노출됩니다. 시간이 아니라 작업량으로 산정하는 항목이라 요금표(대관 세션)와 카탈로그가 분리돼 있습니다. 기본 단가는 작업을 만들 때 자동으로 채워지는 값이고, 실제 금액은 청구 화면에서 확정합니다.`)}
+          <h2 class="font-display text-lg font-semibold">작업 종류 <span class="text-sm font-normal text-muted">(곡·콘텐츠 후반작업)</span>${settingHint(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가를 관리합니다. '빠른추가'를 켜면 곡·콘텐츠 화면의 빠른 추가 버튼에 노출됩니다. 시간이 아니라 작업량으로 산정하는 항목이라 요금표(대관 세션)와 카탈로그가 분리돼 있습니다. 기본 단가는 작업을 만들 때 자동으로 채워지는 값이고, 실제 금액은 청구 화면에서 확정합니다.`, "작업 종류 설정 설명")}</h2>
         </div>
         ${(() => {
           // 단가표와 같은 규칙 — 추가 폼은 목록의 첫 행이고 편집 행과 같은 2줄 모양이다(열 제목 줄 없음).
