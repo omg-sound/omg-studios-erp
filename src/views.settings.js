@@ -267,15 +267,13 @@ function taskTypesPane() {
         ${(() => {
           // 단가표와 같은 규칙 — 추가 폼은 목록의 첫 행이고 편집 행과 같은 2줄 모양이다(열 제목 줄 없음).
           const addRow = `
-        <form method="post" action="/settings/task-types" class="space-y-1 rounded-lg border border-dashed border-border p-2">
-          <div class="flex flex-wrap items-center gap-2">
-            <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[16rem]" name="label" placeholder="+ 새 작업 종류 이름 (예: 보컬튠)" aria-label="작업 종류명" required />
-            <select class="input w-40 py-1.5 text-sm" name="billing_type" aria-label="과금">
-              ${BILLING_TYPES.map((b) => `<option value="${esc(b)}">${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
-            </select>
-            <span class="ml-auto shrink-0"><button class="btn-ghost btn-xs whitespace-nowrap" type="submit">추가</button></span>
-          </div>
-          ${taskPriceLine({ unitPrice: "unit_price", isQuick: "is_quick" }, {})}
+        <form method="post" action="/settings/task-types" class="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-2">
+          <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[14rem]" name="label" placeholder="+ 새 작업 종류 이름 (예: 보컬튠)" aria-label="작업 종류명" required />
+          <select class="input w-36 py-1.5 text-sm" name="billing_type" aria-label="과금">
+            ${BILLING_TYPES.map((b) => `<option value="${esc(b)}">${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
+          </select>
+          ${taskPriceInline({ unitPrice: "unit_price", isQuick: "is_quick" }, {})}
+          <span class="ml-auto shrink-0"><button class="btn-ghost btn-xs whitespace-nowrap" type="submit">추가</button></span>
         </form>`;
           if (!taskTypes.length) return scrollX(addRow, "space-y-1.5") + emptyState("등록된 작업 종류가 없습니다.");
           return `
@@ -682,36 +680,32 @@ function rateItemActionForms(r) {
 /** 작업 종류 행 = 한 줄 인라인 편집(2026-07-27 통합 저장). */
 function taskTypeRow(t) {
   return `
-    <div class="space-y-1 rounded-lg bg-bg p-2" id="task-type-${t.id}">
-      <div class="flex flex-wrap items-center gap-2">
-        <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[16rem]" name="label_${t.id}" value="${esc(t.label)}" aria-label="작업 종류명" required />
-        <select class="input w-40 py-1.5 text-sm" name="billing_type_${t.id}" aria-label="과금">
-          ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
-        </select>
-        <span class="ml-auto flex shrink-0 items-center gap-1">
-          <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="tt-del-${t.id}">삭제</button>
-          ${moveButtons(`tt-mv-u-${t.id}`, `tt-mv-d-${t.id}`)}
-        </span>
-      </div>
-      ${taskPriceLine({ unitPrice: `unit_price_${t.id}`, isQuick: `is_quick_${t.id}` }, { unitPrice: t.unit_price || "", isQuick: t.is_quick })}
+    <div class="flex flex-wrap items-center gap-2 rounded-lg bg-bg p-2" id="task-type-${t.id}">
+      <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[14rem]" name="label_${t.id}" value="${esc(t.label)}" aria-label="작업 종류명" required />
+      <select class="input w-36 py-1.5 text-sm" name="billing_type_${t.id}" aria-label="과금">
+        ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
+      </select>
+      ${taskPriceInline({ unitPrice: `unit_price_${t.id}`, isQuick: `is_quick_${t.id}` }, { unitPrice: t.unit_price || "", isQuick: t.is_quick })}
+      <span class="ml-auto flex shrink-0 items-center gap-1">
+        <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="tt-del-${t.id}">삭제</button>
+        ${moveButtons(`tt-mv-u-${t.id}`, `tt-mv-d-${t.id}`)}
+      </span>
     </div>`;
 }
 
 /**
- * 작업 종류의 둘째 줄 — `기본 단가 [200,000]원 · [ ] 빠른추가`. 요금표의 chargeLine과 같은 규칙
- * (칸 사이 단위·접속사로 행 자체가 설명하게 하고 열 제목 줄은 두지 않는다, 2026-07-29).
+ * 작업 종류의 단가·빠른추가 묶음 — 요금표와 같은 인라인 단위 방식이되 **한 줄**이다(2026-07-29 사용자 결정).
+ * 요금표는 기준/초과 네 칸이라 둘째 줄로 내렸지만 작업 종류는 단가 한 칸뿐이라 한 줄에 들어간다.
  */
-function taskPriceLine(names, vals = {}, formAttr = "") {
+function taskPriceInline(names, vals = {}, formAttr = "") {
   return `
-      <div class="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-        <span>기본 단가</span>
+      <span class="flex items-center gap-1.5 text-xs text-muted">기본 단가
         <input class="input w-28 py-1 text-right text-sm" ${formAttr} name="${names.unitPrice}" inputmode="numeric" value="${esc(String(vals.unitPrice == null ? "" : vals.unitPrice))}" aria-label="기본 단가(원)" placeholder="200000" />
-        <span>원</span>
-        <span class="px-2 text-muted">·</span>
-        <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap">
-          <input type="checkbox" ${formAttr} name="${names.isQuick}" value="1" ${vals.isQuick ? "checked" : ""} /> 곡·콘텐츠 화면에 빠른추가
-        </label>
-      </div>`;
+        원
+      </span>
+      <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-xs text-muted">
+        <input type="checkbox" ${formAttr} name="${names.isQuick}" value="1" ${vals.isQuick ? "checked" : ""} /> 빠른추가
+      </label>`;
 }
 
 /** 작업 종류 행의 형제 hidden 액션 폼(↑↓·삭제) — bulk 폼 밖에 렌더해 중첩 폼 회피. */
