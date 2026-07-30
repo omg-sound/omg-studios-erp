@@ -149,8 +149,8 @@ function invoiceMail(inv, { payer = null, items = [] } = {}) {
   const url = config.baseUrl ? `${config.baseUrl}/invoices/${inv.id}` : "";
   const isPerson = payer && payer.kind === "person";
 
-  const L = "padding:5px 14px 5px 0;color:#6E6A5F;white-space:nowrap;vertical-align:top";
-  const V = "padding:5px 0;color:#262421";
+  const L = "padding:5px 14px 5px 0;color:#6B6B6B;white-space:nowrap;vertical-align:top";
+  const V = "padding:5px 0;color:#111111";
   const row = (label, value) => (value ? `<tr><td style="${L}">${esc(label)}</td><td style="${V}">${esc(value)}</td></tr>` : "");
 
   // ① 청구처 정보 — 홈택스 '공급받는자' 입력 순서(청구 상세 카드와 동일).
@@ -174,33 +174,33 @@ function invoiceMail(inv, { payer = null, items = [] } = {}) {
   const itemRows = (items || [])
     .map(
       (it) =>
-        `<tr><td style="padding:6px 12px 6px 0;color:#262421">${esc(it.description || it.task_type || "항목")}</td>
-         <td style="padding:6px 0;text-align:right;color:#262421;white-space:nowrap">${formatKRW(it.amount)}</td></tr>`
+        `<tr><td style="padding:6px 12px 6px 0;color:#111111">${esc(it.description || it.task_type || "항목")}</td>
+         <td style="padding:6px 0;text-align:right;color:#111111;white-space:nowrap">${formatKRW(it.amount)}</td></tr>`
     )
     .join("");
   const totalRow = (label, value, strong) =>
-    `<tr><td style="padding:5px 12px 5px 0;color:#6E6A5F">${esc(label)}</td>
-     <td style="padding:5px 0;text-align:right;white-space:nowrap;color:#262421${strong ? ";font-weight:700;font-size:15px" : ""}">${formatKRW(value)}</td></tr>`;
+    `<tr><td style="padding:5px 12px 5px 0;color:#6B6B6B">${esc(label)}</td>
+     <td style="padding:5px 0;text-align:right;white-space:nowrap;color:#111111${strong ? ";font-weight:700;font-size:15px" : ""}">${formatKRW(value)}</td></tr>`;
 
-  const html = `<div style="font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;color:#262421;line-height:1.6;max-width:560px">
+  const html = `<div style="font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;color:#111111;line-height:1.6;max-width:560px">
   <h2 style="margin:0 0 4px;font-size:17px">${esc(number)} 청구서가 발행되었습니다</h2>
-  <p style="margin:0 0 16px;font-size:13px;color:#6E6A5F">${esc([artist, inv.project_title].filter(Boolean).join(" · ") || "-")}</p>
+  <p style="margin:0 0 16px;font-size:13px;color:#6B6B6B">${esc([artist, inv.project_title].filter(Boolean).join(" · ") || "-")}</p>
 
-  <h3 style="margin:20px 0 6px;font-size:13px;color:#6E6A5F">청구처 정보</h3>
+  <h3 style="margin:20px 0 6px;font-size:13px;color:#6B6B6B">청구처 정보</h3>
   <table style="border-collapse:collapse;font-size:14px;width:100%">${payerRows || `<tr><td style="${V}">청구처 미지정</td></tr>`}</table>
 
-  <h3 style="margin:20px 0 6px;font-size:13px;color:#6E6A5F">청구 항목</h3>
+  <h3 style="margin:20px 0 6px;font-size:13px;color:#6B6B6B">청구 항목</h3>
   <table style="border-collapse:collapse;font-size:14px;width:100%">
     ${itemRows}
-    <tr><td colspan="2" style="border-top:1px solid #E5E1D8;padding:0"></td></tr>
+    <tr><td colspan="2" style="border-top:1px solid #D8D9DB;padding:0"></td></tr>
     ${totalRow("소계", supply)}
     ${discount && hasLines ? totalRow("할인", -discount) : ""}
     ${totalRow("VAT", inv.tax_amount || 0)}
     ${totalRow("총액", inv.amount, true)}
   </table>
 
-  ${url ? `<p style="margin:24px 0 0"><a href="${esc(url)}" style="display:inline-block;padding:9px 16px;background:#C08457;color:#fff;border-radius:8px;text-decoration:none;font-size:14px">청구서 열기</a></p>` : ""}
-  <p style="margin:20px 0 0;font-size:12px;color:#6E6A5F">OMG Studios ERP에서 자동 발송된 알림입니다. 계산서·입금 처리는 청구 화면에서 합니다.</p>
+  ${url ? `<p style="margin:24px 0 0"><a href="${esc(url)}" style="display:inline-block;padding:9px 16px;background:#0066CC;color:#fff;border-radius:4px;text-decoration:none;font-size:14px">청구서 열기</a></p>` : ""}
+  <p style="margin:20px 0 0;font-size:12px;color:#6B6B6B">OMG Studios ERP에서 자동 발송된 알림입니다. 계산서·입금 처리는 청구 화면에서 합니다.</p>
 </div>`;
   return { subject, html };
 }

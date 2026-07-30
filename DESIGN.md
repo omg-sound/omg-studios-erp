@@ -99,6 +99,8 @@ components:
 - **폼 컨트롤 경계만 `border-strong`**(3:1, WCAG 1.4.11) — 카드·구분선의 장식 경계는 `border`를 쓴다(전부 짙게 하면 화면이 선으로 뒤덮인다).
 - **차트 막대는 전용 토큰**(`--chart-*`)이다. `primary`/`success`를 직접 참조하지 말 것 — 액센트를 조정할 때 두 막대가 같은 색으로 수렴해 매출↔순이익 구분이 죽는다.
 - ⚠️ **CSS 주석 안에 Tailwind 불투명도 표기(별표+슬래시+숫자)를 쓰지 말 것** — 그 두 글자가 주석을 조기 종료해 `build:css`가 깨진다(2026-07-30 실제로 겪음).
+- **placeholder에 불투명도 금지** — `text-muted/70`은 2.92로 AA 미달이었고, 이 앱은 placeholder가 유일한 힌트인 칸이 많다. `.input`은 `placeholder:text-muted`(5.33).
+- **고객 대면 문서는 hex 직접 지정**(거래명세서 PDF·청구 메일 — 변수 불가). 팔레트를 바꿀 때 **함께** 고칠 것: PDF는 `invoice-pdf.js`의 `C` 객체, 메일은 `mailer.js`의 값. 테스트가 폐지 색 재등장을 막는다.
 - 배지 색 변형은 `bg-*/12` 불투명도를 쓰므로 `tailwind.config.js`의 `opacity.12`가 반드시 있어야 함(없으면 빌드에서 클래스 제거됨).
 
 ## Typography

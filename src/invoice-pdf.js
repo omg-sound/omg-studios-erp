@@ -39,11 +39,29 @@ function truncate(s, n) {
   return str.length > n ? str.slice(0, n - 1) + "…" : str;
 }
 
+/**
+ * 문서 색(2026-07-30 — 앱 톤 통일). 옛 값은 크림·클레이 시절의 **따뜻한** 회색·베이지였는데, 앱이 흰 바탕·
+ * 중립 회색·파랑으로 정리되며 고객에게 나가는 이 문서만 옛 정체성으로 남아 있었다. 역할별로 이름을 붙여
+ * 한곳에 모았다(다음 톤 조정은 이 객체만 고치면 된다).
+ * ⚠️**대비를 낮추지 않았다** — 라벨·푸터는 오히려 올렸다(라벨 3.44→4.55, 푸터 2.68→4.54 on white).
+ */
+const C = {
+  ink: "#111111", // 본문·강조 (구 #1f1d1b warm near-black)
+  body: "#6b6b6b", // 보조 텍스트 — 이미 중립이라 값 유지
+  label: "#6b6b6b", // 항목 라벨(청구처·번호·발행됨·이어서) (구 #8a8678)
+  faint: "#767676", // 푸터 안내문 (구 #9c9688 — 참고용 문구라 읽혀야 한다)
+  line: "#c9cacc", // 구분선·납부금액 선 (구 #cfcabb)
+  boxLine: "#d8d9db", // 청구처 박스 테두리 (구 #e2e0d8)
+  rowLine: "#eceef0", // 품목 표 행 선 (구 #ece9df)
+  headFill: "#f4f5f6", // 헤더 배경 (구 #f4f3ee)
+  discount: "#0f7034", // 할인 행 — 앱 success와 통일 (구 #16a34a)
+};
+
 /** 그리기 헬퍼 묶음 — 옛 text()/line()/rect()와 같은 인자, 반환 대신 doc에 그린다. */
 function painter(doc) {
   const font = (weight) => (weight >= 600 ? FONT_BOLD : FONT_REGULAR);
   return {
-    text(x, y, s, { size = 22, weight = 400, anchor = "start", color = "#1f1d1b" } = {}) {
+    text(x, y, s, { size = 22, weight = 400, anchor = "start", color = C.ink } = {}) {
       const str = String(s == null ? "" : s);
       doc.font(font(weight)).fontSize(size).fillColor(color);
       const w = doc.widthOfString(str);
@@ -52,10 +70,10 @@ function painter(doc) {
       const ascent = (doc._font.ascender / 1000) * size;
       doc.text(str, px, y - ascent, { lineBreak: false });
     },
-    line(x1, y1, x2, y2, color = "#cfcabb", w = 1) {
+    line(x1, y1, x2, y2, color = C.line, w = 1) {
       doc.moveTo(x1, y1).lineTo(x2, y2).lineWidth(w).strokeColor(color).stroke();
     },
-    rect(x, y, w, h, { fill = "none", stroke = "#cfcabb", sw = 1, radius = 0 } = {}) {
+    rect(x, y, w, h, { fill = "none", stroke = C.line, sw = 1, radius = 0 } = {}) {
       if (radius) doc.roundedRect(x, y, w, h, radius);
       else doc.rect(x, y, w, h);
       doc.lineWidth(sw);
@@ -112,7 +130,7 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
 
   // 표 머리(품목|금액) — 페이지마다 반복.
   const tableHead = (p, y) => {
-    p.rect(M, y, W - 2 * M, HEAD_H, { fill: "#f4f3ee", stroke: "none" });
+    p.rect(M, y, W - 2 * M, HEAD_H, { fill: C.headFill, stroke: "none" });
     p.text(M + 18, y + 33, "품목", { size: 18, weight: 700 });
     p.text(right - 18, y + 33, "금액", { size: 18, weight: 700, anchor: "end" });
   };
@@ -123,7 +141,7 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
       return {
         draw(p) {
           p.text(M, 100, title, { size: 30, weight: 700 });
-          p.text(right, 100, `${number} · 이어서`, { size: 17, color: "#8a8678", anchor: "end" });
+          p.text(right, 100, `${number} · 이어서`, { size: 17, color: C.label, anchor: "end" });
         },
         tableY: 150,
       };
@@ -140,7 +158,7 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
           studio.studio_owner_name ? `대표 : ${studio.studio_owner_name}` : "",
         ].filter(Boolean);
         for (const ln of supplierLines) {
-          p.text(M, hy, truncate(ln, 54), { size: 18, color: "#6b6b6b" });
+          p.text(M, hy, truncate(ln, 54), { size: 18, color: C.body });
           hy += 30;
         }
         if (logo) {
@@ -150,13 +168,13 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
         // 청구처 / 번호·발행일 박스
         const boxY = 440;
         const boxH = 130;
-        p.rect(M, boxY, W - 2 * M, boxH, { stroke: "#e2e0d8", sw: 1.5, radius: 10 });
-        p.text(M + 26, boxY + 42, "청구처", { size: 17, color: "#8a8678" });
+        p.rect(M, boxY, W - 2 * M, boxH, { stroke: C.boxLine, sw: 1.5, radius: 10 });
+        p.text(M + 26, boxY + 42, "청구처", { size: 17, color: C.label });
         p.text(M + 26, boxY + 88, truncate(client.name || "—", 28), { size: 26, weight: 700 });
         const metaLabelX = right - 320;
-        p.text(metaLabelX, boxY + 42, `${title} 번호`, { size: 17, color: "#8a8678" });
+        p.text(metaLabelX, boxY + 42, `${title} 번호`, { size: 17, color: C.label });
         p.text(right - 26, boxY + 42, number, { size: 19, weight: 600, anchor: "end" });
-        p.text(metaLabelX, boxY + 90, "발행됨", { size: 17, color: "#8a8678" });
+        p.text(metaLabelX, boxY + 90, "발행됨", { size: 17, color: C.label });
         p.text(right - 26, boxY + 90, invoice.issued_date || "—", { size: 19, weight: 500, anchor: "end" });
       },
       tableY: 440 + 130 + 60,
@@ -190,7 +208,7 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
           p.text(M + 18, r.ry + 38, truncate(r.label, 44), { size: 19, weight: 600 });
           p.text(right - 18, r.ry + 38, won(r.amount), { size: 19, weight: 600, anchor: "end" });
           const lineY = r.ry + ROW_H;
-          p.line(M, lineY, right, lineY, "#ece9df");
+          p.line(M, lineY, right, lineY, C.rowLine);
         }
       },
       ry,
@@ -216,7 +234,7 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
       // 라인아이템이 있는 청구(from-tasks)에서만 할인 레이아웃 — 수동 인보이스(lineTotal=0, 할인은 표시용)는 소계/VAT/합계로 폴백해 과세표준·VAT·합계 불일치 방지.
       const taxable = supply - discountAmt;
       sumRow("소계(공급가)", won(supply));
-      sumRow("할인", "- " + won(discountAmt), false, "#16a34a");
+      sumRow("할인", "- " + won(discountAmt), false, C.discount);
       sumRow("과세표준", won(taxable));
       if (tax > 0) sumRow("VAT (10%)", won(tax)); // 현금(VAT 0)이면 줄 생략
       sumRow("합계", won(grand));
@@ -232,12 +250,12 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
     last.draw = (p) => {
       if (prevDraw) prevDraw(p);
       for (const r of sumRows) {
-        const c = r.color || (r.bold ? "#1f1d1b" : "#6b6b6b");
+        const c = r.color || (r.bold ? C.ink : C.body);
         p.text(sumLabelX, r.sy, r.label, { size: 18, color: c, weight: r.bold ? 700 : 400 });
         p.text(right - 18, r.sy, r.value, { size: 19, weight: r.bold ? 700 : 500, anchor: "end", color: c });
       }
       // 납부하실금액(강조)
-      p.line(sumLabelX, payLineY, right, payLineY, "#cfcabb", 1.5);
+      p.line(sumLabelX, payLineY, right, payLineY, C.line, 1.5);
       p.text(sumLabelX, paySy + 14, payLabel, { size: 27, weight: 700 });
       p.text(right - 18, paySy + 14, won(grand), { size: 31, weight: 700, anchor: "end" });
     };
@@ -250,8 +268,8 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
     doc.scale(SCALE);
     const painterObj = painter(doc);
     p.draw(painterObj);
-    painterObj.text(M, H - 64, footerText, { size: 15, color: "#9c9688" });
-    if (pages.length > 1) painterObj.text(right, H - 64, `${i + 1} / ${pages.length}`, { size: 15, color: "#9c9688", anchor: "end" });
+    painterObj.text(M, H - 64, footerText, { size: 15, color: C.faint });
+    if (pages.length > 1) painterObj.text(right, H - 64, `${i + 1} / ${pages.length}`, { size: 15, color: C.faint, anchor: "end" });
     doc.restore();
   });
 }

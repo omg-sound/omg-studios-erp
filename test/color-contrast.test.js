@@ -125,6 +125,45 @@ test("🔒 행 hover는 전경색 오버레이다(흰 바탕에서 흰 채움은
   }
 });
 
+test("🔒 placeholder에 불투명도를 걸지 않는다(대비 계산 사각지대)", () => {
+  // `placeholder:text-muted/70`은 흰 배경 2.92로 AA 미달이었다. 이 앱은 요금표 인라인 행처럼
+  // **placeholder가 유일한 힌트인** 칸이 많아 라벨이 대신 읽어주지 못한다.
+  assert.match(SRC_CSS, /placeholder:text-muted(?!\/)/, ".input placeholder = muted(불투명도 없음)");
+  assert.ok(!/placeholder:text-[a-z-]+\/\d/.test(SRC_CSS), "placeholder에 /불투명도 금지");
+});
+
+test("🔒 고객 대면 문서(거래명세서 PDF·청구 메일)에 옛 팔레트 색이 없다", () => {
+  // 앱 색은 CSS 변수로 통일했지만 **이 두 파일만 hex를 직접 쓴다**(PDFKit·HTML 인라인 style은 변수 불가).
+  // 그래서 팔레트를 바꿀 때 **고객에게 나가는 문서만 옛 톤으로 남는 일이 실제로 있었다**(2026-07-30 발견:
+  // 앱은 흰 바탕·파랑인데 청구서 PDF와 발행 알림 메일은 크림·클레이 그대로였다) — 기계로 막는다.
+  // ⚠️검사 대상은 **코드의 실제 색 값만**이다(주석은 제거) — 문서·주석은 옛 색을 역사로 언급해도 된다.
+  const RETIRED = [
+    ["#C8795B", "Claude 클레이"],
+    ["#C08457", "클레이(메일 버튼)"],
+    ["#E60023", "Pinterest 레드"],
+    ["#1DB954", "Spotify 그린"],
+    ["#5E6AD2", "Linear indigo"],
+    ["#FAF9F5", "크림 배경"],
+    ["#6E6A5F", "warm gray"],
+    ["#262421", "warm near-black"],
+    ["#1f1d1b", "warm near-black(PDF)"],
+    ["#8a8678", "warm gray(PDF 라벨)"],
+    ["#9c9688", "warm gray(PDF 푸터)"],
+    ["#cfcabb", "warm 선(PDF)"],
+    ["#e2e0d8", "warm 박스선(PDF)"],
+    ["#ece9df", "warm 행선(PDF)"],
+    ["#f4f3ee", "크림 헤더(PDF)"],
+  ];
+  const stripComments = (src) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "");
+  for (const rel of ["src/invoice-pdf.js", "src/mailer.js"]) {
+    const code = stripComments(fs.readFileSync(path.join(__dirname, "..", rel), "utf8"));
+    for (const [hex, what] of RETIRED) {
+      assert.ok(!new RegExp(hex, "i").test(code), `${rel}: 폐지한 ${what}(${hex})가 코드에 남아 있다`);
+    }
+  }
+});
+
 test("🔒 다크 토큰 두 벌(OS 추종 @media / 강제 [data-theme=dark])이 정확히 일치", () => {
   // 복제된 블록이라 한쪽만 고치면 OS 다크 사용자에게 옛 색이 남는다(사람 눈으로 안 잡힘).
   assert.deepEqual(DARK_MEDIA, DARK_FORCED, "다크 토큰 두 블록의 값이 어긋났다 — 양쪽을 함께 고칠 것");

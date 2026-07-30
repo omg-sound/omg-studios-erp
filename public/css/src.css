@@ -175,7 +175,10 @@
     @apply px-3 py-1.5 text-xs min-h-[2.25rem]; /* 모바일 터치 타깃 최소 36px */
   }
   .input {
-    @apply w-full border border-border bg-surface px-3 py-2 text-fg placeholder:text-muted/70 transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
+    /* placeholder는 **불투명도를 걸지 않는다**(2026-07-30): `text-muted/70`은 흰 배경 대비 2.92로 AA 미달이었고,
+       이 앱은 요금표 인라인 행처럼 **placeholder가 유일한 힌트인** 칸이 많다(라벨 없음). muted 그대로 쓰면 4.55.
+       ⚠️대비 계산 테스트는 토큰 조합만 보므로 불투명도 변형(`/70`)은 검사에 걸리지 않는다 — 여기서 안 쓰는 게 규율. */
+    @apply w-full border border-border bg-surface px-3 py-2 text-fg placeholder:text-muted transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
     border-radius: var(--radius-input); /* Original=0.5rem(rounded-lg) */
     /* 폼 컨트롤 경계만 진하게(WCAG 1.4.11 비텍스트 3:1) — 카드·구분선의 장식 경계(--color-border)는
        그대로 둔다(전부 짙게 하면 화면이 선으로 뒤덮인다). `.input:focus`(특정도 0,2,0)가 이겨 포커스 색은 유지. */
