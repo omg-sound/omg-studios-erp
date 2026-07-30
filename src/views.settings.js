@@ -199,7 +199,7 @@ function ratesTree(rates) {
  */
 function rateCategoryRow(c) {
   const kindOpts = Object.entries(RATE_KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === c.kind ? "selected" : ""}>${esc(l)}</option>`).join("");
-  return `<div class="flex flex-wrap items-center gap-2 rounded-t-lg bg-bg px-3 py-2" id="rate-cat-${c.id}">
+  return `<div class="flex flex-wrap items-center gap-2 rounded-t-lg bg-elevated px-3 py-2" id="rate-cat-${c.id}">
     <input class="input w-48 py-1 text-sm font-semibold" name="cat_name_${c.id}" value="${esc(c.name)}" aria-label="분류명" autocomplete="off" required />
     <select class="input w-28 py-1 text-sm" name="kind_${c.id}" aria-label="세션 종류">${kindOpts}</select>
     <span class="ml-auto flex shrink-0 items-center gap-1">
@@ -400,7 +400,7 @@ function roomsSection() {
  */
 function roomRow(r) {
   return `
-    <div class="flex flex-wrap items-center gap-2 rounded-lg bg-bg p-2 sm:flex-nowrap" id="room-${r.id}">
+    <div class="flex flex-wrap items-center gap-2 rounded-lg p-2 sm:flex-nowrap" id="room-${r.id}">
       <input class="input min-w-36 flex-1 py-1.5 text-sm sm:max-w-xs" name="room_name_${r.id}" value="${esc(r.name)}" aria-label="장소 이름" autocomplete="off" required />
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm sm:shrink-0"><input type="checkbox" name="bookable_${r.id}" value="1" ${r.bookable ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 예약 대상</label>
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm sm:shrink-0"><input type="checkbox" name="is_external_${r.id}" value="1" ${r.is_external ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 외부</label>
@@ -580,7 +580,7 @@ function userRow(u, currentUser, chief = true) {
       ? `<span class="badge bg-success/10 text-success">활성</span>`
       : `<span class="badge bg-warning/10 text-warning">초대됨(미로그인)</span>`;
   const roleControl = (!chief || isSelf)
-    ? `<span class="badge bg-bg text-muted">${esc(ROLE_LABELS[u.role] || u.role)}</span>` // 스태프 또는 본인 — 역할 변경 불가(배지만)
+    ? `<span class="badge bg-elevated text-muted">${esc(ROLE_LABELS[u.role] || u.role)}</span>` // 스태프 또는 본인 — 역할 변경 불가(배지만)
     : `<form method="post" action="/settings/users/${u.id}/role">
          <select class="input py-1 text-xs" name="role" data-autosubmit>
            ${ROLES.map((r) => `<option value="${esc(r)}" ${r === u.role ? "selected" : ""}>${esc(ROLE_LABELS[r] || r)}</option>`).join("")}
@@ -624,7 +624,7 @@ function rateItemRow(r) {
   // 기본 분류를 개명·삭제할 수 있게 된 뒤(2026-07-29) DB에 없는 이름을 고르게 된다.
   const cat = r.category || (listRateCategories()[0] || {}).name || RECORDING_CATEGORIES[0];
   return `
-    <div class="space-y-1 rounded-lg bg-bg p-2 ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
+    <div class="space-y-1 rounded-lg p-2 ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
       <div class="flex flex-wrap items-center gap-2">
         <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[16rem]" name="rate_name_${r.id}" value="${esc(r.name)}" aria-label="단가 항목명" autocomplete="off" required />
         <select class="input w-40 py-1.5 text-sm" name="category_${r.id}" aria-label="분류 이동(다른 분류로 옮기기)">${rateCategoryOptions(cat)}</select>
@@ -681,7 +681,7 @@ function rateItemActionForms(r) {
 /** 작업 종류 행 = 한 줄 인라인 편집(2026-07-27 통합 저장). */
 function taskTypeRow(t) {
   return `
-    <div class="flex flex-wrap items-center gap-2 rounded-lg bg-bg p-2" id="task-type-${t.id}">
+    <div class="flex flex-wrap items-center gap-2 rounded-lg p-2" id="task-type-${t.id}">
       <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[14rem]" name="label_${t.id}" value="${esc(t.label)}" aria-label="작업 종류명" required />
       <select class="input w-36 py-1.5 text-sm" name="billing_type_${t.id}" aria-label="과금">
         ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}

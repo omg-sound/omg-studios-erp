@@ -138,7 +138,7 @@ function revOverview({ summary, topStaff, topPayer, byType, tax, year, month }) 
 function revListRow({ href, selected, title, subLeft = "", right, subRight = "" }) {
   const cur = selected ? ` aria-current="page"` : "";
   const tint = selected ? " bg-primary/10 font-semibold" : "";
-  return `<a href="${esc(href)}"${cur} class="block px-4 py-3 transition-colors hover:bg-surface active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40${tint}">
+  return `<a href="${esc(href)}"${cur} class="row-link block px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40${tint}">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <div class="truncate">${title}</div>

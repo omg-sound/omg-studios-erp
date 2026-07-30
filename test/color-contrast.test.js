@@ -96,8 +96,12 @@ for (const [label, T] of [["라이트", LIGHT], ["다크", DARK_FORCED]]) {
     assert.ok(onCard >= NON_TEXT, `${label} border-strong on surface: ${onCard.toFixed(2)} < ${NON_TEXT}`);
   });
 
-  test(`${label}: 페이지와 카드 표면이 서로 다르다(깊이가 보더·그림자에만 의존하지 않게)`, () => {
-    assert.notDeepEqual(T["color-bg"], T["color-surface"], `${label} bg와 surface가 같은 값 — 카드 경계가 보더 한 줄에만 걸린다`);
+  // 페이지 바탕은 **흰색**이고 카드 표면과 같은 값이다(2026-07-30 사용자 판단 — 회색 캔버스는 `bg-bg`를
+  // 카드 안쪽 채움으로 쓰는 관용구와 겹쳐 화면이 얼룩덜룩해졌다). 그래서 여기서 잠그는 건 '페이지≠표면'이
+  // 아니라, 그 구조에서 깊이를 만드는 두 수단이 살아 있는지다: ①elevated가 표면과 구분되는지(펼침·드로어)
+  // ②hover가 **전경색 오버레이**인지(흰 위에 흰 채움은 무효라 `hover:bg-surface`로 되돌리면 hover가 죽는다).
+  test(`${label}: elevated가 표면과 구분된다(펼침·드로어·행 바닥)`, () => {
+    assert.notDeepEqual(T["color-elevated"], T["color-surface"], `${label} elevated와 surface가 같은 값 — 펼침·드로어 바닥이 사라진다`);
   });
 
   test(`${label}: 차트 두 막대가 서로 구분되고 배경 위에서 보인다(비텍스트 ${NON_TEXT})`, () => {
@@ -109,6 +113,17 @@ for (const [label, T] of [["라이트", LIGHT], ["다크", DARK_FORCED]]) {
     assert.notDeepEqual(T["chart-revenue"], T["chart-profit"], `${label} 매출·순이익 막대가 같은 색`);
   });
 }
+
+test("🔒 행 hover는 전경색 오버레이다(흰 바탕에서 흰 채움은 무효)", () => {
+  // 페이지·카드가 같은 흰색이므로 `hover:bg-surface` 류의 '표면색 채움'은 hover를 죽인다.
+  // 공용 `.row-link`가 전경색 반투명 오버레이를 쓰는 계약을 잠근다(목록 행 hover의 단일 출처).
+  assert.match(SRC_CSS, /\.row-link:hover\s*{\s*background-color:\s*rgb\(var\(--color-fg\)\s*\/\s*0?\.\d+\)/, ".row-link:hover 전경색 오버레이");
+  const views = ["src/views.js", "src/views.equipment.js", "src/views.revenue.js"];
+  for (const rel of views) {
+    const src = fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+    assert.ok(!/hover:bg-surface/.test(src), `${rel}: hover:bg-surface는 흰 바탕에서 무효 — row-link(전경색 오버레이)를 쓸 것`);
+  }
+});
 
 test("🔒 다크 토큰 두 벌(OS 추종 @media / 강제 [data-theme=dark])이 정확히 일치", () => {
   // 복제된 블록이라 한쪽만 고치면 OS 다크 사용자에게 옛 색이 남는다(사람 눈으로 안 잡힘).

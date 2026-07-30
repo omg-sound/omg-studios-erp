@@ -197,7 +197,7 @@ function sidebarLinks(user, current) {
     // 활성 표시 = 좌측 레일(border-l-2 border-primary). 비활성도 투명 레일로 폭을 맞춰 레이아웃 흔들림 방지.
     const cls = active
       ? "border-l-2 border-primary bg-primary/10 text-primary"
-      : "border-l-2 border-transparent text-fg/70 hover:bg-surface hover:text-fg";
+      : "border-l-2 border-transparent text-fg/70 hover:bg-fg/5 hover:text-fg";
     // data-nav-key: 네비게이션 단축키(g 다음 이 문자)의 목적지. app.js가 렌더된 링크에서만 찾으므로 권한 반영 자동.
     // title: 데스크톱 hover 툴팁으로 단축키를 알려 발견성 확보(예: "프로젝트 · g p").
     const nk = i.navKey ? ` data-nav-key="${i.navKey}" title="${esc(i.label)} · g ${i.navKey}"` : "";
@@ -281,7 +281,7 @@ function layout({ title, user, current = "", body, wide = false, recent = null }
       <!-- 모바일 드로어 헤더: 로고 + 닫기(X) 버튼 -->
       <div class="mb-4 flex items-center justify-between sm:hidden">
         ${WORDMARK}
-        <button id="navDrawerClose" class="rounded-lg p-1.5 text-muted hover:bg-surface hover:text-fg active:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" aria-label="닫기">
+        <button id="navDrawerClose" class="rounded-lg p-1.5 text-muted hover:bg-fg/5 hover:text-fg active:bg-fg/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" aria-label="닫기">
           <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -310,7 +310,7 @@ function layout({ title, user, current = "", body, wide = false, recent = null }
           : ""}
         <!-- 테마(라이트/다크) 토글: 마크업만(아이콘+라벨). 토글 로직=app.js([data-theme-toggle]), 다크 분기=src.css. CSP-safe(인라인 onclick 없음).
              ⚠️ 옛 팔레트 선택(특징색 스와치 5개)은 2026-07-30 폐지 — 테마는 하나(라이트/다크 축만 남음). -->
-        <button type="button" data-theme-toggle aria-label="테마 전환" class="mb-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 font-medium text-muted transition-colors hover:bg-surface hover:text-fg active:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+        <button type="button" data-theme-toggle aria-label="테마 전환" class="mb-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 font-medium text-muted transition-colors hover:bg-fg/5 hover:text-fg active:bg-fg/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
           <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor" stroke="none"/></svg>
           <span data-theme-label>테마</span>
         </button>
@@ -586,9 +586,9 @@ function listRow({ href, left, right = "", newTab = false }) {
     </div>`;
   if (href) {
     const outAttr = newTab ? ' target="_blank" rel="noopener"' : "";
-    return `<a href="${esc(href)}"${outAttr} class="block transition-colors hover:bg-surface active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">${inner}</a>`;
+    return `<a href="${esc(href)}"${outAttr} class="row-link block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">${inner}</a>`;
   }
-  return `<div class="transition-colors hover:bg-surface active:bg-surface">${inner}</div>`;
+  return `<div class="row-link">${inner}</div>`;
 }
 
 /**

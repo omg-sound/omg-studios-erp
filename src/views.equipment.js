@@ -11,7 +11,7 @@ const { formatYmdShort } = require("./lib/date");
 /** 제안 칩 묶음 — 클릭하면 대상 입력칸(sel)에 값을 채운다(app.js [data-fill-target]). */
 function suggestChips(values, targetSelector) {
   const chips = (values || []).filter(Boolean).map((v) =>
-    `<button type="button" class="badge bg-bg text-muted hover:bg-surface" data-fill-value="${esc(v)}" data-fill-target="${esc(targetSelector)}">${esc(v)}</button>`
+    `<button type="button" class="badge bg-elevated text-muted hover:bg-fg/5" data-fill-value="${esc(v)}" data-fill-target="${esc(targetSelector)}">${esc(v)}</button>`
   ).join("");
   return chips ? `<div class="mt-1 flex flex-wrap gap-1">${chips}</div>` : "";
 }
@@ -22,7 +22,7 @@ function equipmentRow(e) {
   const price = e.purchase_price != null ? formatKRW(e.purchase_price) : "";
   const bought = e.purchased_on ? esc(formatYmdShort(e.purchased_on)) : "";
   const meta = [bought].filter(Boolean).join("");
-  return `<a href="/equipment/${e.id}/edit" class="block px-4 py-3 transition-colors hover:bg-surface active:bg-elevated">
+  return `<a href="/equipment/${e.id}/edit" class="row-link block px-4 py-3">
       <span class="sr-only">${esc(e.category || "미분류")}</span>
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
