@@ -484,8 +484,11 @@ function sessionsSection({ project, rows, isAdmin, managers = [], rateItems = []
 /** 캘린더 칩 색 — 목록 상태 배지와 같은 기조(예정=info, 완료=success, 취소=muted). */
 // 캘린더 칩의 상태 점(dot) 색(2026-07-21 사용자 요청 — 구글 캘린더식: 배경 채움 대신 색 점 + 글자).
 // 상태 의미 보존: 예정=primary·완료=success(초록)·취소=muted(회색). SESSION_STATUS_BADGE(배경 tint)와 별개.
+/** 캘린더 칩 점의 클래스. ⚠️**색만으로 상태를 전하지 않는다**(2026-07-30 색상 점검):
+ *  라이트에서 예정(파랑)↔완료(그린)의 명도차가 1.11이라 흑백 출력·색약에서 구분되지 않았다 →
+ *  완료는 **속 빈 원**(테두리만)으로 모양까지 다르게 한다(취소는 제목 '(취소)' 접두 + 흐림이 이미 보완). */
 function calendarDotColor(status) {
-  if (status === "완료") return "bg-success";
+  if (status === "완료") return "border border-success bg-transparent";
   if (status === "취소") return "bg-muted";
   return "bg-primary"; // 예정 등 기본
 }

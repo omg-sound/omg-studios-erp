@@ -16,11 +16,19 @@ const SRC_CSS = R("public/css/src.css");
 const VIEWS = R("src/views.js");
 const APP = R("public/js/app.js");
 
-test("단일 테마: :root 색 토큰 = 흰 배경 + 애플 블루 액센트, danger는 빨강 유지", () => {
-  assert.match(SRC_CSS, /--color-bg:\s*255 255 255/, "흰 배경");
-  assert.match(SRC_CSS, /--color-primary:\s*0 122 255/, "애플 블루 #007AFF 액센트");
-  assert.match(SRC_CSS, /--color-danger:\s*214 69 69/, "danger=빨강(삭제·경고 신호는 파랑으로 안 바꾼다)");
-  // 옛 액센트가 되살아나지 않았는지: Pinterest 레드·Claude 클레이.
+// 색의 **역할**만 잠근다 — 정확한 수치·대비는 `color-contrast.test.js`가 계산으로 검사한다.
+// (톤 조정마다 이 파일이 깨지지 않게: 2026-07-30 색상 점검에서 값이 한 단 짙어지며 실제로 깨졌다.)
+test("단일 테마: 액센트는 파랑 계열, danger는 빨강 계열(역할 유지)", () => {
+  const rgb = (name) => {
+    const m = new RegExp(`--color-${name}:\\s*(\\d+) (\\d+) (\\d+)`).exec(SRC_CSS);
+    assert.ok(m, `--color-${name} 정의`);
+    return m.slice(1).map(Number);
+  };
+  const [pr, pg, pb] = rgb("primary");
+  assert.ok(pb > pr && pb > pg, `액센트가 파랑 계열이어야 한다(현재 ${pr} ${pg} ${pb})`);
+  const [dr, dg, db] = rgb("danger");
+  assert.ok(dr > dg && dr > db, `danger는 빨강이어야 한다 — 액센트를 파랑으로 바꿔도 위험 신호는 빨강(현재 ${dr} ${dg} ${db})`);
+  // 옛 팔레트 액센트가 되살아나지 않았는지: Pinterest 레드·Claude 클레이.
   assert.ok(!/--color-primary:\s*230 0 35/.test(SRC_CSS), "Pinterest 레드 액센트 제거");
   assert.ok(!/--color-primary:\s*200 121 91/.test(SRC_CSS), "Claude 클레이 액센트 제거");
 });

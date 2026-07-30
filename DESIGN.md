@@ -2,41 +2,49 @@
 version: 1
 name: OMG Studios ERP — Design System
 description: >
-  녹음/믹싱 스튜디오 내부 ERP의 디자인 시스템. 흰 캔버스 + 애플 블루 액센트의
-  각진 모던 톤(2026-07-30 — 옛 크림·클레이 톤과 팔레트 5종 선택을 폐지하고
-  단일 테마로 확정). 서버 렌더 HTML + Tailwind 빌드, CSP 인라인 스크립트 0,
+  녹음/믹싱 스튜디오 내부 ERP의 디자인 시스템. 회색 캔버스 + 흰 표면 + 블루 액센트의
+  각진 모던 톤(2026-07-30 — 옛 크림·클레이 톤과 팔레트 5종 선택을 폐지하고 단일 테마로
+  확정한 뒤, 같은 날 전수 대비 점검으로 색을 AA 통과선까지 짙게 조정).
+  **모든 색은 `test/color-contrast.test.js`가 계산으로 잠근다** — 눈이 아니라 수치가 기준이다.
+  서버 렌더 HTML + Tailwind 빌드, CSP 인라인 스크립트 0,
   Pretendard 한글 본문. 마케팅 페이지가 아니라 밀도 높은 사내 CRUD(리스트·폼·
   탭·배지·카드) 도구다. 색 토큰은 R G B 채널로 정의(`public/css/src.css`),
   Tailwind가 이름만 연결(`tailwind.config.js`).
 
 # 라이트가 기본 정체성. 다크는 토글(html[data-theme]) 또는 OS 추종. 팔레트 선택 축은 없다(단일 테마).
-colors-light:
-  bg: "#FFFFFF"        # 흰 캔버스
-  surface: "#FFFFFF"   # 카드 표면(bg와 동일 — 카드는 보더·그림자로 구분)
-  elevated: "#F7F7F7"  # 사이드바·패널·호버
-  border: "#E1E1E1"    # hairline
-  muted: "#767676"     # 본문 보조. WCAG AA 4.54:1 on bg (하한, 더 밝히지 말 것)
-  fg: "#111111"        # near-black 본문
-  primary: "#007AFF"   # Apple systemBlue — 주요 CTA·브랜드 액센트 전용
-  primary-fg: "#FFFFFF"
-  success: "#14823C"   # 완료·긍정 상태
-  warning: "#B07A08"   # 경고·예약됨
-  danger: "#D64545"    # 레드 — 미수·삭제·오류(액센트를 파랑으로 바꿔도 위험은 빨강)
-  info: "#0074B3"      # 정보/중립 강조
+colors-light:            # 괄호 값 = 최저 대비(페이지·카드·elevated·배지 12% 틴트 중 최소). 전부 AA 4.5 이상.
+  bg: "#F7F8F8"        # 회색 캔버스 — 흰 표면이 떠 보이게(⚠️surface와 같은 값으로 되돌리지 말 것)
+  surface: "#FFFFFF"   # 카드·표 — 본문은 항상 순백 위(대비 최대)
+  elevated: "#F0F1F2"  # 펼침·드로어·hover 바닥
+  border: "#D8D9DB"    # 장식 경계(카드·구분선)
+  border-strong: "#949596"  # 폼 컨트롤 경계 전용(.input) — WCAG 1.4.11 비텍스트 3.00:1
+  muted: "#6B6B6B"     # 본문 보조 (4.55) — 하한, 더 밝히지 말 것
+  fg: "#111111"        # near-black 본문 (14.58)
+  primary: "#0066CC"   # 블루 — 주요 CTA·브랜드 액센트 전용 (4.68)
+  primary-fg: "#FFFFFF"     # 흰 글자 on primary = 5.57
+  success: "#0F7034"   # 완료·긍정 상태 (5.20)
+  warning: "#8F6200"   # 경고·예약됨 (4.56)
+  danger: "#C62828"    # 레드 — 미수·삭제·오류 (4.64). 액센트를 파랑으로 바꿔도 위험은 빨강
+  info: "#00648F"      # 정보/중립 강조 (5.42)
+  chart-revenue: "#0066CC"  # 매출 막대(비텍스트 3:1 — 5.23)
+  chart-profit: "#0F7034"   # 순이익 막대 (5.83)
 
-colors-dark:            # media(prefers-color-scheme) 또는 html[data-theme="dark"]
+colors-dark:            # 🔒 media(prefers-color-scheme)와 html[data-theme="dark"] **두 곳에 복제** — 함께 고칠 것
   bg: "#111111"
   surface: "#1E1E1E"
   elevated: "#2A2A2A"
   border: "#383838"
-  muted: "#B0B0B0"
-  fg: "#F5F5F5"
-  primary: "#0A84FF"   # Apple systemBlue(dark)
-  primary-fg: "#FFFFFF"
-  success: "#4CB782"
-  warning: "#F2C94C"
-  danger: "#EB5757"
-  info: "#64BEFF"
+  border-strong: "#6E6E6E"  # 폼 컨트롤 경계 (3.27)
+  muted: "#B0B0B0"     # (6.09)
+  fg: "#F5F5F5"        # (10.76)
+  primary: "#3D9BFF"   # (4.88) — 옛 #0A84FF는 배지 4.00·elevated 3.94 미달
+  primary-fg: "#111111"     # ⚠️밝은 파랑 채움 위에서 4.5를 넘는 글자는 어두운 쪽뿐(#111 6.59 / 흰색 3.18)
+  success: "#4CB782"   # (5.49)
+  warning: "#F2C94C"   # (7.97)
+  danger: "#F27272"    # (4.96) — 옛 #EB5757은 배지 4.15 미달
+  info: "#64BEFF"      # (6.55)
+  chart-revenue: "#4DA3FF"  # (7.19)
+  chart-profit: "#4CB782"   # (7.56)
 
 typography:
   sans: 'Pretendard, "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif'   # 본문·UI·제목 전부(한글 최적)
@@ -71,7 +79,7 @@ components:
 
 ## Overview
 
-**흰 캔버스(`#FFFFFF`) + 애플 블루 액센트(`#007AFF`)** 의 각진 모던 톤. 배경과 카드 표면이 같은 흰색이라 깊이는 **얇은 보더 + 은은한 그림자**가 만들고, 파랑은 **주요 CTA와 브랜드 액센트에만** 아껴 쓴다. 상태색(성공=그린, 경고=앰버, 위험=레드, 정보=시안블루)은 브랜드 파랑과 **명확히 분리**한다 — 특히 **위험은 파랑으로 바꾸지 않는다**(삭제·경고 신호가 죽는다).
+**회색 캔버스(`#F7F8F8`) + 흰 표면(`#FFFFFF`) + 블루 액센트(`#0066CC`)** 의 각진 모던 톤. 표면 톤이 직접 깊이를 만들고(그림자·보더에 기대지 않는다), 파랑은 **주요 CTA와 브랜드 액센트에만** 아껴 쓴다. 상태색(성공=그린, 경고=앰버, 위험=레드, 정보=시안블루)은 브랜드 파랑과 **명확히 분리**한다 — 특히 **위험은 파랑으로 바꾸지 않는다**(삭제·경고 신호가 죽는다).
 
 > **테마는 하나다**(2026-07-30 사용자 결정). 옛 팔레트 선택 5종(Linear/Apple/Spotify/Pinterest/Claude)과 크림·클레이 정체성은 폐지됐고, 남은 시각 축은 **라이트/다크뿐**이다. 되살릴 후보가 아니다 — 새 색·모서리 톤은 `:root` 한 곳에서 조정한다.
 
@@ -80,9 +88,13 @@ components:
 ## Colors
 
 - **역할 토큰**(`--color-*`, R G B 채널) → Tailwind 이름(`bg`/`surface`/`elevated`/`border`/`muted`/`fg`/`primary`/`primary-fg`/`success`/`warning`/`danger`/`info`).
-- **뷰 코드에 hex 인라인 금지** — 항상 토큰 이름(`bg-surface`, `text-muted`, `bg-primary`, `text-success`…). **유일 예외**: `<meta name="theme-color">`(CSS 변수 불가라 hex가 유일한 방법, 라이트 `#ffffff`·다크 `#111111`).
+- **뷰 코드에 hex 인라인 금지** — 항상 토큰 이름(`bg-surface`, `text-muted`, `bg-primary`, `text-success`…). **유일 예외**: `<meta name="theme-color">`(CSS 변수 불가라 hex가 유일한 방법, 라이트 `#f7f8f8`·다크 `#111111`).
 - **라이트가 기본 정체성.** 다크는 `html[data-theme]`(수동 토글) 또는 `[data-theme]` 없을 때 OS 추종. OS가 다크여도 `data-theme="light"`로 라이트 유지 가능.
-- `muted`는 **AA 하한(4.54:1)** 이다. 더 밝히지 말 것. ⚠️`primary`(#007AFF)는 흰 배경 대비 **4.02:1**로 본문 텍스트 AA(4.5) 미달이다 — 링크·라벨처럼 작은 글자에 쓰는 자리라 알고 쓸 것(더 짙게 갈 땐 #0066CC=5.1:1).
+- 🔒 **새 색은 '배지에서 4.5를 넘는가'로 고른다.** 배지(`badge-*`)는 12% 틴트 위에 **같은 색 글자**를 얹어 대비가 가장 낮은 자리이고, 틴트가 색상을 품어 **알파를 낮춰도 살아나지 않는다**(12%→6%에서도 3.4~4.05). 그 지점을 넘기면 페이지·카드·elevated는 자동으로 통과한다.
+- `muted`는 **AA 하한** 이다. 더 밝히지 말 것.
+- **폼 컨트롤 경계만 `border-strong`**(3:1, WCAG 1.4.11) — 카드·구분선의 장식 경계는 `border`를 쓴다(전부 짙게 하면 화면이 선으로 뒤덮인다).
+- **차트 막대는 전용 토큰**(`--chart-*`)이다. `primary`/`success`를 직접 참조하지 말 것 — 액센트를 조정할 때 두 막대가 같은 색으로 수렴해 매출↔순이익 구분이 죽는다.
+- ⚠️ **CSS 주석 안에 Tailwind 불투명도 표기(별표+슬래시+숫자)를 쓰지 말 것** — 그 두 글자가 주석을 조기 종료해 `build:css`가 깨진다(2026-07-30 실제로 겪음).
 - 배지 색 변형은 `bg-*/12` 불투명도를 쓰므로 `tailwind.config.js`의 `opacity.12`가 반드시 있어야 함(없으면 빌드에서 클래스 제거됨).
 
 ## Typography
@@ -100,7 +112,7 @@ components:
 
 ## Elevation & Shapes
 
-- 그림자는 **거의 쓰지 않는다.** `.card`만 2겹 그림자(`0 1px 3px /.06`, `0 8px 24px /.08` — `--shadow-card`). 배경과 표면이 같은 흰색이라(2026-07-30) 깊이는 **얇은 보더 + 이 그림자**가 만든다.
+- 그림자는 **거의 쓰지 않는다.** `.card`만 2겹 그림자(`0 1px 3px /.06`, `0 8px 24px /.08` — `--shadow-card`). 깊이의 주역은 **표면 톤**(회색 페이지 위 흰 카드)이고 보더·그림자는 보조다 — 한때 배경과 표면이 같은 흰색이라 그림자가 유일한 단서였는데, 그 구조를 2026-07-30에 되돌렸다.
 - 라운드 스케일: 배지 `rounded-md`, 버튼·입력 `rounded-lg`, 카드·리스트 카드 `rounded-xl`. **값은 2026-07-29에 한 단계씩 각지게 낮췄다**(render.com 톤) — 클래스 이름은 그대로고 `tailwind.config.js`의 `borderRadius` 스케일만 바꿨다(마크업의 `rounded-lg` 126곳을 건드리지 않으려고). **2026-07-30에 `:root`의 `--radius-*` 토큰까지 같은 톤으로 낮춰**(버튼 4px·카드 6px·배지 3px) 팔레트 잔재였던 pill 버튼·16px 카드를 없앴다.
 - **모바일 edge-to-edge**(<640px): `.card`·`.inv-table-wrap`이 페이지 좌우 패딩(1rem)을 음수 마진으로 상쇄해 **화면 폭을 꽉 채우고** 좌우 보더·모서리를 없앤다(위아래 선만). ⚠️제외 3종 — 중첩 카드, 마스터-디테일 왼쪽 목록, **모바일에서도 다열인 그리드**(`grid-cols-2/3/4`, 안 빼면 셀이 넘쳐 카드끼리 겹친다).
 
