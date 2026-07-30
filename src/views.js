@@ -218,17 +218,13 @@ function sidebarLinks(user, current) {
 
 const WORDMARK = `<span class="font-display text-[17px] font-semibold text-fg">OMG Studios</span>`;
 
-const FONT_LINKS = `<link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <!-- ⚠️ Noto Serif KR 제외(2026-07-20 성능 점검). 이 스타일시트는 **렌더를 막는** 서드파티 요청인데,
-       실측에서 Noto Serif KR 하나가 그 CSS의 93%(286KB/305KB)를 차지했다. 세리프를 실제로 쓰는 건
-       Claude 팔레트뿐이고(나머지 넷은 --font-serif를 시스템/Pretendard로 덮어씀) 기본 팔레트는 Linear라,
-       대부분의 페이지 로드에서 한 글자도 안 쓰이고 버려지고 있었다. 제거 후 압축 기준 70KB → ~5KB.
-       Claude 팔레트의 **한글** 제목만 시스템 세리프로 내려온다(라틴은 Source Serif 4가 그대로 담당).
-       CSS 스택의 "Noto Serif KR" 이름은 남겨 둔다 — 로컬에 설치된 사용자는 계속 그 글꼴로 본다. -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet" />
-  <!-- Pretendard: Inter에 없는 한글 글리프 담당(본문 한글). CSP style-src(cdn.jsdelivr.net) 허용은 server.js에서 처리. -->
+const FONT_LINKS = `<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <!-- ⚠️ 구글 폰트(Inter + Source Serif 4) 링크 제거(2026-07-30 단일 테마 전환). 렌더를 막는 서드파티 요청인데
+       **한 글자도 안 쓰이고 있었다**: 본문 스택은 Pretendard가 맨 앞이라 Inter까지 내려가지 않고, 세리프는
+       옛 Claude 팔레트의 제목 전용이었는데 팔레트가 폐지되며 --font-display가 sans가 됐다.
+       (같은 이유로 Noto Serif KR은 2026-07-20에 먼저 빠졌다 — 그 CSS의 93%였다.)
+       세리프 톤을 되살릴 땐 이 링크와 src.css의 --font-serif를 함께 되돌려야 한다. -->
+  <!-- Pretendard: 본문·제목 한글·라틴 담당. CSP style-src(cdn.jsdelivr.net) 허용은 server.js에서 처리. -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />`;
 
 /**
@@ -242,20 +238,20 @@ const FONT_LINKS = `<link rel="preconnect" href="https://fonts.googleapis.com" /
 function layout({ title, user, current = "", body, wide = false, recent = null }) {
   const roleLabel = user ? (ROLE_LABELS[user.role] || user.role) : "";
   const who = user ? `${esc(user.name || user.email)} · ${roleLabel}` : "";
-  // <html>에 data-theme·data-palette를 **서버가 첫 페인트에** 렌더(FOUC 방지, 2026-07-21 사용자 리포트 '다크 모드 깜빡').
-  // 값은 쿠키(app.js·theme-init.js가 기록)에서 요청 컨텍스트로 온다. 쿠키 없으면 기본(팔레트 linear·테마 미설정=OS 추종).
-  // theme-init.js는 폴백으로 남아(첫 방문·OS 변경) 쿠키를 다시 맞춘다.
-  const { theme, palette } = currentThemeAttrs();
-  const htmlAttrs = `lang="ko"${palette ? ` data-palette="${palette}"` : ""}${theme ? ` data-theme="${theme}"` : ""}`;
+  // <html>에 data-theme를 **서버가 첫 페인트에** 렌더(FOUC 방지, 2026-07-21 사용자 리포트 '다크 모드 깜빡').
+  // 값은 쿠키(app.js·theme-init.js가 기록)에서 요청 컨텍스트로 온다. 쿠키 없으면 테마 미설정(=OS 추종).
+  // theme-init.js는 폴백으로 남아(첫 방문·OS 변경) 쿠키를 다시 맞춘다. 팔레트 축은 2026-07-30 폐지.
+  const { theme } = currentThemeAttrs();
+  const htmlAttrs = `lang="ko"${theme ? ` data-theme="${theme}"` : ""}`;
   return `<!doctype html>
 <html ${htmlAttrs}>
 <head>
   <meta charset="utf-8" />
   <title>${esc(title)} · OMG Studios</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#1e1d1b" media="(prefers-color-scheme: dark)" />
-  <!-- 테마 조기 적용(FOUC 방지): 저장된 data-theme·data-palette를 CSS보다 먼저 세팅(동기 로드, CSP-safe 외부 파일). -->
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
+  <!-- 테마 조기 적용(FOUC 방지): 저장된 data-theme를 CSS보다 먼저 세팅(동기 로드, CSP-safe 외부 파일). -->
   <script src="/js/theme-init.js?v=${ASSET_VERSION}"></script>
   ${FONT_LINKS}
   <link rel="stylesheet" href="/css/app.css?v=${ASSET_VERSION}" />
@@ -312,18 +308,8 @@ function layout({ title, user, current = "", body, wide = false, recent = null }
           </select>
         </form>`
           : ""}
-        <!-- 테마 선택: 특징색 스와치 아이콘(2026-07-17 사용자 요청 — 드롭다운 대신 색 아이콘 클릭 선택). 값은 client(localStorage)라 app.js가 활성 표시 동기화. 색은 CSS 클래스(CSP: 인라인 style 금지). -->
-        <div class="mb-2 px-2">
-          <div class="mb-1 text-[11px] text-muted">테마 <span class="opacity-70">· 시각 스타일</span></div>
-          <div class="flex items-center gap-2" role="group" aria-label="테마 선택">
-            <button type="button" data-theme-swatch="linear" aria-label="Linear" title="Linear" class="theme-swatch theme-swatch-linear"></button>
-            <button type="button" data-theme-swatch="apple" aria-label="Apple" title="Apple" class="theme-swatch theme-swatch-apple"></button>
-            <button type="button" data-theme-swatch="spotify" aria-label="Spotify" title="Spotify" class="theme-swatch theme-swatch-spotify"></button>
-            <button type="button" data-theme-swatch="pinterest" aria-label="Pinterest" title="Pinterest" class="theme-swatch theme-swatch-pinterest"></button>
-            <button type="button" data-theme-swatch="claude" aria-label="Claude" title="Claude" class="theme-swatch theme-swatch-claude"></button>
-          </div>
-        </div>
-        <!-- 테마(라이트/다크) 토글: 마크업만(아이콘+라벨). 토글 로직=app.js([data-theme-toggle]), 다크 분기=src.css. CSP-safe(인라인 onclick 없음). -->
+        <!-- 테마(라이트/다크) 토글: 마크업만(아이콘+라벨). 토글 로직=app.js([data-theme-toggle]), 다크 분기=src.css. CSP-safe(인라인 onclick 없음).
+             ⚠️ 옛 팔레트 선택(특징색 스와치 5개)은 2026-07-30 폐지 — 테마는 하나(라이트/다크 축만 남음). -->
         <button type="button" data-theme-toggle aria-label="테마 전환" class="mb-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 font-medium text-muted transition-colors hover:bg-surface hover:text-fg active:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
           <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor" stroke="none"/></svg>
           <span data-theme-label>테마</span>

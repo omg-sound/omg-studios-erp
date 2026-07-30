@@ -1,6 +1,8 @@
 "use strict";
 
-// 테마 선택 기능(2026-07-17) 소스 계약 검사 — Original 보존 + 3팔레트 + 드롭다운·FOUC 스크립트 배선.
+// 테마 소스 계약 검사 — **단일 테마**(2026-07-30 사용자 결정: 팔레트 5종 폐지, Pinterest 라이트만 남기고
+// 액센트를 애플 블루로·모서리를 각지게). 잠그는 것은 ①토큰이 CSS 변수로 추출돼 컴포넌트가 참조한다 ②팔레트
+// 축(data-palette·스와치)이 되살아나지 않는다 ③라이트/다크 축과 FOUC 배선은 그대로 산다 — 세 가지다.
 // app.css는 빌드 산출물(gitignore)이라 소스(src.css/views.js/app.js/theme-init.js)를 검사한다.
 
 const test = require("node:test");
@@ -14,16 +16,19 @@ const SRC_CSS = R("public/css/src.css");
 const VIEWS = R("src/views.js");
 const APP = R("public/js/app.js");
 
-test("Claude(원본) 보존: :root 기본 색 토큰이 그대로(크림 배경·클레이 액센트)", () => {
-  // 기존 정체성 색이 바뀌지 않았는지(팔레트 변경이 :root 원본=Claude를 건드리지 않았는지).
-  assert.match(SRC_CSS, /--color-bg:\s*250 249 245/, "크림 배경 #FAF9F5 유지");
-  assert.match(SRC_CSS, /--color-primary:\s*200 121 91/, "클레이 액센트 #C8795B 유지");
+test("단일 테마: :root 색 토큰 = 흰 배경 + 애플 블루 액센트, danger는 빨강 유지", () => {
+  assert.match(SRC_CSS, /--color-bg:\s*255 255 255/, "흰 배경");
+  assert.match(SRC_CSS, /--color-primary:\s*0 122 255/, "애플 블루 #007AFF 액센트");
+  assert.match(SRC_CSS, /--color-danger:\s*214 69 69/, "danger=빨강(삭제·경고 신호는 파랑으로 안 바꾼다)");
+  // 옛 액센트가 되살아나지 않았는지: Pinterest 레드·Claude 클레이.
+  assert.ok(!/--color-primary:\s*230 0 35/.test(SRC_CSS), "Pinterest 레드 액센트 제거");
+  assert.ok(!/--color-primary:\s*200 121 91/.test(SRC_CSS), "Claude 클레이 액센트 제거");
 });
 
 test("요구사항1: 폰트·radius·shadow가 CSS 변수로 추출됨", () => {
   assert.match(SRC_CSS, /--font-sans:\s*"Pretendard"/, "--font-sans 추출");
-  // 값 자체는 2026-07-29에 한 단계 각지게 낮췄다(사용자 요청, render.com 참조) — 이 테스트가 잠그는 건
-  // **변수로 추출돼 있고 컴포넌트가 참조한다**는 구조지 특정 수치가 아니다(수치를 박으면 톤 조정마다 깨진다).
+  // 값 자체는 톤 조정마다 바뀐다(2026-07-29 각지게, 2026-07-30 단일 테마) — 이 테스트가 잠그는 건
+  // **변수로 추출돼 있고 컴포넌트가 참조한다**는 구조지 특정 수치가 아니다.
   assert.match(SRC_CSS, /--radius-card:\s*[\d.]+rem/, "--radius-card 정의");
   assert.match(SRC_CSS, /--radius-btn:\s*[\d.]+rem/, "--radius-btn 정의");
   assert.match(SRC_CSS, /--shadow-card:/, "--shadow-card 추출");
@@ -33,62 +38,59 @@ test("요구사항1: 폰트·radius·shadow가 CSS 변수로 추출됨", () => {
   assert.match(SRC_CSS, /border-radius:\s*var\(--radius-btn\)/, ".btn이 변수 참조");
 });
 
-test("4팔레트(apple·linear·spotify·pinterest) 색·폰트·radius 오버라이드 존재 + Material 제거", () => {
-  for (const p of ["apple", "linear", "spotify", "pinterest"]) {
-    assert.match(SRC_CSS, new RegExp(`data-palette="${p}"`), `${p} 팔레트 블록`);
-    assert.match(SRC_CSS, new RegExp(`data-palette="${p}"\\]\\[data-theme="dark"`), `${p} 다크 변형`);
-  }
-  assert.ok(!/data-palette="material"/.test(SRC_CSS), "Material 팔레트 블록 제거");
-  assert.ok(!/Roboto/.test(SRC_CSS), "Material용 Roboto 폰트 제거");
-  assert.match(SRC_CSS, /--color-primary:\s*0 122 255/, "Apple=iOS 블루");
-  assert.match(SRC_CSS, /--color-primary:\s*94 106 210/, "Linear=indigo 액센트");
-  assert.match(SRC_CSS, /--color-primary:\s*29 185 84/, "Spotify=그린 #1DB954(다크)");
-  assert.match(SRC_CSS, /--color-primary:\s*230 0 35/, "Pinterest=레드 #E60023");
+test("각진 모서리: pill(624rem)·16px 카드가 되살아나지 않음", () => {
+  // 옛 Pinterest·Spotify는 --radius-btn을 pill(624.9375rem)로, 카드를 1rem으로 줬다.
+  assert.ok(!/--radius-btn:\s*624/.test(SRC_CSS), "pill 버튼 radius 제거");
+  const btn = /--radius-btn:\s*([\d.]+)rem/.exec(SRC_CSS);
+  const card = /--radius-card:\s*([\d.]+)rem/.exec(SRC_CSS);
+  assert.ok(btn && parseFloat(btn[1]) <= 0.25, `버튼 radius 각짐(현재 ${btn && btn[1]}rem)`);
+  assert.ok(card && parseFloat(card[1]) <= 0.375, `카드 radius 각짐(현재 ${card && card[1]}rem)`);
 });
 
-test("스와치 아이콘·FOUC 스크립트 배선(views.js)", () => {
-  // 팔레트 선택 = 특징색 스와치 아이콘(드롭다운 아님, 2026-07-17). Linear·Apple·Spotify·Pinterest·Claude(2026-07-18).
-  for (const p of ["linear", "apple", "spotify", "pinterest", "claude"]) {
-    assert.match(VIEWS, new RegExp(`data-theme-swatch="${p}"`), `${p} 스와치`);
+test("팔레트 축 폐지: data-palette·스와치가 CSS·뷰·app.js·theme-init·서버 배관 어디에도 없음", () => {
+  // ⚠️ 폐지 주석에 마커 이름(data-palette·theme-swatch)을 적으면 이 검사에 걸린다 — 경위는 이름 없이 서술할 것.
+  for (const [name, src] of [
+    ["src.css", SRC_CSS],
+    ["views.js", VIEWS],
+    ["app.js", APP],
+    ["theme-init.js", R("public/js/theme-init.js")],
+    ["request-theme.js", R("src/lib/request-theme.js")],
+  ]) {
+    assert.ok(!/data-palette/.test(src), `${name}: data-palette 제거`);
+    assert.ok(!/theme-swatch/.test(src), `${name}: 스와치 제거`);
+    assert.ok(!/localStorage\.(get|set)Item\("palette"/.test(src), `${name}: palette 저장 제거`);
   }
-  assert.ok(!/data-theme-swatch="material"/.test(VIEWS), "Material 스와치 제거");
-  assert.ok(!/data-theme-swatch="original"/.test(VIEWS), "Original 스와치 제거(→claude)");
-  assert.match(SRC_CSS, /\.theme-swatch-spotify\s*{\s*background:\s*#1DB954/i, "Spotify 스와치 색");
-  assert.match(SRC_CSS, /\.theme-swatch-pinterest\s*{\s*background:\s*#E60023/i, "Pinterest 스와치 색");
+});
+
+test("라이트/다크 축은 유지 + FOUC 스크립트 배선(views.js)", () => {
+  // 다크 토큰은 두 경로(OS 추종 media + 강제 [data-theme="dark"]) 모두 살아 있어야 한다.
+  assert.match(SRC_CSS, /:root:not\(\[data-theme\]\)\s*{/, "OS 추종 다크 블록");
+  assert.match(SRC_CSS, /:root\[data-theme="dark"\]\s*{/, "강제 다크 블록");
+  assert.match(VIEWS, /data-theme-toggle/, "사이드바 라이트/다크 토글");
   // theme-init.js를 CSS보다 먼저 동기 로드(FOUC 방지, CSP-safe 외부 파일)
   assert.match(VIEWS, /theme-init\.js/, "theme-init 스크립트 로드");
   const initIdx = VIEWS.indexOf('src="/js/theme-init.js');
   const cssIdx = VIEWS.indexOf('rel="stylesheet" href="/css/app.css'); // 실제 head <link>(주석·경로 문자열 제외)
   assert.ok(initIdx > 0 && initIdx < cssIdx, "theme-init가 app.css <link>보다 앞(FOUC 방지)");
-  // 스와치 색은 CSP상 인라인 style 금지 → CSS 클래스로
-  assert.match(SRC_CSS, /\.theme-swatch-apple\s*{\s*background:\s*#007AFF/i, "Apple 스와치 색 클래스");
 });
 
-test("app.js: 스와치 클릭 처리 + localStorage(팔레트가 라이트/다크 강제하지 않음)", () => {
-  assert.match(APP, /data-theme-swatch/, "app.js가 스와치 클릭 처리");
-  assert.match(APP, /localStorage\.setItem\("palette"/, "palette 저장");
-  assert.match(APP, /aria-pressed/, "활성 스와치 aria-pressed 동기화");
-  // Linear도 라이트 가능 — 팔레트 선택이 data-theme를 강제하지 않는다(2026-07-17 사용자 요청).
-  assert.ok(!/theme-swatch[\s\S]{0,400}setTheme\("dark"\)/.test(APP), "스와치 클릭이 다크를 강제하지 않음");
+test("app.js: 라이트/다크 토글 배선(localStorage + 쿠키)", () => {
+  assert.match(APP, /data-theme-toggle/, "토글 클릭 처리");
+  assert.match(APP, /localStorage\.setItem\("theme"/, "theme 저장");
+  assert.match(APP, /setPref\("theme"/, "쿠키 기록(서버 첫 페인트 렌더용)");
 });
 
-test("theme-init.js: data-theme·data-palette 조기 적용(FOUC 방지) + 기본 팔레트 Linear·테마 OS 추종", () => {
+test("theme-init.js: data-theme 조기 적용(FOUC 방지) + OS 추종", () => {
   const init = R("public/js/theme-init.js");
   assert.match(init, /localStorage\.getItem\("theme"\)/, "저장 theme 읽기");
-  assert.match(init, /localStorage\.getItem\("palette"\)/, "저장 palette 읽기");
   assert.match(init, /setAttribute\("data-theme"/, "data-theme 적용");
-  assert.match(init, /setAttribute\("data-palette"/, "data-palette 적용");
-  // 기본 팔레트(미선택) = Linear. 저장값 없으면 linear 적용.
-  assert.match(init, /"data-palette",\s*"linear"/, "미선택 시 Linear 기본 적용");
-  // 테마(라이트/다크)는 OS 추종 — 저장값 없으면 로드 시점 OS 설정을 matchMedia로 스냅샷해 data-theme 세팅
-  // (팔레트 다크 변형이 [data-theme="dark"]로 게이트돼 있어 속성을 안 걸면 OS 다크가 무시됨 — 2026-07-19 전수 점검 수정).
+  // 테마(라이트/다크)는 OS 추종 — 저장값 없으면 로드 시점 OS 설정을 matchMedia로 스냅샷해 data-theme 세팅.
   assert.match(init, /if \(t === "dark" \|\| t === "light"\) document\.documentElement\.setAttribute\("data-theme"/, "저장·스냅샷 theme를 data-theme로 적용");
   assert.match(init, /matchMedia\("\(prefers-color-scheme: dark\)"\)/, "저장값 없으면 OS 설정 스냅샷");
-  assert.ok(!/"material"/.test(init), "Material 제거");
 });
 
-test("app.js: 팔레트 기본=claude(속성 없음)·claude 선택 시 속성 제거", () => {
-  // 속성 미설정 = Claude(:root 원본). 기본 팔레트 Linear는 theme-init가 속성으로 세팅.
-  assert.match(APP, /getAttribute\("data-palette"\)\s*\|\|\s*"claude"/, "속성 없으면 claude");
-  assert.match(APP, /if \(p === "claude"\) document\.documentElement\.removeAttribute\("data-palette"\)/, "claude 선택 시 속성 제거");
+test("구글 폰트 링크 제거(단일 테마로 세리프·Inter가 미사용) — Pretendard만 로드", () => {
+  assert.ok(!/fonts\.googleapis\.com\/css2/.test(VIEWS), "구글 폰트 스타일시트 링크 없음");
+  assert.match(VIEWS, /pretendard-dynamic-subset\.min\.css/, "Pretendard는 유지");
+  assert.match(SRC_CSS, /--font-display:\s*var\(--font-sans\)/, "제목 글꼴 = sans");
 });

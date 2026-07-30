@@ -153,28 +153,7 @@
     setTheme(current === "dark" ? "light" : "dark");
   });
   syncThemeLabel(document.documentElement.getAttribute("data-theme")); // 초기 로드 시 현재값 기준 1회 동기화
-
-  // 테마(팔레트) 선택 = 특징색 스와치 아이콘([data-theme-swatch]): linear(기본)/apple/spotify/pinterest/claude + localStorage["palette"].
-  // theme-init.js가 <head>에서 조기 적용하므로 여기선 활성 표시 동기화 + 클릭 처리만. 라이트/다크는 별도 토글(팔레트가 강제하지 않음 — Linear도 라이트 가능).
-  // 기본 팔레트=Linear(속성 있음). claude=기본 :root(속성 없음) — 속성 미설정 시 claude로 표시.
-  function currentPalette() { return document.documentElement.getAttribute("data-palette") || "claude"; }
-  function syncSwatches() {
-    var p = currentPalette();
-    Array.prototype.forEach.call(document.querySelectorAll("[data-theme-swatch]"), function (b) {
-      b.setAttribute("aria-pressed", b.getAttribute("data-theme-swatch") === p ? "true" : "false");
-    });
-  }
-  document.addEventListener("click", function (e) {
-    var btn = e.target.closest && e.target.closest("[data-theme-swatch]");
-    if (!btn) return;
-    var p = btn.getAttribute("data-theme-swatch");
-    if (p === "claude") document.documentElement.removeAttribute("data-palette");
-    else document.documentElement.setAttribute("data-palette", p);
-    try { localStorage.setItem("palette", p); } catch (e) {}
-    setPref("palette", p); // 서버가 다음 페이지 첫 페인트에 렌더(claude면 서버가 속성 없이 렌더)
-    syncSwatches();
-  });
-  syncSwatches(); // 초기 로드 시 저장된 팔레트로 활성 스와치 표시
+  // ⚠️ 옛 팔레트 선택(사이드바 색 스와치 5개 + 저장값)은 2026-07-30 폐지 — 테마가 하나라 고를 게 없다.
 })();
 
 // (프로젝트 목록 밀도 토글 폐지 2026-07-16 — 목록이 청구식 컬럼 표로 통일되며 좁게/넓게 개념 제거.)

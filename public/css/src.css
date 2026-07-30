@@ -2,73 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Claude 스타일 색상 토큰(따뜻한 크림 + 클레이 액센트, R G B 채널) ── */
+/* ── 색상 토큰(흰 배경 + 애플 블루 액센트, R G B 채널) ──
+   2026-07-30 사용자 결정: 팔레트 5종(Linear/Apple/Spotify/Pinterest/Claude)을 폐지하고 **Pinterest 라이트
+   하나만** 남겨 `:root` 기본값으로 접었다. 액센트는 옛 Pinterest 레드(#E60023) 대신 **애플 블루(#007AFF)**,
+   모서리는 각지게(render.com 톤 — 옛 pill/16px 카드에서 전환). `danger`는 빨강을 유지한다(삭제·경고 신호). */
 :root {
   color-scheme: light;
-  --color-bg: 250 249 245; /* #FAF9F5 warm ivory */
-  --color-surface: 255 255 255; /* white cards */
-  --color-elevated: 240 238 230; /* #F0EEE6 사이드바/패널 */
-  --color-border: 229 226 215; /* #E5E2D7 warm */
-  --color-muted: 110 106 95; /* #6E6A5F warm gray — WCAG AA 5.15:1 on #FAF9F5 */
-  --color-fg: 38 36 33; /* #262421 warm near-black */
-  --color-primary: 200 121 91; /* #C8795B 클레이(테라코타) */
+  --color-bg: 255 255 255;
+  --color-surface: 255 255 255;
+  --color-elevated: 247 247 247;
+  --color-border: 225 225 225;
+  --color-muted: 118 118 118; /* #767676 보조 텍스트 — 흰 배경 4.54:1(AA) */
+  --color-fg: 17 17 17;
+  --color-primary: 0 122 255; /* #007AFF Apple systemBlue */
   --color-primary-fg: 255 255 255;
-  --color-success: 92 122 92; /* muted sage */
-  --color-warning: 143 92 42; /* #8F5C2A warm amber — WCAG AA: bg 5.34:1·surface 5.63:1·badge tint 4.80:1 (구 #B5793C는 3.46:1 미달, 2026-07-09 접근성 점검) */
-  --color-danger: 188 75 60; /* #BC4B3C warm red */
-  --color-info: 96 115 140; /* #60738C 쿨 블루그레이 — 정보/중립 강조 */
+  --color-success: 20 130 60;
+  --color-warning: 176 122 8;
+  --color-danger: 214 69 69; /* #D64545 — 삭제·경고는 빨강 유지(2026-07-30 사용자 결정) */
+  --color-info: 0 116 179;
 
-  /* ── 테마 토큰(폰트·radius·shadow) — :root 기본값 = 'Claude' 팔레트(크림·클레이 원본 정체성). ──
-     팔레트(data-palette)가 이 변수만 덮어써 폰트·모서리·그림자를 통째로 교체. 속성 없음 = Claude 렌더.
-     ⚠️ 미선택 사용자의 실제 기본은 Linear(theme-init.js가 data-palette="linear" 조기 적용, 2026-07-18). */
-  --font-sans: "Pretendard", "Inter", "system-ui", "-apple-system", sans-serif;
-  --font-serif: "Source Serif 4", "Noto Serif KR", ui-serif, Georgia, Cambria, serif;
-  --font-display: var(--font-serif); /* 제목 글꼴(팔레트별로 sans로 바꾸기도) */
-  --radius-btn: 0.375rem;
-  --radius-input: 0.375rem;
-  --radius-card: 0.5rem;
-  --radius-badge: 0.25rem;
-  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04); /* 현재 .card 그림자 */
-  --sidebar-blur: 0px;     /* Apple glass용(기본 0=효과 없음) */
+  /* ── 테마 토큰(폰트·radius·shadow) — 컴포넌트(.card/.btn/.input/.badge)가 이 변수만 참조한다.
+     팔레트 전환 레이어는 없어졌지만(단일 테마) 변수 구조는 유지 — 톤 조정이 여기 한 곳에서 끝난다. */
+  --font-sans: "Pretendard", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  --font-serif: var(--font-sans); /* 세리프 톤 폐지(제목도 sans) — Tailwind font-serif 호환용 별칭 */
+  --font-display: var(--font-sans); /* 제목 글꼴 */
+  /* 각진 모던(render.com 톤). Tailwind borderRadius 스케일(tailwind.config.js)과 같은 방향. */
+  --radius-btn: 0.25rem;
+  --radius-input: 0.25rem;
+  --radius-card: 0.375rem;
+  --radius-badge: 0.1875rem;
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.08);
 }
 
 /* 다크 토큰. data-theme 미지정 시에만 OS를 추종(html[data-theme] 있으면 강제 모드가 이긴다). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --color-bg: 30 29 27; /* #1E1D1B warm charcoal */
-    --color-surface: 38 37 34; /* #262522 */
-    --color-elevated: 45 43 39; /* #2D2B27 */
-    --color-border: 61 58 52; /* warm */
-    --color-muted: 156 150 139;
-    --color-fg: 237 235 228; /* warm off-white */
-    --color-primary: 214 138 105; /* #D68A69 lighter clay */
-    --color-primary-fg: 28 26 24;
-    --color-success: 132 170 132;
-    --color-warning: 209 158 96;
-    --color-danger: 224 122 104;
-    --color-info: 148 163 184; /* 쿨 블루그레이 밝은 변형 */
+    --color-bg: 17 17 17;
+    --color-surface: 30 30 30;
+    --color-elevated: 42 42 42;
+    --color-border: 56 56 56;
+    --color-muted: 176 176 176;
+    --color-fg: 245 245 245;
+    --color-primary: 10 132 255; /* #0A84FF Apple systemBlue(dark) */
+    --color-primary-fg: 255 255 255;
+    --color-success: 76 183 130;
+    --color-warning: 242 201 76;
+    --color-danger: 235 87 87;
+    --color-info: 100 190 255;
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.4);
   }
 }
 
 /* 수동 강제 다크(html[data-theme="dark"]) — media 값과 동일. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-bg: 30 29 27;
-  --color-surface: 38 37 34;
-  --color-elevated: 45 43 39;
-  --color-border: 61 58 52;
-  --color-muted: 156 150 139;
-  --color-fg: 237 235 228;
-  --color-primary: 214 138 105;
-  --color-primary-fg: 28 26 24;
-  --color-success: 132 170 132;
-  --color-warning: 209 158 96;
-  --color-danger: 224 122 104;
-  --color-info: 148 163 184;
+  --color-bg: 17 17 17;
+  --color-surface: 30 30 30;
+  --color-elevated: 42 42 42;
+  --color-border: 56 56 56;
+  --color-muted: 176 176 176;
+  --color-fg: 245 245 245;
+  --color-primary: 10 132 255;
+  --color-primary-fg: 255 255 255;
+  --color-success: 76 183 130;
+  --color-warning: 242 201 76;
+  --color-danger: 235 87 87;
+  --color-info: 100 190 255;
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.4);
 }
 
-/* 수동 강제 라이트(html[data-theme="light"]) — OS가 다크여도 크림 라이트 유지(기본 정체성).
+/* 수동 강제 라이트(html[data-theme="light"]) — OS가 다크여도 라이트 유지.
    색 토큰은 기본 :root(라이트)를 그대로 상속한다(위 media는 [data-theme] 있으면 미적용). */
 :root[data-theme="light"] {
   color-scheme: light;
@@ -659,209 +663,10 @@
   }
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   테마 선택(data-palette) — 2026-07-17 사용자 요청. Claude(:root 원본)는 위 :root 그대로 보존.
-   각 팔레트는 --color-*·--font-*·--radius-*·--shadow-* 변수만 덮어써 시각 레이어를 통째로 교체
-   (컴포넌트 구조·마크업·로직 불변). data-theme(light/dark)와 직교. 색 채널은 "R G B"(Tailwind 소비).
-   ════════════════════════════════════════════════════════════════════════ */
-
-/* ─── A) Apple(HIG) — SF Pro / iOS 블루 액센트 / 넉넉한 radius / 부드러운 그림자 ─── */
-:root[data-palette="apple"] {
-  color-scheme: light;
-  --color-bg: 242 242 247;       /* systemGroupedBackground */
-  --color-surface: 255 255 255;
-  --color-elevated: 249 249 251;
-  --color-border: 209 209 214;   /* systemGray4 */
-  --color-muted: 128 128 133;    /* systemGray, AA */
-  --color-fg: 28 28 30;          /* label */
-  --color-primary: 0 122 255;    /* systemBlue */
-  --color-primary-fg: 255 255 255;
-  --color-success: 40 160 70;    /* systemGreen(어둡게 조정=AA) */
-  --color-warning: 181 105 0;    /* systemOrange(어둡게=AA) */
-  --color-danger: 215 45 42;     /* systemRed(어둡게=AA) */
-  --color-info: 0 133 189;       /* systemTeal(어둡게=AA) */
-  --font-sans: -apple-system, "SF Pro Text", "SF Pro Display", "Pretendard", system-ui, sans-serif;
-  --font-serif: var(--font-sans);
-  --font-display: -apple-system, "SF Pro Display", "Pretendard", system-ui, sans-serif;
-  --radius-btn: 0.75rem;
-  --radius-input: 0.75rem;
-  --radius-card: 1rem;           /* 16px */
-  --radius-badge: 0.5rem;
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 6px 20px rgb(0 0 0 / 0.06); /* 부드럽고 넓은 그림자 */
-}
-:root[data-palette="apple"][data-theme="dark"] {
-  color-scheme: dark;
-  --color-bg: 0 0 0;
-  --color-surface: 28 28 30;
-  --color-elevated: 44 44 46;
-  --color-border: 56 56 58;
-  --color-muted: 152 152 158;
-  --color-fg: 242 242 247;
-  --color-primary: 10 132 255;   /* systemBlue dark */
-  --color-primary-fg: 255 255 255;
-  --color-success: 48 209 88;
-  --color-warning: 255 159 10;
-  --color-danger: 255 69 58;
-  --color-info: 100 210 255;
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
-}
-/* Apple: 살짝 큰 제목·부드러운 헤어라인·모바일 상단바 글래스 강화 */
-:root[data-palette="apple"] .font-display { letter-spacing: -0.02em; font-weight: 700; }
-
-/* ─── B) Linear(기본 팔레트) — 고대비·얇은 보더·미니멀(그림자 없음) ─── */
-:root[data-palette="linear"] {
-  color-scheme: light; /* Linear 라이트(기본 팔레트·기본 테마). 다크는 아래 [data-theme="dark"] 변형 */
-  --color-bg: 255 255 255;
-  --color-surface: 251 251 251;
-  --color-elevated: 244 245 248;
-  --color-border: 228 228 231;
-  --color-muted: 107 111 118;
-  --color-fg: 16 16 18;
-  --color-primary: 94 106 210;   /* Linear indigo */
-  --color-primary-fg: 255 255 255;
-  --color-success: 62 159 114;
-  --color-warning: 176 122 8;
-  --color-danger: 214 69 69;
-  --color-info: 94 106 210;
-  --font-sans: -apple-system, "SF Pro Text", "SF Pro Display", "Pretendard", system-ui, sans-serif; /* Apple과 동일(2026-07-18 사용자 요청) */
-  --font-serif: var(--font-sans);
-  --font-display: -apple-system, "SF Pro Display", "Pretendard", system-ui, sans-serif;
-  /* 각진 모던(2026-07-29 사용자 요청, render.com 참조) — 기본 팔레트만. Apple(넉넉한 radius)·
-     Spotify/Pinterest(pill)는 그 자체가 팔레트 정체성이라 건드리지 않는다. */
-  --radius-btn: 0.25rem;
-  --radius-input: 0.25rem;
-  --radius-card: 0.375rem;
-  --radius-badge: 0.1875rem;
-  --shadow-card: none;           /* 미니멀 — 얇은 보더로 구분 */
-}
-:root[data-palette="linear"][data-theme="dark"] {
-  color-scheme: dark;
-  --color-bg: 8 9 10;            /* near-black */
-  --color-surface: 16 17 19;
-  --color-elevated: 24 25 27;
-  --color-border: 38 40 44;      /* 얇은 헤어라인 */
-  --color-muted: 138 143 152;
-  --color-fg: 247 248 248;       /* 고대비 */
-  --color-primary: 122 130 224;  /* 밝은 indigo */
-  --color-primary-fg: 255 255 255;
-  --color-success: 76 183 130;
-  --color-warning: 242 201 76;
-  --color-danger: 235 87 87;
-  --color-info: 122 130 224;
-  --shadow-card: none;
-}
-:root[data-palette="linear"] .font-display { font-weight: 600; letter-spacing: -0.01em; }
-
-/* ─── C) Spotify — 그린 액센트·pill 버튼·둥근 카드(2026-07-18 사용자 요청). 다크가 정체성이나 팔레트는 테마 강제 안 함(라이트 변형 제공) ─── */
-:root[data-palette="spotify"] {
-  color-scheme: light;
-  --color-bg: 255 255 255;
-  --color-surface: 247 247 247;
-  --color-elevated: 240 240 240;
-  --color-border: 224 224 224;
-  --color-muted: 106 106 106;    /* AA */
-  --color-fg: 18 18 18;
-  --color-primary: 25 168 79;    /* Spotify 그린(라이트=약간 어둡게 조정, 텍스트 대비) */
-  --color-primary-fg: 255 255 255;
-  --color-success: 25 168 79;
-  --color-warning: 176 122 8;
-  --color-danger: 214 69 69;
-  --color-info: 25 168 79;
-  --font-sans: "Pretendard", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
-  --font-serif: var(--font-sans);
-  --font-display: "Pretendard", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
-  --radius-btn: 624.9375rem;     /* pill(Spotify 버튼) */
-  --radius-input: 0.5rem;
-  --radius-card: 0.5rem;
-  --radius-badge: 624.9375rem;
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 16px rgb(0 0 0 / 0.06);
-}
-:root[data-palette="spotify"][data-theme="dark"] {
-  color-scheme: dark;
-  --color-bg: 18 18 18;          /* Spotify #121212 */
-  --color-surface: 24 24 24;     /* #181818 */
-  --color-elevated: 40 40 40;    /* #282828 */
-  --color-border: 51 51 51;
-  --color-muted: 179 179 179;    /* #b3b3b3 */
-  --color-fg: 255 255 255;
-  --color-primary: 29 185 84;    /* Spotify #1DB954 */
-  --color-primary-fg: 0 0 0;     /* 그린 버튼=검정 텍스트(Spotify 실제) */
-  --color-success: 29 185 84;
-  --color-warning: 242 201 76;
-  --color-danger: 235 87 87;
-  --color-info: 29 185 84;
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
-}
-:root[data-palette="spotify"] .font-display { font-weight: 700; letter-spacing: -0.02em; }
-:root[data-palette="spotify"] .btn-primary { font-weight: 700; }
-
-/* ─── D) Pinterest — 레드 액센트·넉넉한 pill·둥근 카드·부드러운 그림자(2026-07-18 사용자 요청) ─── */
-:root[data-palette="pinterest"] {
-  color-scheme: light;
-  --color-bg: 255 255 255;
-  --color-surface: 255 255 255;
-  --color-elevated: 247 247 247;
-  --color-border: 225 225 225;
-  --color-muted: 118 118 118;    /* Pinterest 보조 텍스트 #767676, AA */
-  --color-fg: 17 17 17;
-  --color-primary: 230 0 35;     /* Pinterest 레드 #E60023 */
-  --color-primary-fg: 255 255 255;
-  --color-success: 20 130 60;
-  --color-warning: 176 122 8;
-  --color-danger: 230 0 35;
-  --color-info: 0 116 179;
-  --font-sans: "Pretendard", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
-  --font-serif: var(--font-sans);
-  --font-display: "Pretendard", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
-  --radius-btn: 624.9375rem;     /* pill(Pinterest 버튼) */
-  --radius-input: 1rem;
-  --radius-card: 1rem;           /* 16px — 넉넉한 둥근 카드 */
-  --radius-badge: 624.9375rem;
-  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.08);
-}
-:root[data-palette="pinterest"][data-theme="dark"] {
-  color-scheme: dark;
-  --color-bg: 17 17 17;
-  --color-surface: 30 30 30;
-  --color-elevated: 42 42 42;
-  --color-border: 56 56 56;
-  --color-muted: 176 176 176;
-  --color-fg: 245 245 245;
-  --color-primary: 255 45 76;    /* 다크에서 밝은 레드 */
-  --color-primary-fg: 255 255 255;
-  --color-success: 76 183 130;
-  --color-warning: 242 201 76;
-  --color-danger: 255 45 76;
-  --color-info: 100 190 255;
-  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.4);
-}
-:root[data-palette="pinterest"] .font-display { font-weight: 700; letter-spacing: -0.01em; }
-:root[data-palette="pinterest"] .btn-primary { font-weight: 700; }
-
-/* ─── 테마 선택 스와치 아이콘(2026-07-17 사용자 요청 — 드롭다운 대신 특징색 원형 버튼 클릭 선택) ───
-   색은 CSP(style-src 인라인 금지)상 인라인 style 불가라 클래스로. 활성 스와치=fg 링 강조(어느 배경에서도 보임). */
-.theme-swatch {
-  width: 1.375rem; height: 1.375rem; border-radius: 9999px;
-  border: 1px solid rgb(0 0 0 / 0.18);
-  cursor: pointer; padding: 0; flex: none;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
-}
-.theme-swatch:hover { transform: scale(1.12); }
-/* 활성 스와치 링 = **data-palette 기준 CSS**(theme-init.js가 <head>에서 페인트 전 세팅). aria-pressed는 app.js(defer)가
-   첫 페인트 뒤에 걸어, 매 페이지 이동마다 '링 없이 페인트 → app.js가 링 추가'로 링이 사라졌다 나타났다(2026-07-21 사용자 리포트).
-   data-palette로 그리면 첫 페인트부터 링이 있어 깜빡임이 없다. claude = 속성 없음(:not([data-palette])). aria-pressed는 a11y용으로 유지. */
-html[data-palette="linear"] .theme-swatch-linear,
-html[data-palette="apple"] .theme-swatch-apple,
-html[data-palette="spotify"] .theme-swatch-spotify,
-html[data-palette="pinterest"] .theme-swatch-pinterest,
-html:not([data-palette]) .theme-swatch-claude,
-.theme-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px rgb(var(--color-bg)), 0 0 0 3px rgb(var(--color-fg)); }
-.theme-swatch:focus-visible { outline: none; box-shadow: 0 0 0 2px rgb(var(--color-bg)), 0 0 0 3px rgb(var(--color-primary)); }
-.theme-swatch-claude { background: #C8795B; }   /* 클레이(Claude 기본 정체성) */
-.theme-swatch-apple { background: #007AFF; }    /* iOS 블루 */
-.theme-swatch-linear { background: #5E6AD2; }   /* Linear indigo */
-.theme-swatch-spotify { background: #1DB954; }  /* Spotify 그린 */
-.theme-swatch-pinterest { background: #E60023; }/* Pinterest 레드 */
+/* 제목·주 버튼 굵기(2026-07-30 단일 테마로 접을 때 옛 Pinterest 팔레트에서 승계).
+   @layer 밖이라 마크업의 font-semibold 유틸리티보다 우선한다(레이어 없는 저자 스타일이 이긴다). */
+.font-display { font-weight: 700; letter-spacing: -0.01em; }
+.btn-primary { font-weight: 700; }
 
 /* 매출 월별 추세 SVG 바 차트(2026-07-19) — 색은 CSS 클래스(fill), 인라인 style 금지(CSP·함정 #27). */
 /* 차트 색은 팔레트·테마 무관 고정값(2026-07-19 사용자 요청): 팔레트 primary/success를 쓰면 스포티(그린)에서 매출↔순이익이
