@@ -47,9 +47,13 @@ const router = express.Router();
 function sessionTypeLabel(session) {
   const t = session.session_type;
   if (!t) return "";
-  if (RENTAL_SESSION_TYPES.includes(t)) { // 녹음·대관·공연 = 대관 매출 → 단가 항목명 병기
+  if (RENTAL_SESSION_TYPES.includes(t)) { // 녹음·촬영 대관·작업 대관·공연 = 시간제 대관 매출 → 단가 항목명 병기
     const ri = session.rate_item_id ? getRateItem(session.rate_item_id) : null;
-    return ri && ri.name ? `${t} · ${ri.name}` : `${t} 세션`;
+    if (!ri || !ri.name) return `${t} 세션`;
+    // ⚠️이름이 겹치면 종류를 떼고 항목명만 쓴다 — '촬영 대관 · 촬영 대관'·'녹음 · 솔로 녹음'처럼 같은 말이
+    // 두 번 나오던 것(2026-07-30 종류 개명으로 눈에 띔). 항목명이 이미 무엇인지 말하므로 그것만으로 충분하다.
+    const dup = ri.name.includes(t) || t.includes(ri.name);
+    return dup ? ri.name : `${t} · ${ri.name}`;
   }
   if (t === "믹싱") return "믹스 세션"; // 사용자 표기 선호(믹싱 → 믹스)
   return `${t} 세션`;

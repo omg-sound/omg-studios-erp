@@ -124,7 +124,7 @@ const RATE_ROWS = [
 for (const [name, cat] of RATE_ROWS) {
   db().prepare("INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active) VALUES (?, ?, 210, 300000, 60, 100000, 1)").run(name, cat);
 }
-test("세션 폼: 종류(녹음↔대관↔공연↔믹싱)에 따라 단가 옵션 스왑·노출 토글", () => {
+test("세션 폼: 종류(녹음↔촬영 대관↔공연↔믹싱)에 따라 단가 옵션 스왑·노출 토글", () => {
   const rateItems = db().prepare("SELECT * FROM rate_items").all();
   const html = `<form data-session-form>${sessionBookingFields({}, [], rateItems, [], "")}</form>`;
   const { win, doc } = mountDom(html);
@@ -136,7 +136,7 @@ test("세션 폼: 종류(녹음↔대관↔공연↔믹싱)에 따라 단가 옵
   assert.ok(optionNames().some((t) => t.includes("보컬 녹음 UI")));
   assert.ok(!optionNames().some((t) => t.includes("뮤직비디오")));
   // 촬영으로 전환 → 촬영 단가만
-  typeSel.value = "대관"; fire(win, typeSel, "change");
+  typeSel.value = "촬영 대관"; fire(win, typeSel, "change");
   assert.ok(optionNames().some((t) => t.includes("뮤직비디오 촬영 UI")), "촬영 옵션으로 교체");
   assert.ok(!optionNames().some((t) => t.includes("보컬 녹음 UI")), "녹음 옵션 제거");
   assert.equal(recBlock.hidden, false, "대관 종류라 단가 블록 노출");
@@ -1907,14 +1907,14 @@ function setSeg(win, doc, kind, which, hhmm) {
   fire(win, el, "input");
 }
 
-test("세션 폼: 대관을 고르면 구간 입력이 나오고 시작·종료+소요는 숨는다", async () => {
+test("세션 폼: 촬영 대관을 고르면 구간 입력이 나오고 시작·종료+소요는 숨는다", async () => {
   const { win, doc } = mountFilmingForm([]);
   await tick();
   const seg = doc.querySelector("[data-segments]");
   const durWrap = doc.querySelector("[data-duration-wrap]");
   assert.equal(seg.hidden, true, "녹음일 때는 구간 없음");
   assert.equal(durWrap.hidden, false);
-  setType(win, doc, "대관");
+  setType(win, doc, "촬영 대관");
   assert.equal(seg.hidden, false, "촬영이면 구간 입력");
   assert.equal(durWrap.hidden, true, "같은 시간을 두 번 입력하게 두지 않는다");
   setType(win, doc, "녹음");
@@ -1925,7 +1925,7 @@ test("세션 폼: 대관을 고르면 구간 입력이 나오고 시작·종료+
 test("세션 폼: 구간 시각은 제출용 hidden에 동기된다(보이는 입력은 nameless)", async () => {
   const { win, doc } = mountFilmingForm([]);
   await tick();
-  setType(win, doc, "대관");
+  setType(win, doc, "촬영 대관");
   setSeg(win, doc, "반입·설치", "시작", "1000");
   const hidden = doc.querySelector('input[name="seg_setup_start"]');
   assert.equal(hidden.value, "10:00", "콜론 자동 포맷 + hidden 동기(안 되면 구간이 저장되지 않는다)");
@@ -1935,7 +1935,7 @@ test("세션 폼 겹침 경고: 촬영 구간은 span(반입 시작~철수 종�
   const { win, doc } = mountFilmingForm([{ start: 780, end: 840, label: "Studio A 13:00–14:00 · 다른 세션" }]);
   await tick();
   const warn = doc.querySelector("[data-conflict-warn]");
-  setType(win, doc, "대관");
+  setType(win, doc, "촬영 대관");
   setSeg(win, doc, "반입·설치", "시작", "10:00");
   setSeg(win, doc, "반입·설치", "종료", "12:00");
   setSeg(win, doc, "촬영", "시작", "14:00"); // 12–14시는 공백이지만 점유는 이어진다
@@ -1948,7 +1948,7 @@ test("세션 폼 겹침 경고: 구간 span이 점유와 안 겹치면 경고 �
   const { win, doc } = mountFilmingForm([{ start: 1260, end: 1380, label: "Studio A 21:00–23:00 · 야간" }]);
   await tick();
   const warn = doc.querySelector("[data-conflict-warn]");
-  setType(win, doc, "대관");
+  setType(win, doc, "촬영 대관");
   setSeg(win, doc, "반입·설치", "시작", "10:00");
   setSeg(win, doc, "반입·설치", "종료", "12:00");
   setSeg(win, doc, "촬영", "시작", "12:00");
@@ -1966,7 +1966,7 @@ test("세션 폼: 할증 입력은 없다(할증 개념 폐기 — 가산은 단
   assert.equal(doc.querySelector("[data-surcharge-check]"), null, "할증 체크박스 없음");
   assert.equal(doc.querySelector('input[name="surcharge_key"]'), null, "할증 제출 필드 없음");
   assert.equal(doc.querySelector('input[name="surcharge_memo"]'), null, "할증 사유 필드 없음");
-  setType(win, doc, "대관");
+  setType(win, doc, "촬영 대관");
   assert.equal(doc.querySelector("[data-surcharge-check]"), null, "촬영에서도 없음");
   assert.equal(doc.querySelector("[data-segments]").hidden, false, "촬영 구간은 그대로 동작");
 });

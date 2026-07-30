@@ -15,7 +15,9 @@
 
 const { db } = require("../db");
 
-const KINDS = ["recording", "filming", "performance"];
+// 요금표 분류의 종류 — config `SESSION_TYPE_RATE_KIND`의 값과 짝이다(추가 시 양쪽 + RATE_KIND_LABELS를 함께).
+// workspace(작업 대관)는 2026-07-30 신설 — filming(촬영 대관)만 3구간 폼을 쓰므로 kind를 갈라 둔다.
+const KINDS = ["recording", "filming", "workspace", "performance"];
 
 /**
  * 전체 분류 — **한 축의 자유 순서**(sort_order → 이름). 종류(kind)로 묶지 않는다.

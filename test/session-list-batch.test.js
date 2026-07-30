@@ -42,7 +42,7 @@ function seedProject(n) {
   for (let i = 0; i < n; i++) {
     const filming = i % 2 === 1;
     const day = String(10 + (i % 18)).padStart(2, "0");
-    const id = Number(ins.run(pj, filming ? "대관" : "녹음", `2099-08-${day}`, filming ? "20:00" : "13:30", filming ? PKG : solo).lastInsertRowid);
+    const id = Number(ins.run(pj, filming ? "촬영 대관" : "녹음", `2099-08-${day}`, filming ? "20:00" : "13:30", filming ? PKG : solo).lastInsertRowid);
     if (filming) {
       seg.run(id, "setup", "10:00", "12:00", 0);
       seg.run(id, "shoot", "12:00", "19:00", 10);
@@ -109,7 +109,7 @@ test("배치 경로가 단건 경로와 같은 금액을 낸다(구간 합산 �
     assert.equal(row.billing.minutes, single.minutes, `세션 ${row.id} 요금 시간 불일치`);
   }
   // 촬영 행은 구간 합산(600분)이 실제로 반영돼야 이 테스트가 의미가 있다.
-  const filming = rows.find((r) => r.session_type === "대관");
+  const filming = rows.find((r) => r.session_type === "촬영 대관");
   assert.equal(filming.billing.minutes, 600, "구간 합산이 배치 경로에서도 동작");
   assert.equal(filming.billing.amount, 1000000, "600분 = 기본 이내 → 기본가");
 });

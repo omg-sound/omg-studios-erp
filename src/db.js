@@ -751,15 +751,17 @@ function init() {
     }
     setState("rooms_drop_hierarchy_v1", "done");
   }
-  // 세션 종류 '촬영' → '대관'(2026-07-30 사용자 결정 — 스튜디오가 촬영을 대행하는 게 아니라 공간을 대관한다.
-  // 무엇을 위한 대관인지는 단가 항목 이름으로 표현: 예 '촬영 대관').
-  // ⚠️`sessions.session_type`은 **한글 문자열로 저장**되므로 기존 행을 함께 갱신해야 한다 — 안 하면 옛 '촬영'
-  // 세션이 SESSION_TYPES에 없는 값이 되어 편집 폼에서 첫 값('녹음')으로 떨어지고, 대관 청구 후보(RENTAL_IN)에서도 빠진다.
+  // 세션 종류 '촬영' → '촬영 대관'(2026-07-30 사용자 결정 — 대관 = 스튜디오가 작업을 대행하지 않고 자리를
+  // 내주는 거래. 촬영 대관 / 작업 대관 두 종류로 나눴다. 자세한 이유는 config.js SESSION_TYPES 주석).
+  // ⚠️`sessions.session_type`은 **한글 문자열로 저장**되므로 기존 행을 함께 갱신해야 한다 — 안 하면 옛 값이
+  // SESSION_TYPES에 없는 값이 되어 편집 폼에서 첫 값('녹음')으로 떨어지고, 대관 청구 후보(RENTAL_IN)에서도 빠진다.
+  // 📌'대관'도 함께 받는다: 같은 날 하루 존재했던 중간 이름으로, **프로덕션엔 배포되지 않았지만** 개발 DB에는
+  //   그 값이 남아 있다. 둘을 한 게이트에서 처리해 운영은 '촬영' → '촬영 대관' **한 단계**만 밟는다.
   // 이미 발행된 `invoice_items.description` 스냅샷은 건드리지 않는다 — 발행 시점 기록이라 그대로 두는 것이 맞다.
-  if (!getState("session_type_filming_to_rental_v1")) {
-    const moved = d.prepare("UPDATE sessions SET session_type = '대관' WHERE session_type = '촬영'").run().changes;
-    if (moved) console.log(`[migrate] 세션 종류 '촬영' → '대관' ${moved}건 갱신`);
-    setState("session_type_filming_to_rental_v1", "done");
+  if (!getState("session_type_rental_split_v1")) {
+    const moved = d.prepare("UPDATE sessions SET session_type = '촬영 대관' WHERE session_type IN ('촬영', '대관')").run().changes;
+    if (moved) console.log(`[migrate] 세션 종류 → '촬영 대관' ${moved}건 갱신(옛 '촬영'·'대관')`);
+    setState("session_type_rental_split_v1", "done");
   }
   // 레거시 마이그레이션은 1회만. 신규 프로젝트(project_type 있음)는 services=NULL이 정상이므로,
   // 매 부팅 재실행되면 memo 추론으로 유령 곡·작업을 주입한다 → admin_state 플래그로 1회 게이트.

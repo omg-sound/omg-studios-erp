@@ -102,7 +102,7 @@ test("세션 구간 테이블: 세션 삭제 시 CASCADE로 함께 사라진다"
   const d = db();
   const p = d.prepare("INSERT INTO projects (title) VALUES ('구간 테스트')").run();
   const s = d
-    .prepare("INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time) VALUES (?, '대관', '2026-08-01', '10:00', '20:00')")
+    .prepare("INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time) VALUES (?, '촬영 대관', '2026-08-01', '10:00', '20:00')")
     .run(p.lastInsertRowid);
   const ins = d.prepare("INSERT INTO session_segments (session_id, kind, start_time, end_time, sort_order) VALUES (?, ?, ?, ?, ?)");
   ins.run(s.lastInsertRowid, "setup", "10:00", "12:00", 0);

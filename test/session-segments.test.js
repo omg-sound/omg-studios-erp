@@ -46,7 +46,7 @@ const SEGS = {
 };
 
 const base = (extra = {}) => ({
-  session_type: "대관",
+  session_type: "촬영 대관",
   session_date: "2026-09-01",
   rate_item_id: String(pkgId),
   room_id: String(roomA),

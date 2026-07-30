@@ -30,7 +30,8 @@ const { kstDateTime, kstYmd, todayYmd } = require("./lib/date"); // DB는 UTC �
 const { getState } = require("./db");
 
 // 세션 종류 라벨 — **config의 session_type 값과 같은 말**이어야 한다(요금표 분류가 어느 세션 종류에 붙는지 고르는 select).
-const RATE_KIND_LABELS = { recording: "녹음", filming: "대관", performance: "공연" };
+// 순서 = 요금표 분류 select·optgroup 순서(녹음 → 촬영 대관 → 작업 대관 → 공연).
+const RATE_KIND_LABELS = { recording: "녹음", filming: "촬영 대관", workspace: "작업 대관", performance: "공연" };
 
 // 감사 로그 action → 화면 라벨(2026-07-20 인증 기록 추가와 함께). 여기 없는 action은 원문 그대로 보인다 —
 // 새 action을 추가할 때 이 맵을 안 고쳐도 화면이 깨지지 않게(라벨은 읽기 편의일 뿐 진실원천은 action 문자열).
