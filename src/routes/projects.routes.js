@@ -201,17 +201,21 @@ router.get("/", requireAuth, (req, res) => {
   const q = (req.query.q || "").toString().trim();
   let rows = listProjects(user, { q });
 
-  // '내 프로젝트만' 필터(2026-07-12) — 전 프로젝트 열람은 유지하고 opt-in 필터만 얹는다(?mine=1, 기억 안 함).
+  // '내 프로젝트만' 필터(2026-07-12) — 전 프로젝트 열람은 유지하되 **기본으로 켜 둔다**(2026-07-30 사용자 요청).
+  // 끄려면 `?mine=0`(토글 pill). ⚠️여전히 **상태를 기억하지 않는다**([[no-list-filter-memory]]) — 고정 기본값일 뿐이라
+  // 주소를 지우고 새로 들어오면 항상 '내 프로젝트만'이다(마지막 선택을 복원하지 않는다).
   // 내 것 = 로그인 사용자의 담당자(project_managers) 기준 PM·담당 세션·담당 작업 관여(listProjectIdsForManager).
-  // 담당자 행이 없는 계정(대표 등)은 관여 개념이 없어 토글 자체를 숨긴다.
+  // 담당자 행이 없는 계정(대표 등)은 관여 개념이 없어 토글을 숨기고 전체를 보여준다(기본 켜짐도 적용 안 됨).
   const myManager = getManagerByUserId(user.id);
   const mineAvailable = Boolean(myManager);
-  const mine = mineAvailable && req.query.mine === "1";
+  const mine = mineAvailable && req.query.mine !== "0";
   if (mine) {
     const myIds = listProjectIdsForManager(myManager.id);
     rows = rows.filter((p) => myIds.has(p.id));
   }
-  const keepQ = `${q ? "&q=" + encodeURIComponent(q) : ""}${mine ? "&mine=1" : ""}`; // 탭·더보기·검색 링크에 필터 상태 보존
+  // 탭·더보기·검색 링크에 필터 상태 보존. 기본이 켜짐이라 **보존해야 하는 쪽은 '끔'(mine=0)** 이다.
+  const offQ = mineAvailable && !mine ? "&mine=0" : "";
+  const keepQ = `${q ? "&q=" + encodeURIComponent(q) : ""}${offQ}`;
 
   const searched = Boolean(q);
   // 3탭 분류(진행 중/청구 필요/완료). active는 splitProjectTabs 내부에서 이미 세션 임박순 정렬됨.
@@ -231,23 +235,26 @@ router.get("/", requireAuth, (req, res) => {
         hrefFn: (k) => `/projects?tab=${k}${keepQ}`,
       })
     : "";
-  // '내 프로젝트만' 토글 pill — 담당자 계정만 노출. 켜짐=강조, 클릭 토글(tab·q 보존).
+  // '내 프로젝트만' 토글 pill — 담당자 계정만 노출. 켜짐=강조(기본), 클릭하면 끈다(tab·q 보존).
   const minePill = mineAvailable
-    ? `<a href="/projects?tab=${tab}${q ? "&q=" + encodeURIComponent(q) : ""}${mine ? "" : "&mine=1"}" class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm ${mine ? "border-primary bg-primary/10 font-medium text-primary" : "border-border text-muted hover:text-fg"}">${mine ? "✓ " : ""}내 프로젝트만</a>`
+    ? `<a href="/projects?tab=${tab}${q ? "&q=" + encodeURIComponent(q) : ""}${mine ? "&mine=0" : ""}" class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm ${mine ? "border-primary bg-primary/10 font-medium text-primary" : "border-border text-muted hover:text-fg"}">${mine ? "✓ " : ""}내 프로젝트만</a>`
     : "";
   // (밀도 토글 폐지 2026-07-16 — 목록이 청구식 컬럼 표로 통일되면서 좁게/넓게 개념 제거.)
   const mineToggle = minePill ? `<div class="mb-3 flex items-center gap-2">${minePill}</div>` : "";
   let list;
+  // ⚠️'내 프로젝트만'이 기본이라 **빈 화면에서 나갈 길**을 반드시 준다(2026-07-30): 관여한 프로젝트가 없는
+  // 계정(새 스태프 등)은 첫 진입이 빈 목록인데, 토글 pill만으로는 '전체엔 있다'는 걸 모른다.
+  const allCta = { href: `/projects?tab=${tab}${q ? "&q=" + encodeURIComponent(q) : ""}&mine=0`, label: "전체 프로젝트 보기" };
   if (!rows.length) {
     list = searched
-      ? emptyState(`"${esc(q)}" 검색 결과가 없습니다.`, { card: true })
+      ? emptyState(`"${esc(q)}" 검색 결과가 없습니다.`, { card: true, cta: mine ? allCta : null })
       : mine
-        ? emptyState("내가 관여한 프로젝트가 없습니다.", { card: true, icon: "projects" })
+        ? emptyState("내가 관여한 프로젝트가 없습니다.", { card: true, icon: "projects", cta: allCta })
         : emptyState("프로젝트가 없습니다.", { card: true, icon: "projects", cta: canCreate ? { href: "/projects/new", label: "+ 새 프로젝트" } : null });
   } else if (!activeRows.length) {
     const scope = mine ? "내가 관여한 " : "";
     const emptyMsg = { active: `${scope}진행 중인 프로젝트가 없습니다.`, billing: `${scope}청구가 필요한 프로젝트가 없습니다.`, done: `${scope}완료된 프로젝트가 없습니다.` }[tab];
-    list = emptyState(emptyMsg, { card: true });
+    list = emptyState(emptyMsg, { card: true, cta: mine ? allCta : null });
   } else {
     // 목록 상한(2026-07-09 스케일 점검) — 완료 탭이 해가 갈수록 누적되므로 기본 100건 + 더 보기. 요약도 표시분만 배치 조회.
     const cap = capList(activeRows, req.query, (n) => `/projects?tab=${tab}${keepQ}&limit=${n}`);
@@ -267,14 +274,14 @@ router.get("/", requireAuth, (req, res) => {
 
   const searchBar = searchBox({
     action: "/projects", q, placeholder: "프로젝트 · 아티스트 검색", label: "프로젝트 검색",
-    suggestUrl: "/projects/suggest", hidden: `<input type="hidden" name="tab" value="${esc(tab)}" />${mine ? `<input type="hidden" name="mine" value="1" />` : ""}`,
+    suggestUrl: "/projects/suggest", hidden: `<input type="hidden" name="tab" value="${esc(tab)}" />${offQ ? `<input type="hidden" name="mine" value="0" />` : ""}`,
   });
   const resultNote = searched
-    ? `<div class="mb-3 text-sm text-muted">"${esc(q)}" 결과 ${rows.length}건 · <a href="/projects${mine ? "?mine=1" : ""}" class="text-primary hover:underline">전체 보기</a></div>`
+    ? `<div class="mb-3 text-sm text-muted">"${esc(q)}" 결과 ${rows.length}건 · <a href="/projects${offQ ? "?mine=0" : ""}" class="text-primary hover:underline">전체 보기</a></div>`
     : "";
 
   const body = `
-    ${pageHeader({ title: "프로젝트", desc: "전체 프로젝트", action })}
+    ${pageHeader({ title: "프로젝트", desc: mine ? "내가 관여한 프로젝트" : "전체 프로젝트", action })}
     ${searchBar}
     ${resultNote}
     ${mineToggle}

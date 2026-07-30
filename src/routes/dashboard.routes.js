@@ -98,7 +98,7 @@ router.get("/", requireAuth, (req, res) => {
     <div class="card mt-4">
       <div class="mb-2 flex items-center justify-between gap-2">
         <h2 class="font-display text-base font-semibold">청구 필요 ${needBilling.length}</h2>
-        ${doneCnt ? `<a href="/projects?tab=billing" class="text-xs text-muted hover:text-fg hover:underline">완료된 프로젝트 ${doneCnt}건 ↗</a>` : ""}
+        ${doneCnt ? `<a href="/projects?tab=billing&mine=0" class="text-xs text-muted hover:text-fg hover:underline">완료된 프로젝트 ${doneCnt}건 ↗</a>` : ""}
       </div>
       ${rowsHtml}
     </div>`;

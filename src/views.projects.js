@@ -151,7 +151,8 @@ function projectTableHead() {
  *  - 다음 세션=진행 중 탭만(디데이 pill), 금액=프로젝트 버짓(청구 필요 탭은 '청구 필요 N' 배지 병기), 작성일=전 탭.
  *  - 반응형: <640px면 thead 숨기고 아티스트·프로젝트 + 탭 값만 2줄 카드(제작사·PM·작성일 숨김).
  */
-function projectListRow(p, summary, { tab = "active", isAdmin = false, openId = null, mine = false, listQuery = "" } = {}) {
+// mine 기본값 = true — 앱의 기본 뷰가 '내 프로젝트만'이라(2026-07-30) 생략 시 그 상태로 읽는다.
+function projectListRow(p, summary, { tab = "active", isAdmin = false, openId = null, mine = true, listQuery = "" } = {}) {
   const href = projectRowHref(p, tab, listQuery);
   const dash = '<span class="text-muted">—</span>';
   // sortVal = 정렬 원값(헤더 클릭 정렬). **항상 명시한다** — 보이는 텍스트로 정렬하면 틀리는 열이 많다:
@@ -194,13 +195,14 @@ function projectListRow(p, summary, { tab = "active", isAdmin = false, openId = 
 
 
 /** 인라인 요약 본문 — 세션 일정(날짜·시간) + 곡·콘텐츠(아티스트·제목·작업자). data.listProjectSummaries 결과 1건. */
-function projectSummaryHtml(s, { isAdmin = false, projectId = null, tab = "active", mine = false } = {}) {
+function projectSummaryHtml(s, { isAdmin = false, projectId = null, tab = "active", mine = true } = {}) {
   if (!s || (!s.sessions.length && !s.tracks.length)) {
     return `<span class="text-muted">등록된 세션·곡·콘텐츠가 없습니다.</span>`;
   }
   // 완료 후 목록으로 복귀하며 이 카드를 다시 펼친다(?open=). 스크롤은 app.js가 보존(경로 동일).
-  // mine=1(내 프로젝트만 필터)이면 보존해 필터된 뷰를 유지(2026-07-12).
-  const ret = `/projects?tab=${esc(tab)}${mine ? "&mine=1" : ""}${projectId ? `&open=${projectId}` : ""}`;
+  // '내 프로젝트만'은 **기본 켜짐**이라(2026-07-30) 복귀 경로에 실어야 하는 상태는 **끔(`mine=0`)** 이다
+  // — 안 실으면 전체 보기로 훑던 사람이 완료 토글 한 번에 '내 프로젝트만'으로 튄다.
+  const ret = `/projects?tab=${esc(tab)}${mine ? "" : "&mine=0"}${projectId ? `&open=${projectId}` : ""}`;
   // 프로젝트 목록 펼침에서 바로 완료(2026-07-11 사용자 요청 — 프로젝트 안 안 들어가고 완료). 편집 권한자·예정/완료 세션만.
   const sessToggle = (se) => {
     if (!isAdmin || (se.status !== "예정" && se.status !== "완료")) return "";
