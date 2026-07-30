@@ -102,7 +102,7 @@ function refreshedPayerSnapshot(inv) {
  * @returns {{ taxInfoIds: number[], cashReceiptIds: number[] }}
  */
 function payerDocMeta() {
-  const taxInfoIds = db().prepare("SELECT id FROM parties WHERE kind='company' AND biz_no IS NOT NULL AND TRIM(biz_no) <> ''").all().map((r) => r.id);
+  const taxInfoIds = db().prepare("SELECT id FROM parties WHERE biz_no IS NOT NULL AND TRIM(biz_no) <> ''").all().map((r) => r.id);
   const cashReceiptIds = db().prepare("SELECT id FROM parties WHERE cash_receipt_no IS NOT NULL AND TRIM(cash_receipt_no) <> ''").all().map((r) => r.id);
   return { taxInfoIds, cashReceiptIds };
 }
@@ -116,7 +116,8 @@ function payerDocMissing(payer) {
   if (!payer) return null;
   const has = (v) => !!(v && String(v).trim());
   if (payer.kind === "company") return has(payer.biz_no) ? null : "PAYER_TAX_INFO_REQUIRED";
-  return has(payer.cash_receipt_no) ? null : "PAYER_CASH_RECEIPT_REQUIRED"; // 개인·그룹 아티스트 등 = 현금영수증
+  // 개인·그룹 등: 사업자번호(biz_no)가 있거나 현금영수증(cash_receipt_no)이 있으면 통과
+  return (has(payer.cash_receipt_no) || has(payer.biz_no)) ? null : "PAYER_CASH_RECEIPT_REQUIRED";
 }
 const { taskTypeLabel } = require("./task-types"); // 무순환
 

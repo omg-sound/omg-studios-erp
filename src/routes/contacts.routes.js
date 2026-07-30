@@ -82,6 +82,7 @@ router.post("/", asyncHandler(async (req, res) => {
       family_name: b.family_name, given_name: b.given_name, honorific: b.honorific,
       nickname: b.nickname, company: b.company, job_title: b.job_title, department: b.department,
       cash_receipt_no: b.cash_receipt_no, // 개인 청구처 → 현금영수증 발행 정보
+      biz_no: b.biz_no, // 개인 사업자 → 세금계산서용 사업자등록번호
     });
     // 생성 폼에서 현재 소속(회사/직함)을 같이 받았으면 첫 소속으로 등록.
     if (b.client_id || (b.title && String(b.title).trim())) {
@@ -133,6 +134,7 @@ router.post("/:id", asyncHandler(async (req, res) => {
       family_name: b.family_name, given_name: b.given_name, honorific: b.honorific,
       nickname: b.nickname, company: b.company, job_title: b.job_title, department: b.department,
       cash_receipt_no: b.cash_receipt_no, // 개인 청구처 → 현금영수증 발행 정보
+      biz_no: b.biz_no, // 개인 사업자 → 세금계산서용 사업자등록번호
     });
     syncCompanyAffiliation(id, b.company, b.job_title); // '회사' 텍스트 → 소속 이력 반영(현재 소속과 다르면 이직으로 등록)
     if (b.group_id !== undefined) setPartyGroup(id, b.group_id); // 소속 그룹(밴드·아이돌) 연결
@@ -285,9 +287,21 @@ function contactForm(c = {}, isEdit = false, manager = null, embedded = false, g
           ${isHouseEngineer ? `<p class="mt-0.5 text-xs text-muted">하우스 엔지니어 로그인 계정 이메일이라 변경 불가합니다.</p>` : ""}
         </div>
       </div>
-      <div>
-        <label class="label">현금영수증 정보</label>
-        <input class="input" name="cash_receipt_no" autocomplete="off" value="${esc(c.cash_receipt_no || "")}" placeholder="예: 010-0000-0000" />
+      <div class="mt-4 rounded-lg border border-border bg-bg/40 p-3">
+        <label class="label mb-2">세무 증빙 (청구용)</label>
+        <div class="flex gap-4 mb-3">
+          <label class="flex items-center gap-2 text-sm"><input type="radio" name="tax_type" value="cash" ${!c.biz_no ? "checked" : ""} data-tax-toggle> 현금영수증 (개인)</label>
+          <label class="flex items-center gap-2 text-sm"><input type="radio" name="tax_type" value="biz" ${c.biz_no ? "checked" : ""} data-tax-toggle> 세금계산서 (개인 사업자)</label>
+        </div>
+        <div data-tax-wrap="cash" class="${c.biz_no ? 'hidden' : ''}">
+          <label class="label">현금영수증 발급번호</label>
+          <input class="input" name="cash_receipt_no" autocomplete="off" value="${esc(c.cash_receipt_no || "")}" placeholder="예: 010-0000-0000" />
+        </div>
+        <div data-tax-wrap="biz" class="${!c.biz_no ? 'hidden' : ''}">
+          <label class="label">사업자등록번호</label>
+          <input class="input" name="biz_no" autocomplete="off" value="${esc(c.biz_no || "")}" placeholder="예: 000-00-00000" />
+          <p class="mt-1 text-xs text-muted">세금계산서를 발급받을 개인 사업자의 사업자 번호를 입력하세요.</p>
+        </div>
       </div>
       <div><label class="label">메모</label><textarea class="input" name="memo" rows="2">${esc(c.memo || "")}</textarea></div>
       ${affBlock}
@@ -383,13 +397,13 @@ function readPaneFor(c) {
 function editPaneFor(c, returnTo = null) {
   const affs = listAffiliations(c.id);
   const linkedManager = getManagerByPartyId(c.id);
-  const cur = affs.find((a) => !a.ended_on);
+  const currentAffs = affs.filter((a) => !a.ended_on);
   // 취소 = 저장하지 않고 읽기 뷰(또는 return 경로)로. data-no-guard + app.js가 bypass도 세워 beforeunload까지 통과(함정 #24).
   const cancelHref = returnTo || `/contacts/${c.id}`;
   const cancel = `<a href="${esc(cancelHref)}" class="text-sm text-primary hover:underline" data-no-guard>← 취소</a>`;
   // 소속 이력 폼도 복귀 경로를 함께 실어보낸다 — 처리 후 편집 화면으로 돌아올 때 백링크 체인이 끊기지 않게.
   const retInput = returnTo ? `<input type="hidden" name="return" value="${esc(returnTo)}" />` : "";
-  const form = contactForm({ ...c, company: c.company || (cur && cur.client_name) || "" }, true, linkedManager, true, listGroupsForPicker(), returnTo);
+  const form = contactForm({ ...c, company: c.company || (currentAffs.length ? currentAffs[0].client_name : "") || "" }, true, linkedManager, true, listGroupsForPicker(), returnTo);
 
   const timeline = affs.length
     ? `<div class="space-y-2">${affs

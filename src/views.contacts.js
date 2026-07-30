@@ -104,8 +104,8 @@ function readRow(label, valueHtml) {
 function contactReadView(p, { affs = [], group = null, projects = [], sessions = [], invoices = [], editHref, extras = "" } = {}) {
   const { classifyParty } = require("./data"); // 지연 require(순환 회피)
   const dash = '<span class="text-muted">—</span>';
-  const cur = affs.find((a) => !a.ended_on);
-  const badges = classifyParty(p, cur).map((t) => `<span class="badge ${t.cls}">${esc(t.label)}</span>`).join(" ");
+  const currentAffs = affs.filter((a) => !a.ended_on);
+  const badges = classifyParty(p, currentAffs[0]).map((t) => `<span class="badge ${t.cls}">${esc(t.label)}</span>`).join(" ");
   const header = `<div class="mb-4 flex items-start justify-between gap-3">
       <div class="min-w-0">
         <h1 class="truncate font-display text-2xl font-semibold text-fg">${esc(personName(p))}</h1>
@@ -114,14 +114,15 @@ function contactReadView(p, { affs = [], group = null, projects = [], sessions =
       <a href="${esc(editHref)}" class="btn-ghost btn-sm shrink-0">편집</a>
     </div>`;
 
-  const contact = `<div class="card p-0">
+    const contact = `<div class="card p-0">
       ${readRow("전화", p.phone ? copyable(p.phone) : dash)}
       ${readRow("이메일", p.email ? copyable(p.email) : dash)}
+      ${p.biz_no ? readRow("사업자등록번호", copyable(p.biz_no)) : ""}
       ${p.cash_receipt_no ? readRow("현금영수증 정보", copyable(p.cash_receipt_no)) : ""}
     </div>`;
 
-  const orgLine = cur && cur.client_id
-    ? `<a href="/clients/${cur.client_id}"${OUT} class="text-primary hover:underline">${esc(cur.client_name || "")} ↗</a>`
+  const orgLine = currentAffs.length
+    ? currentAffs.map(a => a.client_id ? `<a href="/clients/${a.client_id}"${OUT} class="text-primary hover:underline">${esc(a.client_name || "")} ↗</a>` : dash).join(" / ")
     : dash;
   const timeline = affs.length
     ? `<div class="divide-y divide-border/60">${affs.map((a) => `

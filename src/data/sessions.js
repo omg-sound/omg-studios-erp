@@ -527,6 +527,10 @@ function createSession(user, projectId, input = {}) {
   const directorIds = resolveDirectorIds(input);
   f.director_party_id = directorIds[0] || null; // 첫 디렉터(party id)
   const engineerAssignments = resolveEngineerAssignments(input);
+  // 작업 대관 세션: 외주 작업자 단가(worker_rate)를 기입하면 스튜디오 순이익 계산 시 이중 차감이 발생하므로 서버 단에서 원천 차단(0으로 강제)
+  if (f.session_type === "작업 대관") {
+    engineerAssignments.forEach((a) => { a.rate = 0; });
+  }
   const firstEngineer = engineerAssignments.length ? db().prepare("SELECT name FROM project_managers WHERE id = ?").get(engineerAssignments[0].id) : null;
   f.engineer_name = firstEngineer ? firstEngineer.name : null; // 첫 엔지니어 이름(레거시 컬럼 동기화)
   assertNoSessionConflict(f, null, conflictOverride(input));
@@ -563,6 +567,10 @@ function updateSession(user, sessionId, input = {}) {
   const directorIds = resolveDirectorIds(input);
   f.director_party_id = directorIds[0] || null; // 첫 디렉터(party id)
   const engineerAssignments = resolveEngineerAssignments(input);
+  // 작업 대관 세션: 외주 작업자 단가(worker_rate) 이중 차감 방지 (0으로 강제)
+  if (f.session_type === "작업 대관") {
+    engineerAssignments.forEach((a) => { a.rate = 0; });
+  }
   const firstEngineer = engineerAssignments.length ? db().prepare("SELECT name FROM project_managers WHERE id = ?").get(engineerAssignments[0].id) : null;
   f.engineer_name = firstEngineer ? firstEngineer.name : null; // 첫 엔지니어 이름(레거시 컬럼 동기화)
   assertNoSessionConflict(f, s.id, conflictOverride(input));

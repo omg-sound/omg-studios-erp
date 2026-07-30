@@ -76,9 +76,9 @@ function createPerson(b = {}) {
   }
   const info = db().prepare(
     `INSERT INTO parties (kind, name, activity_name, is_artist, phone, email, memo,
-       family_name, given_name, honorific, department, job_title, cash_receipt_no, activity_form)
+       family_name, given_name, honorific, department, job_title, cash_receipt_no, activity_form, biz_no)
      VALUES ('person', @name, @activity_name, @is_artist, @phone, @email, @memo,
-       @family_name, @given_name, @honorific, @department, @job_title, @cash_receipt_no, @activity_form)`
+       @family_name, @given_name, @honorific, @department, @job_title, @cash_receipt_no, @activity_form, @biz_no)`
   ).run({
     name,
     activity_name: blankToNull(b.activity_name),
@@ -89,6 +89,7 @@ function createPerson(b = {}) {
     department: blankToNull(b.department), job_title: blankToNull(b.job_title),
     cash_receipt_no: formatPhone(b.cash_receipt_no), // 전화형이면 하이픈 정규화(카드번호 등 형식 불명은 원본 보존)
     activity_form: blankToNull(b.activity_form), // 아티스트 활동 형태(solo|group|both) — 비아티스트는 null
+    biz_no: formatBizNo(b.biz_no),
   });
   return info.lastInsertRowid;
 }
@@ -169,12 +170,12 @@ function updateParty(id, b = {}) {
   const honorific = pick("honorific") || honorificFromTitle(jobTitle);
   db().prepare(
     `UPDATE parties SET name=?, activity_name=?, is_artist=?, phone=?, email=?, memo=?,
-       family_name=?, given_name=?, honorific=?, department=?, job_title=?, cash_receipt_no=?, contact_party_id=?, activity_form=? WHERE id=?`
+       family_name=?, given_name=?, honorific=?, department=?, job_title=?, cash_receipt_no=?, contact_party_id=?, activity_form=?, biz_no=? WHERE id=?`
   ).run(
     name, activityNameFinal, isArtist,
     pick("phone", formatPhone), pick("email"), pick("memo"),
     pick("family_name"), pick("given_name"), honorific,
-    pick("department"), jobTitle, pick("cash_receipt_no", formatPhone), contactPartyId, pick("activity_form"), Number(id)
+    pick("department"), jobTitle, pick("cash_receipt_no", formatPhone), contactPartyId, pick("activity_form"), pick("biz_no", formatBizNo), Number(id)
   );
 }
 
@@ -230,13 +231,18 @@ function getPartyByResourceName(resourceName) {
 // UI/뷰 호환: 반환 행에 client_* 별칭(org_*와 동일) 부여 — 소속 이력 렌더가 client_id/client_name/client_kind를 읽음.
 const affShape = (a) => (a ? { ...a, client_id: a.org_id, client_name: a.org_name, client_kind: a.org_kind } : a);
 
-function currentAffiliation(personId) {
-  return affShape(db().prepare(
+function currentAffiliations(personId) {
+  return db().prepare(
     `SELECT a.*, o.name AS org_name, o.kind AS org_kind
        FROM affiliations a LEFT JOIN parties o ON o.id = a.org_id
       WHERE a.person_id = ? AND a.ended_on IS NULL
-      ORDER BY a.started_on DESC, a.id DESC LIMIT 1`
-  ).get(Number(personId)) || null);
+      ORDER BY a.started_on DESC, a.id DESC`
+  ).all(Number(personId)).map(affShape);
+}
+
+function currentAffiliation(personId) {
+  const affs = currentAffiliations(personId);
+  return affs.length > 0 ? affs[0] : null;
 }
 
 function listAffiliations(personId) {
@@ -286,8 +292,11 @@ function syncCompanyAffiliation(personId, companyName, title) {
   if (!n) return null;
   // 정규화 매칭(공백·대소문자 무시)으로 회사 재사용 — raw 정확일치는 "뮤직팜"≠"뮤직 팜"으로 중복 업체를 만든다(감사 M2, '뮤직팜 3중 등록' 버그 클래스).
   const orgId = ensureCompanyParty(n, "소속사/레이블");
-  const cur = currentAffiliation(personId);
-  if (!cur || cur.org_id !== orgId) addAffiliation(personId, { org_id: orgId, title, closeCurrent: true });
+  const currentAffs = currentAffiliations(personId);
+  const alreadyHasIt = currentAffs.some((a) => a.org_id === orgId);
+  if (!alreadyHasIt) {
+    addAffiliation(personId, { org_id: orgId, title, closeCurrent: false });
+  }
   return orgId;
 }
 
@@ -1015,6 +1024,7 @@ module.exports = {
   setPartyGoogleRef,
   getPartyByResourceName,
   currentAffiliation,
+  currentAffiliations,
   listAffiliations,
   addAffiliation,
   endAffiliation,

@@ -1561,6 +1561,7 @@ function sortCellValue(cell) {
 })();
 
 // 세션 담당 엔지니어 행: 외주(data-external=1)일 때만 그 행의 지급단가 칸 표시(2026-07-06 — 작업 폼과 동일 규칙).
+// 단, 세션 종류가 '작업 대관'일 경우 이중 차감 방지를 위해 외주 단가를 항상 숨김.
 // 위임(delegation)으로 처리해 '+ 담당 엔지니어 추가하기'로 복제된 행도 자동 동작.
 (function () {
   "use strict";
@@ -1568,13 +1569,23 @@ function sortCellValue(cell) {
     var row = sel.closest("[data-engineer-row]");
     var wrap = row && row.querySelector("[data-engineer-rate]");
     if (!wrap) return;
+    var form = sel.closest("form");
+    var sessionTypeSel = form && form.querySelector('select[name="session_type"]');
+    var isWorkspaceRental = sessionTypeSel && sessionTypeSel.value === "작업 대관";
     var opt = sel.options[sel.selectedIndex];
     var external = opt && opt.getAttribute("data-external") === "1";
-    wrap.classList.toggle("hidden", !external);
+    wrap.classList.toggle("hidden", !external || isWorkspaceRental);
   }
   Array.prototype.forEach.call(document.querySelectorAll('[data-engineer-row] select[name="engineer_ids"]'), syncRow);
   document.addEventListener("change", function (e) {
-    if (e.target && e.target.tagName === "SELECT" && e.target.name === "engineer_ids") syncRow(e.target);
+    if (e.target && e.target.tagName === "SELECT" && e.target.name === "engineer_ids") {
+      syncRow(e.target);
+    }
+    if (e.target && e.target.tagName === "SELECT" && e.target.name === "session_type") {
+      var form = e.target.closest("form");
+      var selects = form ? form.querySelectorAll('[data-engineer-row] select[name="engineer_ids"]') : [];
+      Array.prototype.forEach.call(selects, syncRow);
+    }
   });
 })();
 
@@ -1594,6 +1605,22 @@ function sortCellValue(cell) {
     }
     sel.addEventListener("change", toggle);
     toggle();
+  });
+})();
+
+// 세무 증빙 토글(현금영수증/세금계산서): 연락처 폼에서 라디오 버튼 전환 시 관련 랩 표시/숨김
+(function () {
+  "use strict";
+  document.addEventListener("change", function (e) {
+    if (e.target && e.target.matches("[data-tax-toggle]")) {
+      var form = e.target.closest("form");
+      if (!form) return;
+      var wraps = form.querySelectorAll("[data-tax-wrap]");
+      var val = e.target.value; // "cash" or "biz"
+      Array.prototype.forEach.call(wraps, function(wrap) {
+        wrap.classList.toggle("hidden", wrap.getAttribute("data-tax-wrap") !== val);
+      });
+    }
   });
 })();
 
