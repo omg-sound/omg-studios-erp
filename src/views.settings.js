@@ -29,7 +29,8 @@ const { listAudit } = require("./lib/audit");
 const { kstDateTime, kstYmd, todayYmd } = require("./lib/date"); // DB는 UTC — 표시는 KST(2026-07-20)
 const { getState } = require("./db");
 
-const RATE_KIND_LABELS = { recording: "녹음", filming: "촬영", performance: "공연" };
+// 세션 종류 라벨 — **config의 session_type 값과 같은 말**이어야 한다(요금표 분류가 어느 세션 종류에 붙는지 고르는 select).
+const RATE_KIND_LABELS = { recording: "녹음", filming: "대관", performance: "공연" };
 
 // 감사 로그 action → 화면 라벨(2026-07-20 인증 기록 추가와 함께). 여기 없는 action은 원문 그대로 보인다 —
 // 새 action을 추가할 때 이 맵을 안 고쳐도 화면이 깨지지 않게(라벨은 읽기 편의일 뿐 진실원천은 action 문자열).
@@ -93,7 +94,7 @@ function saveRow(label = "저장") {
   </div>`;
 }
 
-/** 단가 항목 카테고리 select 옵션 — kind(녹음/촬영/공연)별 optgroup, DB 분류 순서(2026-07-05 config 하드코딩에서 전환). current 선택 반영. */
+/** 단가 항목 카테고리 select 옵션 — kind(녹음/대관/공연)별 optgroup, DB 분류 순서(2026-07-05 config 하드코딩에서 전환). current 선택 반영. */
 function rateCategoryOptions(current = "") {
   const byKind = {};
   listRateCategories().forEach((c) => { (byKind[c.kind] = byKind[c.kind] || []).push(c); });
@@ -249,7 +250,7 @@ function ratesPane() {
   return `
       <section class="card space-y-4" id="rates-section">
         <div>
-          <h2 class="font-display text-lg font-semibold">요금표 · 녹음/촬영 종류${settingHint(`대관 세션의 시간제 단가입니다. <b>분류</b>가 어미고 그 아래에 단가 항목이 들어갑니다 — 분류의 <b>세션 종류</b>(녹음·촬영·공연)가 세션 예약 폼에서 어떤 항목을 보여줄지 정합니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력).<br>↑↓ 순서는 자유이고(분류끼리 종류가 달라도 섞어 배치 가능) 이 순서가 세션 예약 폼의 항목 순서가 됩니다.`, "요금표 설정 설명")}</h2>
+          <h2 class="font-display text-lg font-semibold">요금표 · 녹음/대관 종류${settingHint(`대관 세션의 시간제 단가입니다. <b>분류</b>가 어미고 그 아래에 단가 항목이 들어갑니다 — 분류의 <b>세션 종류</b>(녹음·촬영·공연)가 세션 예약 폼에서 어떤 항목을 보여줄지 정합니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력).<br>↑↓ 순서는 자유이고(분류끼리 종류가 달라도 섞어 배치 가능) 이 순서가 세션 예약 폼의 항목 순서가 됩니다.`, "요금표 설정 설명")}</h2>
         </div>
         ${scrollX(`        <form method="post" action="/settings/rates/bulk" id="rates-bulk-form" class="space-y-2" data-dirty-form>
           ${t.list}
@@ -905,7 +906,7 @@ function systemTab(chief) {
 const SETTINGS_NAV = [
   { group: "자주 쓰는 것", items: [
     { key: "rooms", label: "장소", desc: "룸·외부 장소" },
-    { key: "rates", label: "요금표", desc: "녹음·촬영 단가 + 분류" },
+    { key: "rates", label: "요금표", desc: "녹음·대관 단가 + 분류" },
     { key: "tasks", label: "작업 종류", desc: "믹싱·보컬튠 등" },
     { key: "booking", label: "예약 기본값", desc: "기본 세션 시간·예약 담당자·기본 장소" },
   ] },

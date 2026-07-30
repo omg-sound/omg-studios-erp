@@ -751,6 +751,16 @@ function init() {
     }
     setState("rooms_drop_hierarchy_v1", "done");
   }
+  // 세션 종류 '촬영' → '대관'(2026-07-30 사용자 결정 — 스튜디오가 촬영을 대행하는 게 아니라 공간을 대관한다.
+  // 무엇을 위한 대관인지는 단가 항목 이름으로 표현: 예 '촬영 대관').
+  // ⚠️`sessions.session_type`은 **한글 문자열로 저장**되므로 기존 행을 함께 갱신해야 한다 — 안 하면 옛 '촬영'
+  // 세션이 SESSION_TYPES에 없는 값이 되어 편집 폼에서 첫 값('녹음')으로 떨어지고, 대관 청구 후보(RENTAL_IN)에서도 빠진다.
+  // 이미 발행된 `invoice_items.description` 스냅샷은 건드리지 않는다 — 발행 시점 기록이라 그대로 두는 것이 맞다.
+  if (!getState("session_type_filming_to_rental_v1")) {
+    const moved = d.prepare("UPDATE sessions SET session_type = '대관' WHERE session_type = '촬영'").run().changes;
+    if (moved) console.log(`[migrate] 세션 종류 '촬영' → '대관' ${moved}건 갱신`);
+    setState("session_type_filming_to_rental_v1", "done");
+  }
   // 레거시 마이그레이션은 1회만. 신규 프로젝트(project_type 있음)는 services=NULL이 정상이므로,
   // 매 부팅 재실행되면 memo 추론으로 유령 곡·작업을 주입한다 → admin_state 플래그로 1회 게이트.
   if (!getState("legacy_backfill_v1")) {

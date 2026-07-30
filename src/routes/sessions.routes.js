@@ -47,7 +47,7 @@ const router = express.Router();
 function sessionTypeLabel(session) {
   const t = session.session_type;
   if (!t) return "";
-  if (RENTAL_SESSION_TYPES.includes(t)) { // 녹음·촬영 = 대관 → 단가 항목명 병기
+  if (RENTAL_SESSION_TYPES.includes(t)) { // 녹음·대관·공연 = 대관 매출 → 단가 항목명 병기
     const ri = session.rate_item_id ? getRateItem(session.rate_item_id) : null;
     return ri && ri.name ? `${t} · ${ri.name}` : `${t} 세션`;
   }

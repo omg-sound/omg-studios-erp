@@ -154,7 +154,7 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
       <template data-engineer-template>${engineerRow(managers, null)}</template>
       <button type="button" class="btn-ghost btn-xs mt-1.5" data-engineer-add>+ 담당 엔지니어 추가하기</button>
     </div>`;
-  // 세션 종류는 항상 선택 가능. 단가 항목은 대관 세션(녹음·촬영·공연)일 때만 노출(app.js data-show-when="rec").
+  // 세션 종류는 항상 선택 가능. 단가 항목은 대관 세션(녹음·대관·공연)일 때만 노출(app.js data-show-when="rec").
   // 단가 항목은 세션 종류 kind에 맞는 항목만 보인다 — 서버는 현재 kind로 렌더 + kind별 <template> 임베드, app.js가 종류 변경 시 옵션 교체.
   const rateKinds = [...new Set(Object.values(SESSION_TYPE_RATE_KIND))]; // recording·filming·performance …(config가 단일 진실원천)
   const itemsByKind = Object.fromEntries(rateKinds.map((k) => [k, rateItems.filter((r) => rateCategoryKind(r.category) === k)]));
@@ -177,7 +177,7 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
            <div class="absolute left-0 right-0 z-30 mt-1 hidden max-h-64 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg" data-place-pop role="listbox"></div>
          </div>
        </div>
-       ${explain(`청구하려면 <b>세션 종류=녹음/촬영</b> + <b>단가 항목</b> 선택이 모두 필요합니다. (완료 처리 후 청구 탭에 노출)`)}`;
+       ${explain(`청구하려면 <b>세션 종류=녹음/대관</b> + <b>단가 항목</b> 선택이 모두 필요합니다. (완료 처리 후 청구 탭에 노출)`)}`;
   // 담당 디렉터 — 콤마로 여러 명(2026-07-05, 아티스트 콤보와 동일 UX·옛 행 복제(+추가/✕) 폐지):
   // personCombo(multi) 하나 — 마지막 콤마 뒤 조각으로 검색, 선택·간이등록은 이어붙임, 제출=director_name 콤마 텍스트(라벨 포함).
   // 서버 resolveDirectorIds가 콤마 split 후 이름별 해석(resolvePersonByName 라벨 안전망 — '박수한 대표님 (워터멜론)'도 그 사람으로).

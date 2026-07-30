@@ -136,8 +136,9 @@ const PROJECT_SERVICES = [
 const RECORDING_CATEGORIES = ["스튜디오 녹음", "로케이션 녹음"];
 const FILMING_CATEGORIES = ["스튜디오 촬영"]; // 로케이션 촬영은 미사용(사용자 결정)
 const PERFORMANCE_CATEGORIES = ["공연"]; // 항목 예: 플레이백 세션·라이브 믹스
-// 세션 종류(대관) → 단가 kind. 녹음=recording, 촬영=filming, 공연=performance.
-const SESSION_TYPE_RATE_KIND = { 녹음: "recording", 촬영: "filming", 공연: "performance" };
+// 세션 종류(대관) → 단가 kind. 녹음=recording, 대관=filming, 공연=performance.
+// ⚠️키는 **DB에 저장되는 session_type 문자열**이다(사용자에게 보이는 라벨과 같은 값).
+const SESSION_TYPE_RATE_KIND = { 녹음: "recording", 대관: "filming", 공연: "performance" };
 // ── 가격 유형(2026-07-26 과금 체계 개편) ──
 // 단가 항목·작업 종류가 '금액을 어떻게 다룰지'를 정한다. 홈페이지 pricing.ts의 PriceType와 같은 세 값.
 //  fixed   = 기본가 잠금(청구 화면에서 못 고침). 초과 시간만 자동 가산 — 녹음·촬영 대관.
@@ -182,10 +183,15 @@ const BILLING_TYPE_LABELS = {
   Fixed_Per_Track: "트랙/콘텐츠 고정",
 };
 // 세션(스튜디오 일정). 청구 시간 산정의 기반.
-const SESSION_TYPES = ["녹음", "촬영", "공연", "믹싱", "마스터링", "기타"];
-// 대관 매출 세션 — 세션 자체가 단가표(시간제) 청구 대상. 완료 시 청구로 넘어간다. 녹음·촬영.
-// (믹싱·마스터링 등은 세션이 청구 단위가 아님 — 곡·콘텐츠 후반작업으로 청구.) 녹음·촬영·공연.
-const RENTAL_SESSION_TYPES = ["녹음", "촬영", "공연"];
+// ⚠️이 값이 **그대로 DB(`sessions.session_type`)에 저장**된다 — 이름을 바꾸면 기존 행 마이그레이션이 필요하다
+// (2026-07-30 '촬영'→'대관' 개명: db.js `session_type_filming_to_rental_v1`). 스튜디오가 촬영을 대행하는 게
+// 아니라 공간을 대관하는 것이라는 사용자 판단 — 무엇을 위한 대관인지는 단가 항목 이름으로 표현한다(예 '촬영 대관').
+const SESSION_TYPES = ["녹음", "대관", "공연", "믹싱", "마스터링", "기타"];
+// 옛 이름 → 새 이름(정규화가 흡수). 캐시된 폼·외부 호출이 옛 값을 보내도 조용히 첫 값으로 떨어지지 않게.
+const LEGACY_SESSION_TYPE_ALIAS = { 촬영: "대관" };
+// 대관 매출 세션 — 세션 자체가 단가표(시간제) 청구 대상. 완료 시 청구로 넘어간다.
+// (믹싱·마스터링 등은 세션이 청구 단위가 아님 — 곡·콘텐츠 후반작업으로 청구.) 녹음·대관·공연.
+const RENTAL_SESSION_TYPES = ["녹음", "대관", "공연"];
 // 후반작업 세션 — 세션 자체는 청구 단위가 아니고 곡·콘텐츠 '작업'으로 청구한다.
 // 세션만 마치고 작업을 안 만들면 청구할 게 없어 보여 완료로 샜다(2026-07-24) → unbilled_cnt에서 '청구 미착수' 신호로 쓴다.
 const POSTPROD_SESSION_TYPES = ["믹싱", "마스터링"];
@@ -266,7 +272,8 @@ module.exports = {
   SESSION_TYPE_RATE_KIND,
   SESSION_SEGMENT_KINDS,
   SESSION_SEGMENT_LABELS,
-  normalizeSessionType: (v) => normalize(v, SESSION_TYPES),
+  // 옛 이름이 들어오면 새 이름으로 흡수한 뒤 검증한다 — 그냥 normalize하면 목록에 없어 첫 값(녹음)으로 조용히 떨어진다.
+  normalizeSessionType: (v) => normalize(LEGACY_SESSION_TYPE_ALIAS[String(v == null ? "" : v).trim()] || v, SESSION_TYPES),
   normalizeSessionStatus: (v) => normalize(v, SESSION_STATUSES),
   normalizeDeliverableKind: (v) => normalize(v, DELIVERABLE_KINDS),
   normalizeTrackContentType: (v) => normalize(v, TRACK_CONTENT_TYPES),

@@ -27,7 +27,7 @@ test("좌측 메뉴: 9개 항목 + 부제 + 그룹 라벨, 현재 항목 표시"
     assert.ok(html.includes(label), `${label} 라벨`);
   }
   for (const g of ["자주 쓰는 것", "가끔 보는 것", "한 번만 하는 것", "상태 보기"]) assert.ok(html.includes(g), `그룹 ${g}`);
-  assert.ok(html.includes("룸·외부 장소") && html.includes("녹음·촬영 단가"), "항목 부제(이름만으론 내용을 모르는 문제의 해법)");
+  assert.ok(html.includes("룸·외부 장소") && html.includes("녹음·대관 단가"), "항목 부제(이름만으론 내용을 모르는 문제의 해법)");
   assert.match(html, /aria-current="page"/, "현재 항목 표시");
   assert.ok(html.includes("⚠️3"), "시스템 경고 배지");
 });

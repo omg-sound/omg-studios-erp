@@ -14,7 +14,7 @@ const { RENTAL_SESSION_TYPES, SESSION_TYPES, RECORDING_CATEGORIES, FILMING_CATEG
 
 init();
 
-// 대관 세션(녹음·촬영) 판정 회귀 테스트 — 2026-07-04 촬영 추가.
+// 대관 세션(녹음·대관·공연) 판정 회귀 테스트 — 2026-07-04 추가, 2026-07-30 종류명 촬영→대관.
 // 세션 자체가 단가표 시간제 청구 대상인 종류가 RENTAL_SESSION_TYPES 하나로 일원화됐는지 보증.
 
 const rateId = Number(
@@ -29,17 +29,17 @@ const rateId = Number(
 const baseSession = { rate_item_id: rateId, start_time: "10:00", end_time: "14:00" }; // 240분=1Pro
 
 test("config: 대관 종류·kind 매핑 정합", () => {
-  assert.deepEqual(RENTAL_SESSION_TYPES, ["녹음", "촬영", "공연"], "대관 매출 세션 = 녹음·촬영·공연");
+  assert.deepEqual(RENTAL_SESSION_TYPES, ["녹음", "대관", "공연"], "대관 매출 세션 = 녹음·대관·공연");
   for (const t of RENTAL_SESSION_TYPES) assert.ok(SESSION_TYPES.includes(t), `${t}는 세션 종류에 존재`);
   // 대관 종류마다 단가 kind가 정의돼야 세션폼 옵션 스왑이 동작한다.
   for (const t of RENTAL_SESSION_TYPES) assert.ok(SESSION_TYPE_RATE_KIND[t], `${t}의 단가 kind 정의`);
-  // 카테고리 → kind 분기: 녹음=recording·촬영=filming·공연=performance.
+  // 카테고리 → kind 분기: 녹음=recording·대관=filming·공연=performance.
   for (const c of RECORDING_CATEGORIES) assert.equal(rateCategoryKind(c), "recording");
   for (const c of FILMING_CATEGORIES) assert.equal(rateCategoryKind(c), "filming");
   for (const c of PERFORMANCE_CATEGORIES) assert.equal(rateCategoryKind(c), "performance");
 });
 
-test("sessionRateAmount: 녹음·촬영은 산정, 그 외 종류는 null", () => {
+test("sessionRateAmount: 녹음·대관은 산정, 그 외 종류는 null", () => {
   for (const t of RENTAL_SESSION_TYPES) {
     const b = sessionRateAmount({ ...baseSession, session_type: t });
     assert.ok(b, `${t} 세션은 청구 산정`);
@@ -119,8 +119,8 @@ test("외부 장소: is_external 룸이면 주소(location) 저장, 스튜디오
 });
 
 test("sessionRateAmount: 단가 미선택·시간 없음은 null(결핍 사유 안내 대상)", () => {
-  assert.equal(sessionRateAmount({ session_type: "촬영", rate_item_id: null, start_time: "10:00", end_time: "14:00" }), null);
-  assert.equal(sessionRateAmount({ session_type: "촬영", rate_item_id: rateId, start_time: null, end_time: null }), null);
+  assert.equal(sessionRateAmount({ session_type: "대관", rate_item_id: null, start_time: "10:00", end_time: "14:00" }), null);
+  assert.equal(sessionRateAmount({ session_type: "대관", rate_item_id: rateId, start_time: null, end_time: null }), null);
 });
 
 test.after(() => cleanupDb(process.env.DB_PATH));
