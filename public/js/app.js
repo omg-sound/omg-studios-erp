@@ -2191,8 +2191,9 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
     function chipEl(o) {
       var label = o.name;
       var span = document.createElement("span");
-      span.className = "inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-elevated py-0.5 pl-2.5 pr-1 text-sm";
-      span.setAttribute("data-cc-chip", "");
+      // 서버 companyChip과 같은 클래스 — 한 줄 유지(shrink-0 + max-w). 갈리면 새로 담은 칩만 줄바꿈한다.
+      span.className = "inline-flex max-w-[12rem] shrink-0 items-center gap-1 rounded-full border border-border bg-elevated py-0.5 pl-2.5 pr-1 text-sm";
+      span.setAttribute("data-cc-chip", ""); span.setAttribute("title", label);
       var t = document.createElement("span"); t.className = "truncate"; t.textContent = label; span.appendChild(t);
       var hi = document.createElement("input"); hi.type = "hidden"; hi.name = idField; hi.value = o.id ? String(o.id) : ""; hi.setAttribute("data-cc-chip-id", ""); span.appendChild(hi);
       var hn = document.createElement("input"); hn.type = "hidden"; hn.name = nameField; hn.value = o.name || ""; hn.setAttribute("data-cc-chip-name", ""); span.appendChild(hn);
@@ -2203,7 +2204,12 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
       return span;
     }
     function chipList() { return chipBox ? Array.prototype.slice.call(chipBox.querySelectorAll("[data-cc-chip]")) : []; }
-    function chipsChanged() { if (input.form) input.form.dispatchEvent(new Event("change", { bubbles: true })); }
+    // 칩이 있으면 남는 폭이 좁아 긴 안내가 잘린다 — 서버 렌더와 같은 규칙으로 짧게(2026-07-31).
+    function syncPlaceholder() {
+      var e = root.getAttribute("data-cc-ph-empty"), m = root.getAttribute("data-cc-ph-more");
+      if (e && m) input.placeholder = chipList().length ? m : e;
+    }
+    function chipsChanged() { syncPlaceholder(); if (input.form) input.form.dispatchEvent(new Event("change", { bubbles: true })); }
     function addChip(o) {
       if (!chipBox || !o) return;
       if (chipHas(o)) { input.value = ""; return; }

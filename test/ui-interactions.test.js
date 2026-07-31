@@ -2054,3 +2054,29 @@ test("companyCombo(multi): 프리필·제출쌍·추가·삭제·dirty 통지·�
   assert.equal(root.querySelectorAll("[data-cc-chip]").length, 1, "✕로 칩 삭제");
   assert.ok(dirty > before, "칩 삭제도 dirty 통지");
 });
+
+// 한 줄 유지 계약(2026-07-31 사용자 요청 '소속을 한 줄로'). 높이는 jsdom이 못 재므로(레이아웃 없음 — 함정 #26 계열)
+// **줄바꿈을 만드는 마크업**만 잠근다. 실제 높이는 브라우저 실측으로 확인했다(칩 1·2개·빈 상태 모두 40px, 직책 42px).
+test("companyCombo(multi): 칩이 줄바꿈하지 않는 마크업 + placeholder 길이 전환", () => {
+  const { createCompany } = require("../src/data");
+  const a = createCompany({ name: "한줄에이" }), b = createCompany({ name: "한줄비" });
+  const withChip = companyCombo("company", "", "소속사/레이블", "소속", { multi: true, selected: [{ id: a, name: "한줄에이" }] });
+  const box = withChip.match(/<div class="([^"]*)" data-cc-chips>/)[1];
+  assert.ok(!/flex-wrap/.test(box), "칩 컨테이너에 flex-wrap 금지(붙는 순간 두 줄이 된다)");
+  assert.match(box, /overflow-x-auto/, "넘치면 줄바꿈 대신 가로 스크롤");
+  assert.match(withChip.match(/<span class="([^"]*)"[^>]*data-cc-chip /)[1], /shrink-0/, "칩이 눌리지 않게 shrink-0");
+
+  // placeholder: 칩이 있으면 짧게(좁은 폭에서 긴 안내가 잘린다), 비면 원래 안내
+  assert.match(withChip, /placeholder="＋ 추가"/, "칩 있을 때 짧은 안내");
+  const empty = companyCombo("company", "", "소속사/레이블", "소속", { multi: true, selected: [] });
+  assert.match(empty, /placeholder="소속 — 검색 또는 새로 등록"/, "빈 상태는 원래 안내");
+
+  // app.js도 같은 규칙으로 갱신하는지(서버 렌더와 갈리면 담자마자 잘린 문구가 남는다)
+  const { win, doc } = mountDom(`<form>${withChip}</form>`);
+  const root = doc.querySelector("[data-company-combo]"), input = root.querySelector("[data-cc-input]");
+  fire(win, root.querySelector("[data-cc-chip-remove]"), "click");
+  assert.equal(input.placeholder, "소속 — 검색 또는 새로 등록", "칩을 다 지우면 원래 안내로 복귀");
+  input.value = "한줄비"; fire(win, input, "input");
+  fire(win, root.querySelector("[data-cc-pop] button[data-idx]"), "click");
+  assert.equal(input.placeholder, "＋ 추가", "칩을 담으면 짧은 안내로");
+});

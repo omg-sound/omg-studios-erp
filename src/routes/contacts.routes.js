@@ -292,8 +292,11 @@ function contactForm(c = {}, isEdit = false, manager = null, embedded = false, g
           </div>
         </div>
       </div>
-      <div class="grid gap-3 sm:grid-cols-3">
-        <div><label class="label">소속</label>${companyCombo("company", "", "소속사/레이블", "소속", { multi: true, selected: (c._currentAffs || []).map(a => ({ id: a.org_id, name: a.client_name })) })}</div>
+      <!-- 소속은 칩이 들어가 폭이 더 필요하다(2026-07-31): 1:1:1이면 칩 하나에 입력칸이 48px만 남아
+           placeholder도 안 보이고 둘째 소속을 어디에 치는지 알 수 없다(실측). 1.4:0.8:0.8이면 126px 확보.
+           min-w-0 = grid 항목 기본 min-width:auto가 칩 폭만큼 칸을 부풀려 옆 칸을 밀어내는 것 방지. -->
+      <div class="grid gap-3 sm:grid-cols-[1.4fr_0.8fr_0.8fr]">
+        <div class="min-w-0"><label class="label">소속</label>${companyCombo("company", "", "소속사/레이블", "소속", { multi: true, selected: (c._currentAffs || []).map(a => ({ id: a.org_id, name: a.client_name })) })}</div>
         <div><label class="label">직책</label><input class="input" name="job_title" value="${esc(c.job_title || "")}" placeholder="예: 대표 · 팀장" /></div>
         <div><label class="label">부서</label><input class="input" name="department" value="${esc(c.department || "")}" placeholder="예: A&R팀" /></div>
       </div>

@@ -835,7 +835,9 @@ function copyable(value, { cls = "", display = "" } = {}) {
  */
 function companyChip(c, idField, nameField) {
   const label = c.name;
-  return `<span class="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-elevated py-0.5 pl-2.5 pr-1 text-sm" data-cc-chip>
+  // shrink-0 + max-w — 한 줄 유지(2026-07-31 사용자 요청): 컨테이너가 nowrap이라 칩이 눌리거나
+  // 입력칸을 밀어내지 않게 폭을 묶고, 긴 상호는 잘라 보여준다(전체 이름은 title로).
+  return `<span class="inline-flex max-w-[12rem] shrink-0 items-center gap-1 rounded-full border border-border bg-elevated py-0.5 pl-2.5 pr-1 text-sm" data-cc-chip title="${esc(label)}">
     <span class="truncate">${esc(label)}</span>
     <input type="hidden" name="${esc(idField)}" value="${c.id ? esc(String(c.id)) : ""}" data-cc-chip-id />
     <input type="hidden" name="${esc(nameField)}" value="${esc(c.name || "")}" data-cc-chip-name />
@@ -861,17 +863,19 @@ function companyCombo(fieldName, value, roleKey, label, extra = {}) {
   const ownerJson = JSON.stringify(ownerOpts).replace(/</g, "\\u003c");
   const isProd = roleKey === "제작사";
   const chips = multi ? selected.map((c) => companyChip(c, idField, nameField)).join("") : "";
+  // 칩이 있으면 남는 폭이 좁아 긴 안내가 잘린다(실측 126px) → 짧은 문구로 바꾼다. app.js가 칩 추가·삭제 때 같은 규칙으로 갱신.
+  const phEmpty = `${label} — 검색 또는 새로 등록`, phMore = "＋ 추가";
   const field = multi
-    ? `<div class="input flex flex-wrap items-center gap-1.5 py-1.5" data-cc-chips>
+    ? `<div class="input flex items-center gap-1.5 overflow-x-auto py-1.5" data-cc-chips>
         ${chips}
         <input class="min-w-[3rem] flex-1 border-0 bg-transparent p-0 text-inherit outline-none focus:ring-0" type="text" size="1" data-cc-input autocomplete="off"
-          role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="${esc(label)} — 검색 또는 새로 등록" />
+          role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="${esc(selected.length ? phMore : phEmpty)}" />
       </div>`
     : `<input class="input pr-9" type="text" value="${esc(value || "")}" data-cc-input autocomplete="off"
           role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="${esc(label)} — 검색 또는 새로 등록" />
         <svg class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8l4 4 4-4" /></svg>`;
   return `
-    <div data-company-combo${multi ? ` data-cc-multi="1" data-cc-id-field="${esc(idField)}" data-cc-name-field="${esc(nameField)}"` : ""}>
+    <div data-company-combo${multi ? ` data-cc-multi="1" data-cc-id-field="${esc(idField)}" data-cc-name-field="${esc(nameField)}" data-cc-ph-empty="${esc(phEmpty)}" data-cc-ph-more="${esc(phMore)}"` : ""}>
       ${multi ? "" : `<input type="hidden" name="${fieldName}" value="${esc(value || "")}" data-cc-hidden />`}
       ${withPeople && !multi ? `<input type="hidden" name="${esc(extra.partyIdField)}" value="${esc(extra.partyIdValue || "")}" data-cc-party-id />` : ""}
       <div class="relative">
