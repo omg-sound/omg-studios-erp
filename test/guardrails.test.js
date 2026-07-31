@@ -218,3 +218,36 @@ test("guardrail: 테스트가 DB_PATH 없이 DB를 열면 즉시 실패한다(�
   assert.match(dbSrc, /repoData/, "저장소 data/ 경로와 비교");
   assert.match(dbSrc, /저장소 안 DB를 열려 합니다/, "무엇을 해야 하는지 알려주는 메시지");
 });
+
+// ⑪ app.js가 fetch로 보내는 body 키 ↔ 라우트가 실제로 읽는 필드(2026-07-31 신설 — 함정 #29).
+// 사고 이력: `nickname` → `activity_name` 개명에서 서버는 다 고치고 **app.js의 새 등록 모달만** 남았다.
+// Express는 모르는 body 키를 조용히 무시하므로 요청은 200으로 성공하고 활동명만 사라졌다(토스트까지 정상).
+// 서버 렌더 폼은 필드명이 바뀌면 화면에서 바로 보이지만 **fetch 경로는 눈에 안 띈다** → 기계로 잡는다.
+test("guardrail: app.js의 body.append 키를 라우트가 읽는다(조용한 값 유실 차단)", () => {
+  const app = read(path.join("public", "js", "app.js"));
+  const keys = [...new Set([...app.matchAll(/body\.append\(\s*"([a-z_]+)"/g)].map((m) => m[1]))];
+  assert.ok(keys.length >= 10, "탐지 정규식이 죽지 않았는지(키가 몇 개는 나와야)");
+  const routesDir = path.join("src", "routes");
+  const routes = fs.readdirSync(routesDir).map((f) => read(path.join(routesDir, f))).join("\n");
+  const missing = keys.filter((k) => !new RegExp(`(b|req\\.body)\\.(?:${k})\\b`).test(routes));
+  assert.deepEqual(missing, [], `app.js가 보내는데 라우트가 안 읽는 키(이름이 어긋나면 값이 조용히 사라진다): ${missing.join(", ")}`);
+});
+
+// ⑫ 라우트가 data에서 구조분해하는 이름 ↔ 실제 export(2026-07-31 신설).
+// 사고 이력: `setCurrentAffiliations`를 만들고 module.exports에 안 넣어 연락처 저장이 전부 500이었다.
+// 기존 테스트도 잡긴 했지만 '500 == 302'라는 불투명한 실패였고, **테스트가 안 지나는 라우트였다면 그대로 배포된다**.
+// 여기선 무엇이 빠졌는지 이름으로 말해 준다.
+test("guardrail: 라우트가 쓰는 data 함수는 전부 export돼 있다", () => {
+  const D = Object.keys(require("../src/data"));
+  const routesDir = path.join("src", "routes");
+  const names = new Set();
+  for (const f of fs.readdirSync(routesDir)) {
+    const s = read(path.join(routesDir, f));
+    for (const m of s.matchAll(/const\s*\{([^}]+)\}\s*=\s*require\((["'])\.\.\/data\2\)/g)) {
+      m[1].split(",").map((x) => x.trim().split(":")[0].trim()).filter(Boolean).forEach((n) => names.add(n));
+    }
+  }
+  assert.ok(names.size >= 50, "탐지 정규식이 죽지 않았는지");
+  const missing = [...names].filter((n) => !D.includes(n));
+  assert.deepEqual(missing, [], `라우트가 구조분해하는데 data가 export 안 하는 이름(런타임 TypeError): ${missing.join(", ")}`);
+});
