@@ -13,6 +13,7 @@ const {
   addAffiliation,
   ensureCompanyParty,
   syncCompanyAffiliation,
+  setCurrentAffiliations,
   endAffiliation,
   updateAffiliation,
   deleteAffiliation,
@@ -88,7 +89,16 @@ router.post("/", asyncHandler(async (req, res) => {
     if (b.client_id || (b.title && String(b.title).trim())) {
       addAffiliation(id, { client_id: b.client_id || null, title: b.title, started_on: b.started_on, closeCurrent: false });
     }
-    if (!b.client_id) syncCompanyAffiliation(id, b.company, b.job_title); // '회사' 텍스트 입력 → 소속 이력 반영(업체 클라이언트 연결)
+    if (!b.client_id) {
+      const companies = (Array.isArray(b.company) ? b.company : (b.company ? [b.company] : []));
+      const company_ids = (Array.isArray(b.company_id) ? b.company_id : (b.company_id ? [b.company_id] : []));
+      const resolvedIds = companies.map((name, i) => {
+        let orgId = Number(company_ids[i]);
+        if (!orgId) orgId = ensureCompanyParty(name, "소속사/레이블");
+        return orgId;
+      }).filter(Boolean);
+      setCurrentAffiliations(id, resolvedIds, { title: b.job_title });
+    }
     if (b.group_id !== undefined) setPartyGroup(id, b.group_id); // 소속 그룹(밴드·아이돌) 연결
     // 활동명(activity_name)은 createPerson가 party에 저장하며 is_artist를 자동 세팅(별도 아티스트 셸 없음).
     // Google People push — fail-safe: 실패해도 앱 정상.
@@ -127,16 +137,24 @@ router.post("/:id", asyncHandler(async (req, res) => {
   const isHouseEngineer = linkedManager && linkedManager.user_id != null;
   const b = req.body;
   try {
+    const companies = (Array.isArray(b.company) ? b.company : (b.company ? [b.company] : []));
+    const company_ids = (Array.isArray(b.company_id) ? b.company_id : (b.company_id ? [b.company_id] : []));
+    const resolvedIds = companies.map((name, i) => {
+      let orgId = Number(company_ids[i]);
+      if (!orgId) orgId = ensureCompanyParty(name, "소속사/레이블");
+      return orgId;
+    }).filter(Boolean);
+
     updateParty(id, {
       name: b.name, phone: b.phone,
       email: isHouseEngineer ? c.email : b.email,  // 하우스: 기존 이메일 유지
       memo: b.memo,
       family_name: b.family_name, given_name: b.given_name, honorific: b.honorific,
-      activity_name: b.activity_name, company: b.company, job_title: b.job_title, department: b.department,
+      activity_name: b.activity_name, company: companies.length ? companies[0] : "", job_title: b.job_title, department: b.department,
       cash_receipt_no: b.tax_type === "biz" ? null : b.cash_receipt_no, // 개인 청구처 → 현금영수증 발행 정보
       biz_no: b.tax_type === "cash" ? null : b.biz_no, // 개인 사업자 → 세금계산서용 사업자등록번호
     });
-    syncCompanyAffiliation(id, b.company, b.job_title); // '회사' 텍스트 → 소속 이력 반영(현재 소속과 다르면 이직으로 등록)
+    setCurrentAffiliations(id, resolvedIds, { title: b.job_title });
     if (b.group_id !== undefined) setPartyGroup(id, b.group_id); // 소속 그룹(밴드·아이돌) 연결
     // 담당자(project_managers) 동기화: 전화(항상) + 이메일(외주만)
     syncPartyToManager(id);
@@ -275,7 +293,7 @@ function contactForm(c = {}, isEdit = false, manager = null, embedded = false, g
         </div>
       </div>
       <div class="grid gap-3 sm:grid-cols-3">
-        <div><label class="label">소속</label>${companyCombo("company", c.company || "", "소속사/레이블", "소속")}</div>
+        <div><label class="label">소속</label>${companyCombo("company", "", "소속사/레이블", "소속", { multi: true, selected: (c._currentAffs || []).map(a => ({ id: a.org_id, name: a.client_name })) })}</div>
         <div><label class="label">직책</label><input class="input" name="job_title" value="${esc(c.job_title || "")}" placeholder="예: 대표 · 팀장" /></div>
         <div><label class="label">부서</label><input class="input" name="department" value="${esc(c.department || "")}" placeholder="예: A&R팀" /></div>
       </div>
@@ -403,7 +421,7 @@ function editPaneFor(c, returnTo = null) {
   const cancel = `<a href="${esc(cancelHref)}" class="text-sm text-primary hover:underline" data-no-guard>← 취소</a>`;
   // 소속 이력 폼도 복귀 경로를 함께 실어보낸다 — 처리 후 편집 화면으로 돌아올 때 백링크 체인이 끊기지 않게.
   const retInput = returnTo ? `<input type="hidden" name="return" value="${esc(returnTo)}" />` : "";
-  const form = contactForm({ ...c, company: c.company || (currentAffs.length ? currentAffs[0].client_name : "") || "" }, true, linkedManager, true, listGroupsForPicker(), returnTo);
+  const form = contactForm({ ...c, _currentAffs: currentAffs }, true, linkedManager, true, listGroupsForPicker(), returnTo);
 
   const timeline = affs.length
     ? `<div class="space-y-2">${affs

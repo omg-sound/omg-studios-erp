@@ -833,9 +833,23 @@ function copyable(value, { cls = "", display = "" } = {}) {
  *   (제작/운영에 개인이 들어가는 경우 — 2026-07-05 사용자 요청). 사람 선택 시 hidden partyIdField에 party id 제출,
  *   저장부가 그 id를 production_id 등에 직접 사용(회사는 이름→ensureCompanyParty, 사람은 id 직접).
  */
+function companyChip(c, idField, nameField) {
+  const label = c.name;
+  return `<span class="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-elevated py-0.5 pl-2.5 pr-1 text-sm" data-cc-chip>
+    <span class="truncate">${esc(label)}</span>
+    <input type="hidden" name="${esc(idField)}" value="${c.id ? esc(String(c.id)) : ""}" data-cc-chip-id />
+    <input type="hidden" name="${esc(nameField)}" value="${esc(c.name || "")}" data-cc-chip-name />
+    <button type="button" class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted hover:bg-border hover:text-fg" data-cc-chip-remove aria-label="${esc(label)} 제거">✕</button>
+  </span>`;
+}
+
 function companyCombo(fieldName, value, roleKey, label, extra = {}) {
   const { partyOptions } = require("./data"); // 지연 require(모듈 로드 순서·순환 회피 — data는 views를 require하지 않음)
   const withPeople = !!extra.partyIdField; // 사람(관계자/개인) 포함 여부
+  const multi = !!extra.multi;
+  const selected = extra.selected || [];
+  const idField = extra.idField || "company_id";
+  const nameField = fieldName;
   let opts = partyOptions({ role: "company" }).map((o) => ({ id: o.id, name: o.name, sub: o.sub || "조직", kind: "company" }));
   if (withPeople) {
     // 사람 옵션: alt=활동명·honorific → app.js가 아티스트면 '본명 호칭 (활동명)' 병기(2026-07-05). kind='person'으로 선택 시 담당자 자동채움 판별.
@@ -846,15 +860,23 @@ function companyCombo(fieldName, value, roleKey, label, extra = {}) {
   const ownerOpts = partyOptions({ role: "person" }).map((o) => ({ id: o.id, name: o.name })); // 대표자 미니콤보(사람 검색)
   const ownerJson = JSON.stringify(ownerOpts).replace(/</g, "\\u003c");
   const isProd = roleKey === "제작사";
+  const chips = multi ? selected.map((c) => companyChip(c, idField, nameField)).join("") : "";
+  const field = multi
+    ? `<div class="input flex flex-wrap items-center gap-1.5 py-1.5" data-cc-chips>
+        ${chips}
+        <input class="min-w-[3rem] flex-1 border-0 bg-transparent p-0 text-inherit outline-none focus:ring-0" type="text" size="1" data-cc-input autocomplete="off"
+          role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="${esc(label)} — 검색 또는 새로 등록" />
+      </div>`
+    : `<input class="input pr-9" type="text" value="${esc(value || "")}" data-cc-input autocomplete="off"
+          role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="${esc(label)} — 검색 또는 새로 등록" />
+        <svg class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8l4 4 4-4" /></svg>`;
   return `
-    <div data-company-combo>
-      <input type="hidden" name="${fieldName}" value="${esc(value || "")}" data-cc-hidden />
-      ${withPeople ? `<input type="hidden" name="${esc(extra.partyIdField)}" value="${esc(extra.partyIdValue || "")}" data-cc-party-id />` : ""}
+    <div data-company-combo${multi ? ` data-cc-multi="1" data-cc-id-field="${esc(idField)}" data-cc-name-field="${esc(nameField)}"` : ""}>
+      ${multi ? "" : `<input type="hidden" name="${fieldName}" value="${esc(value || "")}" data-cc-hidden />`}
+      ${withPeople && !multi ? `<input type="hidden" name="${esc(extra.partyIdField)}" value="${esc(extra.partyIdValue || "")}" data-cc-party-id />` : ""}
       <div class="relative">
         <!-- 보이는 입력은 name 없음(Chrome 조직 자동완성이 콤보 드롭다운 덮는 것 방지) — 값은 위 숨김 필드로 제출, app.js 동기화 -->
-        <input class="input pr-9" type="text" value="${esc(value || "")}" data-cc-input autocomplete="off"
-          role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="${esc(label)} — 검색 또는 새로 등록" />
-        <svg class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8l4 4 4-4" /></svg>
+        ${field}
         <div class="absolute left-0 right-0 z-30 mt-1 hidden max-h-64 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg" data-cc-pop role="listbox"></div>
       </div>
       <script type="application/json" data-cc-options>${json}</script>

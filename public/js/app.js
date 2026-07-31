@@ -2159,6 +2159,10 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
     var hidCC = root.querySelector("[data-cc-hidden]"); // 제출용 업체명(보이는 칸은 name 없음 — Chrome 자동완성 회피)
     var hidPid = root.querySelector("[data-cc-party-id]"); // (선택) 사람/회사 선택 시 party id — 제작/운영에 관계자·개인 허용
     var pop = root.querySelector("[data-cc-pop]");
+    var multi = root.hasAttribute("data-cc-multi");
+    var chipBox = root.querySelector("[data-cc-chips]");
+    var idField = root.getAttribute("data-cc-id-field") || "company_id";
+    var nameField = root.getAttribute("data-cc-name-field") || "company";
     var dataEl = root.querySelector("[data-cc-options]");
     var modal = root.querySelector("[data-cc-modal]");
     if (!input || !pop || !dataEl) return;
@@ -2183,6 +2187,43 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
     function hide() { pop.classList.add("hidden"); input.setAttribute("aria-expanded", "false"); }
     function show() { pop.classList.remove("hidden"); input.setAttribute("aria-expanded", "true"); }
     function fireInput() { input.dispatchEvent(new Event("input", { bubbles: true })); }
+    
+    function chipEl(o) {
+      var label = o.name;
+      var span = document.createElement("span");
+      span.className = "inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-elevated py-0.5 pl-2.5 pr-1 text-sm";
+      span.setAttribute("data-cc-chip", "");
+      var t = document.createElement("span"); t.className = "truncate"; t.textContent = label; span.appendChild(t);
+      var hi = document.createElement("input"); hi.type = "hidden"; hi.name = idField; hi.value = o.id ? String(o.id) : ""; hi.setAttribute("data-cc-chip-id", ""); span.appendChild(hi);
+      var hn = document.createElement("input"); hn.type = "hidden"; hn.name = nameField; hn.value = o.name || ""; hn.setAttribute("data-cc-chip-name", ""); span.appendChild(hn);
+      var x = document.createElement("button"); x.type = "button";
+      x.className = "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted hover:bg-border hover:text-fg";
+      x.setAttribute("data-cc-chip-remove", ""); x.setAttribute("aria-label", label + " 제거"); x.textContent = "✕";
+      span.appendChild(x);
+      return span;
+    }
+    function chipList() { return chipBox ? Array.prototype.slice.call(chipBox.querySelectorAll("[data-cc-chip]")) : []; }
+    function chipsChanged() { if (input.form) input.form.dispatchEvent(new Event("change", { bubbles: true })); }
+    function addChip(o) {
+      if (!chipBox || !o) return;
+      if (chipHas(o)) { input.value = ""; return; }
+      chipBox.insertBefore(chipEl(o), input);
+      input.value = ""; chipsChanged();
+    }
+    function removeChip(chip) { if (chip && chip.parentNode) { chip.parentNode.removeChild(chip); chipsChanged(); } }
+    function chipKeys(chip) {
+      var id = chip.querySelector("[data-cc-chip-id]"), nm = chip.querySelector("[data-cc-chip-name]");
+      return { id: id ? String(id.value || "") : "", name: nm ? String(nm.value || "").trim().toLowerCase() : "" };
+    }
+    function chipHas(o) {
+      return chipList().some(function (c) {
+        var k = chipKeys(c);
+        if (k.id && o.id) return String(k.id) === String(o.id);
+        return k.name && k.name === String(o.name || "").trim().toLowerCase();
+      });
+    }
+    function isChosen(o) { return multi && chipHas(o); }
+
     // 사람(관계자·개인) 옵션 표시 라벨 = 본명 호칭 (활동명) — personCombo labelOf와 동일 형식(아티스트면 활동명 병기, 2026-07-05). 회사는 name 그대로.
     function dispOf(o) {
       if (!o || o.kind !== "person") return o ? String(o.name || "") : "";
@@ -2200,9 +2241,11 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
       if (!q) { view = []; html = newRow(""); }
       else {
         // 이름 또는 표시 라벨(활동명 포함)로 검색 — 아티스트를 활동명으로도 찾게.
-        view = comboRankSort(opts, q, function (o) { return [o.name, dispOf(o), o.alt]; }).slice(0, 12); // 이름 > 표시 라벨 > 활동명(공용 랭킹)
+        view = comboRankSort(opts.filter(function (o) { return !isChosen(o); }), q, function (o) { return [o.name, dispOf(o), o.alt]; }).slice(0, 12); // 이름 > 표시 라벨 > 활동명(공용 랭킹)
         html = view.map(function (o, i) { return '<button type="button" class="' + rowCls + '" data-idx="' + i + '"><span class="truncate text-fg">' + esc(dispOf(o)) + '</span><span class="shrink-0 text-xs text-muted">' + esc(o.sub || "") + '</span></button>'; }).join("");
-        if (!view.some(function (o) { return String(o.name).toLowerCase() === q || dispOf(o).toLowerCase() === q; })) html += newRow(input.value.trim());
+        var exact = function (o) { return String(o.name).toLowerCase() === q || dispOf(o).toLowerCase() === q; };
+        var dupe = multi && opts.some(function (o) { return isChosen(o) && exact(o); });
+        if (!dupe && !view.some(exact)) html += newRow(input.value.trim());
       }
       pop.innerHTML = html; show();
     }
@@ -2256,10 +2299,14 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
           .then(function (d) {
             if (!d || !d.ok) throw new Error("fail");
             announceParty({ kind: "company", id: d.id, name: d.name });
-            input.value = d.name;
+            if (multi) {
+              addChip({ id: d.id, name: d.name });
+            } else {
+              input.value = d.name;
+            }
             closeModal();
             fireInput();
-            if (hidPid) hidPid.value = d.id; // 새 회사 id를 party-id 필드에도(fireInput 뒤에 — 타이핑 해제로 지워지지 않게)
+            if (hidPid && !multi) hidPid.value = d.id; // 새 회사 id를 party-id 필드에도(fireInput 뒤에 — 타이핑 해제로 지워지지 않게)
             hide();
             if (window.__toast) window.__toast(d.name + (d.existing ? " (기존 업체에 연결)" : " 등록됨"));
           })
@@ -2341,6 +2388,8 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
     input.addEventListener("focus", render);
     input.addEventListener("click", render);
     input.addEventListener("input", function () {
+      render();
+      if (multi) return;
       if (hidCC) hidCC.value = input.value; // 제출용 숨김 업체명 동기화(타이핑·pick·모달 모두 fireInput로 도달)
       if (hidPid) {
         // 순수 이름/표시 라벨과 정확 일치(유일)하면 id 유지 — pick이 라벨을 넣거나 라벨을 직접 타이핑해도 선택이 안 풀리게(personCombo와 대칭).
@@ -2348,7 +2397,6 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
         var ms = v ? opts.filter(function (o) { return dispOf(o).toLowerCase() === v || String(o.name).toLowerCase() === v; }) : [];
         hidPid.value = ms.length === 1 && ms[0].id != null ? ms[0].id : "";
       }
-      render();
     });
     input.addEventListener("blur", function () { setTimeout(hide, 150); });
     pop.addEventListener("mousedown", function (e) { e.preventDefault(); });
@@ -2356,16 +2404,33 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
       var b = e.target.closest("button"); if (!b) return;
       if (b.hasAttribute("data-idx")) {
         var o = view[Number(b.getAttribute("data-idx"))];
-        input.value = dispOf(o); fireInput(); if (hidPid) hidPid.value = o.id || ""; hide(); // fireInput이 hidPid를 지우므로 그 다음에 세팅(사람/회사 id 확정)
-        // 제작/운영에 개인(사람) 선택 → 고객측 담당자 자동 채움(비어있을 때만 — 이미 지정한 담당자는 존중). 2026-07-05.
-        if (o.kind === "person" && hidPid) {
-          var form = root.closest && root.closest("form");
-          var pc = form && form.querySelector("[data-person-combo]");
-          if (pc && pc.__pcSetById && pc.__pcHasValue && !pc.__pcHasValue()) pc.__pcSetById(o.id);
+        if (multi) {
+          addChip(o); fireInput(); hide();
+        } else {
+          input.value = dispOf(o); fireInput(); if (hidPid) hidPid.value = o.id || ""; hide(); // fireInput이 hidPid를 지우므로 그 다음에 세팅(사람/회사 id 확정)
+          // 제작/운영에 개인(사람) 선택 → 고객측 담당자 자동 채움(비어있을 때만 — 이미 지정한 담당자는 존중). 2026-07-05.
+          if (o.kind === "person" && hidPid) {
+            var form = root.closest && root.closest("form");
+            var pc = form && form.querySelector("[data-person-combo]");
+            if (pc && pc.__pcSetById && pc.__pcHasValue && !pc.__pcHasValue()) pc.__pcSetById(o.id);
+          }
         }
       } else if (b.hasAttribute("data-new")) openModal();
     });
     comboKbdNav(input, pop); // 방향키 이동·엔터 선택
+    if (multi && chipBox) {
+      chipBox.addEventListener("click", function (e) {
+        var x = e.target.closest("[data-cc-chip-remove]");
+        if (x) { e.preventDefault(); removeChip(x.closest("[data-cc-chip]")); input.focus(); }
+      });
+      input.addEventListener("keydown", function (e) {
+        if (e.isComposing || e.keyCode === 229) return;
+        if (e.key !== "Backspace" || input.value !== "") return;
+        var list = chipList();
+        if (list.length) { e.preventDefault(); removeChip(list[list.length - 1]); }
+      });
+      chipBox.addEventListener("mousedown", function (e) { if (e.target === chipBox) { e.preventDefault(); input.focus(); } });
+    }
   });
 })();
 

@@ -2020,3 +2020,37 @@ test("세션 폼: 할증 입력은 없다(할증 개념 폐기 — 가산은 단
   assert.equal(doc.querySelector("[data-surcharge-check]"), null, "촬영에서도 없음");
   assert.equal(doc.querySelector("[data-segments]").hidden, false, "촬영 구간은 그대로 동작");
 });
+
+// ── 소속 칩 콤보(2026-07-31): 겸직을 폼에서 직접 관리 ──
+// 서버·데이터 테스트가 못 보는 층 — 칩이 실제로 담기고 지워지는지, 제출 쌍이 맞는지,
+// 클릭 조작이 dirty 감시에 통지되는지(함정 #23)는 여기서만 확인된다.
+test("companyCombo(multi): 프리필·제출쌍·추가·삭제·dirty 통지·중복 방지", () => {
+  const { createCompany } = require("../src/data");
+  const a = createCompany({ name: "칩UI에이" }), b = createCompany({ name: "칩UI비" });
+  const html = companyCombo("company", "", "소속사/레이블", "소속", { multi: true, selected: [{ id: a, name: "칩UI에이" }] });
+  const { win, doc } = mountDom(`<form data-dirty-form>${html}</form>`);
+  const root = doc.querySelector("[data-company-combo]");
+
+  let chips = [...root.querySelectorAll("[data-cc-chip]")];
+  assert.equal(chips.length, 1, "현재 소속이 칩으로 프리필");
+  assert.equal(chips[0].querySelector("[data-cc-chip-id]").value, String(a), "칩 hidden id");
+  assert.equal(chips[0].querySelector("[data-cc-chip-id]").name, "company_id", "id 제출 필드명");
+  assert.equal(chips[0].querySelector("[data-cc-chip-name]").name, "company", "이름 제출 필드명(인덱스 페어링)");
+  assert.ok(!root.querySelector("[data-cc-input]").getAttribute("name"), "보이는 입력엔 name 없음(함정 #19)");
+
+  const input = root.querySelector("[data-cc-input]"), pop = root.querySelector("[data-cc-pop]");
+  let dirty = 0; doc.querySelector("form").addEventListener("change", () => dirty++);
+  input.value = "칩UI비"; fire(win, input, "input");
+  fire(win, pop.querySelector("button[data-idx]"), "click");
+  assert.equal(root.querySelectorAll("[data-cc-chip]").length, 2, "선택하면 칩으로 담긴다");
+  assert.ok(dirty > 0, "칩 추가가 dirty 감시에 통지된다(함정 #23)");
+
+  input.value = "칩UI에이"; fire(win, input, "input");
+  const labels = [...pop.querySelectorAll("button[data-idx] span")].map((s) => s.textContent);
+  assert.ok(!labels.includes("칩UI에이"), "이미 담긴 회사는 후보에서 제외(중복 방지)");
+
+  const before = dirty;
+  fire(win, root.querySelector("[data-cc-chip] [data-cc-chip-remove]"), "click");
+  assert.equal(root.querySelectorAll("[data-cc-chip]").length, 1, "✕로 칩 삭제");
+  assert.ok(dirty > before, "칩 삭제도 dirty 통지");
+});

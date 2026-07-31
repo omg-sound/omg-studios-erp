@@ -899,3 +899,49 @@ test("resolveProjectParties: 겸직 아티스트의 소속/레이블 표시와 a
   assert.ok(!String(r.agencyName).includes(","), "전 소속 병기 금지");
   assert.ok([coA, coB].includes(r.agencyId), "실재하는 소속 중 하나");
 });
+
+// ── 회귀(2026-07-31): 소속 칩 콤보 — 현재 소속 통째 반영(겸직) ──
+// 폼의 '소속'이 칸 하나였을 땐 A→B로 고쳐도 A가 안 끊겨 겸직이 조용히 쌓였다. 칩으로 바꾸며
+// setCurrentAffiliations가 '없으면 종료 / 새것만 추가 / 있던 건 그대로'를 지키는지 잠근다.
+test("setCurrentAffiliations: 칩 여러 개 = 현재 소속 여러 개", () => {
+  const p = D.createPerson({ name: "칩겸직" });
+  const a = D.createCompany({ name: "칩A사" }), b = D.createCompany({ name: "칩B사" });
+  D.setCurrentAffiliations(p, [a, b], { title: "이사" });
+  const cur = D.currentAffiliations(p).map((x) => x.org_id).sort();
+  assert.deepEqual(cur, [a, b].sort(), "둘 다 현재 소속");
+});
+
+test("setCurrentAffiliations: 칩 하나 빼면 그 소속만 종료되고 나머지는 그대로", () => {
+  const p = D.createPerson({ name: "칩제거" });
+  const a = D.createCompany({ name: "칩제거A" }), b = D.createCompany({ name: "칩제거B" });
+  D.setCurrentAffiliations(p, [a, b]);
+  const beforeB = D.currentAffiliations(p).find((x) => x.org_id === b);
+  D.setCurrentAffiliations(p, [b]); // A 칩 제거
+  const cur = D.currentAffiliations(p);
+  assert.deepEqual(cur.map((x) => x.org_id), [b], "B만 현재 소속");
+  assert.equal(cur[0].id, beforeB.id, "B는 같은 행 — 재삽입 아님");
+  const ended = D.listAffiliations(p).find((x) => x.org_id === a);
+  assert.ok(ended.ended_on, "A는 종료일이 채워짐(삭제가 아니라 이력 보존)");
+});
+
+test("setCurrentAffiliations: 이미 있던 소속을 다시 저장해도 started_on·is_contact가 유지된다", () => {
+  const p = D.createPerson({ name: "칩보존" });
+  const co = D.createCompany({ name: "칩보존사" });
+  D.addAffiliation(p, { org_id: co, title: "팀장", started_on: "2024-03-01", is_contact: 1, closeCurrent: false });
+  D.setCurrentAffiliations(p, [co], { title: "무시돼야 함" }); // 같은 회사 재저장
+  const cur = D.currentAffiliations(p);
+  assert.equal(cur.length, 1, "중복 삽입 없음");
+  assert.equal(cur[0].started_on, "2024-03-01", "재직 시작일 보존");
+  assert.equal(cur[0].is_contact, 1, "담당자 지정 보존");
+  assert.equal(cur[0].title, "팀장", "직함도 덮어쓰지 않음");
+});
+
+test("setCurrentAffiliations: 무소속(org_id NULL) 행은 건드리지 않는다", () => {
+  const p = D.createPerson({ name: "칩무소속" });
+  const co = D.createCompany({ name: "칩무소속사" });
+  D.addAffiliation(p, { org_id: null, title: "프리랜서", closeCurrent: false }); // 회사 없는 현재 소속
+  D.setCurrentAffiliations(p, [co]); // 회사 칩 하나 추가
+  const cur = D.currentAffiliations(p);
+  assert.ok(cur.some((x) => !x.org_id), "무소속 행이 종료되지 않고 남아 있다");
+  assert.ok(cur.some((x) => x.org_id === co), "회사 소속도 추가됨");
+});

@@ -281,6 +281,31 @@ function deleteAffiliation(affId) {
 }
 
 /**
+ * 연락처 폼의 '소속' 칩 목록을 현재 소속에 통째 반영(겸직 지원, 2026-07-31).
+ * 목록에 없는 현재 소속은 종료(`endAffiliation`), 새로 들어온 곳만 추가(`closeCurrent:false`),
+ * **이미 있는 곳은 그대로 둔다** — 재삽입하면 `started_on`(재직 시작일)과 `is_contact`(담당자 지정)가 날아간다.
+ * ⚠️ **`org_id`가 NULL인 현재 소속(무소속·프리랜서 행)은 건드리지 않는다** — 칩은 '회사 소속'만 다루므로,
+ *    전화번호만 고쳐 저장해도 그 행이 조용히 종료되면 안 된다(사용자가 지운 적 없는 기록이다).
+ */
+function setCurrentAffiliations(personId, orgIds, { title } = {}) {
+  const current = currentAffiliations(personId);
+  const currentOrgIds = new Set(current.filter((a) => a.org_id).map((a) => Number(a.org_id)));
+  const newOrgIds = new Set(orgIds.map(Number).filter((id) => id));
+
+  for (const orgId of newOrgIds) {
+    if (!currentOrgIds.has(orgId)) {
+      addAffiliation(personId, { org_id: orgId, title, closeCurrent: false });
+    }
+  }
+
+  for (const a of current) {
+    if (a.org_id && !newOrgIds.has(Number(a.org_id))) {
+      endAffiliation(a.id, todayYmd());
+    }
+  }
+}
+
+/**
  * '회사' 텍스트를 소속 이력에 반영: 회사명으로 company party를 찾거나(없으면 생성), 현재 소속이 그 회사가 아니면 이직 등록.
  * 회사 비면 no-op. clients.syncCompanyAffiliation 이관(party 기준).
  */
@@ -1034,6 +1059,7 @@ module.exports = {
   endAffiliation,
   updateAffiliation,
   deleteAffiliation,
+  setCurrentAffiliations,
   syncCompanyAffiliation,
   listPersonsForOrg,
   orgsWithOwnerParty,
