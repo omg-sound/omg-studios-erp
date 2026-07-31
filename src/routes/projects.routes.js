@@ -169,9 +169,13 @@ function resolveProjectParties(b) {
   const productionId = prodPartyId || (prodText ? resolvePartyByDisplay(prodText) || ensureCompanyParty(prodText, "제작사") : null);
   // 소속/레이블 = 아티스트 속성 → 프로젝트 폼 입력 필드 제거(2026-07-11 사용자 결정). 첫(대표) 아티스트의 현재 소속에서 파생.
   // 다중 아티스트는 첫 아티스트 기준(사용자 확인), 소속 미설정이면 null(소속 지정은 아티스트/연락처 쪽에서). 표시 TEXT도 파생 이름 사용.
+  // ⚠️ 표시 이름과 FK는 **같은 소속 하나**에서 나와야 한다 — `agency_id`는 컬럼이 하나라 첫 소속만 담는데
+  // 표시를 전 소속 병기로 하면 화면엔 'A, B'가 뜨고 청구처 파생·역할 배지(addCompanyRole)는 A에만 걸려
+  // 보이는 것과 실제가 갈린다(2026-07-31 겸직 지원 도입 때 실제로 그랬다). 겸직은 연락처 상세에서 본다.
   const affs = artistId ? currentAffiliations(artistId) : [];
-  const agencyId = affs.length > 0 && affs[0].org_id ? affs[0].org_id : null;
-  const agencyName = affs.length > 0 ? affs.map(a => a.org_name).filter(Boolean).join(", ") || null : null;
+  const primaryAff = affs.find((a) => a.org_id) || null;
+  const agencyId = primaryAff ? primaryAff.org_id : null;
+  const agencyName = primaryAff ? primaryAff.org_name || null : null;
   // 파생 소속사·제작/운영 회사에 클라이언트 역할 반영(사람이면 no-op·멱등, 2026-07-10). 소속/레이블 배지 일관.
   if (agencyId) addCompanyRole(agencyId, "소속사/레이블");
   if (productionId) addCompanyRole(productionId, "제작사");
@@ -740,3 +744,4 @@ router.get("/:id/invoices/preview/:type/:name", requireBilling, asyncHandler(asy
 }));
 
 module.exports = router;
+module.exports.resolveProjectParties = resolveProjectParties; // 회귀 테스트(겸직 아티스트의 소속 파생 ≡ 표시 이름) 재사용

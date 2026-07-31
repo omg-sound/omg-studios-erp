@@ -857,3 +857,45 @@ test("updateParty: 레거시 단일필드 이름 + 이름 필드 미전송이면
   D.updateParty(id, { memo: "메모만" });
   assert.equal(D.getParty(id).name, "외자", "성/이름 없는 단일필드 이름 보존");
 });
+
+// ── 회귀(2026-07-31, 겸직 지원 후속): 다중 현재 소속이 화면·파생을 어긋나게 만들지 않는지 ──
+// 두 결함 다 "값이 틀린 게 아니라 어느 것에 붙은 값인지 알 수 없게 되는" 종류라 눈으로는 잘 안 보인다.
+
+test("contactOptions: 겸직이어도 직함은 첫 소속 것 하나 — 회사명 병기와 짝이 어긋나지 않는다", () => {
+  const p = D.createPerson({ name: "겸직인" });
+  const coA = D.createCompany({ name: "겸직A상사" });
+  const coB = D.createCompany({ name: "겸직B기획" });
+  // 두 소속 다 직함이 있어야 두 구현(GROUP_CONCAT vs LIMIT 1)이 갈린다.
+  // (A만 NULL이면 GROUP_CONCAT도 NULL을 건너뛰어 우연히 같은 값이 나와 테스트가 가드 구실을 못 한다.)
+  D.addAffiliation(p, { org_id: coA, title: "대표", started_on: "2026-01-01", closeCurrent: false });
+  D.addAffiliation(p, { org_id: coB, title: "이사", started_on: "2026-02-01", closeCurrent: false });
+  const row = D.contactOptions().find((o) => o.id === p);
+  assert.ok(row, "옵션에 존재");
+  assert.match(row.current_client, /겸직A상사/, "회사는 전부 병기(검색용)");
+  assert.match(row.current_client, /겸직B기획/);
+  assert.equal(row.current_title, "이사", "직함은 첫(최근) 소속 하나만");
+  assert.ok(!String(row.current_title).includes(","), "직함을 콤마로 뭉치지 않는다 — 회사 목록과 짝이 어긋난다");
+
+  // NULL 건너뜀으로 자리가 밀리는 원래 증상도 함께 잠근다(A만 직함 없는 사람).
+  const q = D.createPerson({ name: "겸직인둘" });
+  D.addAffiliation(q, { org_id: coA, started_on: "2026-01-01", closeCurrent: false }); // 직함 없음
+  D.addAffiliation(q, { org_id: coB, title: "이사", started_on: "2026-02-01", closeCurrent: false });
+  const row2 = D.contactOptions().find((o) => o.id === q);
+  assert.equal(row2.current_title, "이사", "첫 소속(겸직B기획)의 직함");
+});
+
+test("resolveProjectParties: 겸직 아티스트의 소속/레이블 표시와 agency_id는 같은 소속에서 나온다", () => {
+  const { resolveProjectParties } = require("../src/routes/projects.routes");
+  const artist = D.createPerson({ name: "겸직아티스트", activity_name: "듀얼" });
+  const coA = D.createCompany({ name: "레이블하나" });
+  const coB = D.createCompany({ name: "레이블둘" });
+  D.addAffiliation(artist, { org_id: coA, started_on: "2026-01-01", closeCurrent: false });
+  D.addAffiliation(artist, { org_id: coB, started_on: "2026-02-01", closeCurrent: false });
+  const r = resolveProjectParties({ artist: "겸직아티스트", artist_contact_id: String(artist) });
+  assert.equal(r.artistId, artist, "아티스트 해석");
+  assert.ok(r.agencyId, "소속사 파생됨");
+  const derived = D.getParty(r.agencyId);
+  assert.equal(r.agencyName, derived.name, "표시 이름 = agencyId가 가리키는 회사(둘을 병기하면 청구처 파생과 어긋난다)");
+  assert.ok(!String(r.agencyName).includes(","), "전 소속 병기 금지");
+  assert.ok([coA, coB].includes(r.agencyId), "실재하는 소속 중 하나");
+});

@@ -824,8 +824,11 @@ function contactOptions() {
       `SELECT p.id, p.name, p.activity_name, p.honorific, p.phone, p.email,
               (SELECT GROUP_CONCAT(name, ', ') FROM (SELECT o.name FROM affiliations a LEFT JOIN parties o ON o.id = a.org_id
                 WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC)) AS current_client,
-              (SELECT GROUP_CONCAT(title, ', ') FROM (SELECT a.title FROM affiliations a
-                WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC)) AS current_title,
+              -- ⚠️ 직함은 **첫(가장 최근) 소속의 것 하나만** — 회사명처럼 GROUP_CONCAT하면 짝이 어긋난다.
+              -- GROUP_CONCAT은 NULL을 건너뛰므로 A(직함 없음)·B(이사)면 회사는 "B, A"인데 직함은 "이사" 하나라
+              -- 화면에서 어느 회사의 직함인지 알 수 없고, 순서가 밀리면 남의 직함으로 읽힌다(2026-07-31 실증).
+              (SELECT a.title FROM affiliations a
+                WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC LIMIT 1) AS current_title,
               (SELECT g.name FROM parties g WHERE g.id = p.group_id AND g.kind = 'group') AS group_name
          FROM parties p WHERE p.kind = 'person' ORDER BY p.name COLLATE NOCASE`
     )
