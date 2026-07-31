@@ -26,9 +26,9 @@ function payerInfoCard(client, contacts = [], hasBizFile = false, { compact = fa
   }
   if (client.cash_receipt_no) {
     rows.push(cell("현금영수증", copyable(client.cash_receipt_no, { cls: "font-medium" }))); // 개인(사업자등록증 없음) — 발행 식별번호라 등록번호 자리
-  } else if (client.kind === "person") {
-    // 개인 청구처인데 현금영수증 정보 없음 → 발행 불가(createInvoiceFromTasks가 PAYER_CASH_RECEIPT_REQUIRED로 막음). 미리 경고(실시간 party 카드에서 특히 유용 — 나중에 정보를 지운 경우).
-    rows.push(cell("현금영수증", `<span class="text-warning">⚠️ 미등록 — 발행 전 입력 필요</span>`));
+  } else if (client.kind === "person" && !client.biz_no) {
+    // 개인 청구처인데 현금영수증 정보도 사업자등록번호도 없음 → 발행 불가. 미리 경고.
+    rows.push(cell("세무 증빙", `<span class="text-warning">⚠️ 미등록 — 발행 전 입력 필요</span>`));
   }
   rows.push(cell(client.kind === "person" ? "성명" : "상호", copyable(client.name, { cls: "font-semibold", display: personLabel(client.name, client.activity_name) }))); // 표시=본명 (활동명)(현금영수증 명의 오해 방지), 복사=순수 본명(홈택스 붙여넣기용, 2026-07-08)
   if (client.owner_name) rows.push(cell("성명(대표자)", copyable(client.owner_name, { cls: "font-medium" }))); // 클릭 복사(2026-07-08)
@@ -65,7 +65,15 @@ function statusRank(inv) {
 
 /** 청구처 유형에 따른 세무 문서명 — 개인(person)=현금영수증, 그 외(업체·그룹·미지정)=계산서. tax_status DB값(계산서 …)은 그대로, 표시만 치환. */
 function taxDocOf(inv) {
-  return inv && inv.payer_kind === "person" ? "현금영수증" : "계산서";
+  if (!inv) return "계산서";
+  let snap = {};
+  if (typeof inv.payer_snapshot === "string" && inv.payer_snapshot.trim()) {
+    try { snap = JSON.parse(inv.payer_snapshot); } catch (e) {}
+  } else if (inv.payer_snapshot && typeof inv.payer_snapshot === "object") {
+    snap = inv.payer_snapshot;
+  }
+  if (snap.biz_no && String(snap.biz_no).trim()) return "계산서";
+  return inv.payer_kind === "person" ? "현금영수증" : "계산서";
 }
 
 /** 계산서·입금 배지 — (계산서|현금영수증) 미발행 / 발행 / 입금완료(+부분납 파생). */

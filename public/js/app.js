@@ -1574,7 +1574,12 @@ function sortCellValue(cell) {
     var isWorkspaceRental = sessionTypeSel && sessionTypeSel.value === "작업 대관";
     var opt = sel.options[sel.selectedIndex];
     var external = opt && opt.getAttribute("data-external") === "1";
-    wrap.classList.toggle("hidden", !external || isWorkspaceRental);
+    var hide = !external || isWorkspaceRental;
+    wrap.classList.toggle("hidden", hide);
+    if (hide) {
+      var input = wrap.querySelector("input");
+      if (input) input.value = "";
+    }
   }
   Array.prototype.forEach.call(document.querySelectorAll('[data-engineer-row] select[name="engineer_ids"]'), syncRow);
   document.addEventListener("change", function (e) {
@@ -2529,7 +2534,7 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
         pSave.disabled = true; err.classList.add("hidden");
         var body = new URLSearchParams();
         body.append("name", nm);
-        if (activity) body.append("nickname", activity); // nickname=활동명(별칭) → createPerson이 activity_name 저장 + is_artist
+        if (activity) body.append("activity_name", activity); // 활동명 → createPerson이 activity_name 저장 + is_artist
         if (phone) body.append("phone", phone);
         if (email) body.append("email", email);
         if (company) body.append("company", company);
@@ -2657,6 +2662,8 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
     var warnEl = form ? form.querySelector("[data-payer-warn]") : null;
     var fixInput = form ? form.querySelector("[data-payer-fix-input]") : null;
     var fixBtn = form ? form.querySelector("[data-payer-fix-btn]") : null;
+    var taxToggle = form ? form.querySelector("[data-payer-tax-toggle]") : null;
+    var taxRadios = taxToggle ? taxToggle.querySelectorAll('input[type="radio"]') : [];
     // 발행 이메일(청구서 건별, 2026-07-27): 선택 시 표시+프리필. 마커(payer_email_set)=프리필했거나 직접 입력했으면 1 —
     // 서버는 마커 있을 때만 '보이는 값 = 발행 이메일' 규칙 적용(JS-off 제출이 이메일을 지우는 사고 방지).
     var emailRow = form ? form.querySelector("[data-payer-email-row]") : null;
@@ -2671,15 +2678,32 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
     }
     if (emailInput) emailInput.addEventListener("input", function () { if (emailSet) emailSet.value = "1"; }); // 직접 입력 = 사용자 결정
     function applyDoc(it) {
-      if (docLabel) docLabel.textContent = (it && !it.co) ? "(현금영수증 발행)" : "(계산서 발행)";
+      // 개인이라도 사업자등록번호가 있으면 계산서(it.biz) — views.invoices.taxDocOf와 같은 규칙.
+      if (docLabel) docLabel.textContent = (it && !it.co && !it.biz) ? "(현금영수증 발행)" : "(계산서 발행)";
       if (fixBox) {
         if (it && it.warn) {
           if (warnEl) warnEl.textContent = "⚠️ " + it.warn;
-          if (fixInput) { fixInput.placeholder = it.co ? "사업자등록번호 (예: 000-00-00000)" : "현금영수증 정보 (휴대폰 번호 등)"; fixInput.value = ""; }
+          if (taxToggle) taxToggle.classList.toggle("hidden", !!it.co);
+          var isBiz = !!it.co;
+          if (!it.co && taxRadios.length) {
+            for (var i = 0; i < taxRadios.length; i++) if (taxRadios[i].checked && taxRadios[i].value === "biz") isBiz = true;
+          }
+          if (fixInput) { fixInput.placeholder = isBiz ? "사업자등록번호 (예: 000-00-00000)" : "현금영수증 정보 (휴대폰 번호 등)"; fixInput.value = ""; }
           fixBox.classList.remove("hidden");
         } else fixBox.classList.add("hidden");
       }
       applyEmail(it);
+    }
+    if (taxToggle) {
+      taxToggle.addEventListener("change", function () {
+        var it = items.filter(function (x) { return (cid.value && String(x.cid) === String(cid.value)) || (pid.value && String(x.pid) === String(pid.value)); })[0];
+        if (it && !it.co) {
+          var isBiz = false;
+          for (var i = 0; i < taxRadios.length; i++) if (taxRadios[i].checked && taxRadios[i].value === "biz") isBiz = true;
+          if (fixInput) fixInput.placeholder = isBiz ? "사업자등록번호 (예: 000-00-00000)" : "현금영수증 정보 (휴대폰 번호 등)";
+          if (docLabel) docLabel.textContent = isBiz ? "(계산서 발행)" : "(현금영수증 발행)";
+        }
+      });
     }
     // 발행 정보 인라인 저장 — 경고 아래 입력칸+버튼. 저장되면 버튼 하이라이트 후 경고 숨김·차단 해제.
     if (fixBtn) {
@@ -2689,6 +2713,9 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
         if (!partyId || !value) { if (fixInput) fixInput.focus(); return; }
         fixBtn.disabled = true;
         var body = new URLSearchParams(); body.append("party_id", partyId); body.append("value", value);
+        if (taxToggle && !taxToggle.classList.contains("hidden")) {
+          for (var i = 0; i < taxRadios.length; i++) if (taxRadios[i].checked) body.append("tax_type", taxRadios[i].value);
+        }
         fetch("/projects/payer-info", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "fetch" }, body: body.toString() })
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (d) {

@@ -298,7 +298,7 @@ test("세션 폼(새 작성): 시작=지금 기준 30분 슬롯 프리필·종�
 test("세션 편집 폼: 기존 담당 디렉터가 칩으로 채워짐(id·본명 hidden 쌍)", () => {
   const { createPerson } = require("../src/data");
   const p1 = createPerson({ family_name: "전", given_name: "범선", honorific: "대표님" });
-  const p2 = createPerson({ name: "감초아", nickname: "초아비트" }); // 아티스트 겸 디렉터
+  const p2 = createPerson({ name: "감초아", activity_name: "초아비트" }); // 아티스트 겸 디렉터
   const projId = Number(db().prepare("INSERT INTO projects (title, project_type, rate, created_at) VALUES ('디렉터폼', 'session', 0, datetime('now'))").run().lastInsertRowid);
   const sid = Number(db().prepare("INSERT INTO sessions (project_id, session_type, session_date, all_day, start_time, end_time, status, director_party_id) VALUES (?, '공연', '2026-07-20', 1, NULL, NULL, '예정', ?)").run(projId, p1).lastInsertRowid);
   db().prepare("INSERT INTO session_directors (session_id, party_id) VALUES (?, ?)").run(sid, p1);
@@ -340,6 +340,26 @@ test("personCombo simpleModal(대표자): 회사·직책·활동명 필드 없�
   assert.equal(fetchCalls.length, 1, "POST /contacts 호출(예외 없이)");
   assert.ok(fetchCalls[0].url.indexOf("/contacts") !== -1);
   assert.ok(fetchCalls[0].body.indexOf("company=") === -1, "회사 파라미터 미포함(업체 저장 시 owner 흐름이 연결)");
+});
+
+// 회귀(2026-07-31): 모달의 활동명은 `activity_name`으로 보내야 한다.
+// nickname 레거시 별칭을 걷어내며 createPerson·라우트는 activity_name만 받게 됐는데 app.js만 `nickname`으로 남아
+// 활동명이 조용히 버려지고 is_artist도 안 붙었다(서버가 모르는 키는 그냥 무시하므로 에러도 안 났다).
+test("personCombo 새 등록 모달: 활동명은 activity_name으로 제출(레거시 nickname 금지)", () => {
+  const html = `<form>${personCombo({ idField: "artist_id", nameField: "artist_name", options: [], entityLabel: "아티스트" })}</form>`;
+  const fetchCalls = [];
+  const { win, doc } = mountDom(html, { fetchImpl: (url, init) => { fetchCalls.push({ url: String(url), body: init && init.body }); return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, id: 77, name: "이지은" }) }); } });
+  const modal = doc.querySelector("[data-pc-modal]");
+  assert.ok(modal.querySelector("[data-pc-activity]"), "활동명 필드 있음(simpleModal 아님)");
+  const input = doc.querySelector("[data-pc-input]");
+  input.value = "이지은"; fire(win, input, "input");
+  fire(win, doc.querySelector("[data-pc-pop]").querySelector("[data-new]"), "click");
+  modal.querySelector("[data-pc-name]").value = "이지은";
+  modal.querySelector("[data-pc-activity]").value = "아이유";
+  fire(win, modal.querySelector("[data-pc-save]"), "click");
+  assert.equal(fetchCalls.length, 1, "POST /contacts 호출");
+  assert.ok(fetchCalls[0].body.indexOf("activity_name=") !== -1, "활동명은 activity_name 키로 전송");
+  assert.ok(fetchCalls[0].body.indexOf("nickname=") === -1, "레거시 nickname 키 미사용");
 });
 
 // ── ④ dirty 폼: 변경 시 저장 강조·힌트, 원복 시 해제 ──
@@ -468,7 +488,7 @@ test("companyCombo 소속/레이블: partyIdField 없으면 party-id 필드도 �
 // ── ④b 제작/운영에 아티스트(개인) 선택: 활동명 병기 + 고객측 담당자 자동채움(2026-07-05) ──
 test("companyCombo 제작/운영: 아티스트는 활동명 병기 표시, 선택 시 담당자 비어있으면 자동채움", () => {
   const { createPerson, contactOptions } = require("../src/data");
-  const aid = createPerson({ name: "조형우", nickname: "형우비트" }); // 아티스트(활동명) 겸 제작
+  const aid = createPerson({ name: "조형우", activity_name: "형우비트" }); // 아티스트(활동명) 겸 제작
   const { personCombo: pc } = require("../src/views");
   // 폼에 제작/운영(companyCombo+people) + 고객측 담당자(personCombo) 함께
   const html = `<form>
@@ -516,7 +536,7 @@ test("companyCombo 제작/운영: 담당자가 이미 있으면 자동채움 안
 // ── ④c 전수점검(2026-07-05): 제작/운영 콤보 — 라벨 재타이핑 시 id 유지 + 새 사람 브로드캐스트 수신 ──
 test("companyCombo 제작/운영: 병기 라벨 정확 재입력 시 party-id 유지(선택 안 풀림)", () => {
   const { createPerson } = require("../src/data");
-  const pid = createPerson({ name: "표길동", nickname: "길동비트" });
+  const pid = createPerson({ name: "표길동", activity_name: "길동비트" });
   const html = `<form>${companyCombo("production_company", "", "제작사", "제작/운영", { partyIdField: "production_party_id" })}</form>`;
   const { win, doc } = mountDom(html);
   const input = doc.querySelector("[data-cc-input]");
@@ -739,8 +759,8 @@ test("companyCombo(제작/운영): 이름 정확 일치가 부분 일치보다 �
 
 test("아티스트 콤보: 이름 정확 일치가 부분 일치보다 먼저", () => {
   const { createPerson } = require("../src/data");
-  createPerson({ name: "가루나", nickname: "가루나" }); // 부분 일치인데 가나다순으로 앞 → 정렬 없으면 먼저 노출
-  createPerson({ name: "루나", nickname: "루나" });     // 정확 일치
+  createPerson({ name: "가루나", activity_name: "가루나" }); // 부분 일치인데 가나다순으로 앞 → 정렬 없으면 먼저 노출
+  createPerson({ name: "루나", activity_name: "루나" });     // 정확 일치
   const { win, doc } = mountDom(`<form>${artistCombo({})}</form>`);
   const input = doc.querySelector("[data-artist-input]");
   const pop = doc.querySelector("[data-artist-pop]");
@@ -784,7 +804,7 @@ const aHidden = (doc) => ({
 
 test("아티스트 콤보(칩): 선택하면 칩으로 담기고 hidden artist=활동명, cid=명시 id", () => {
   const { createPerson } = require("../src/data");
-  const id = createPerson({ name: "이지은", nickname: "아이유" });
+  const id = createPerson({ name: "이지은", activity_name: "아이유" });
   const { win, doc, input, pop } = mountArtist();
   input.value = "아이유"; fire(win, input, "input");
   fire(win, pop.querySelector("button[data-idx]"), "click");
@@ -794,7 +814,7 @@ test("아티스트 콤보(칩): 선택하면 칩으로 담기고 hidden artist=�
 
 test("아티스트 콤보(칩): 두 명이면 artist=콤마 목록, cid는 비움(서버가 이름별 해석)", () => {
   const { createPerson } = require("../src/data");
-  createPerson({ name: "김태연", nickname: "태연" });
+  createPerson({ name: "김태연", activity_name: "태연" });
   const { win, doc, input, pop } = mountArtist();
   input.value = "아이유"; fire(win, input, "input");
   fire(win, pop.querySelector("button[data-idx]"), "click");
@@ -1251,6 +1271,36 @@ test("청구처 추천 칩: 콤보 옵션에 없는 당사자도 id가 유지된
   doc.querySelector("[data-payer-suggest]").dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
   assert.equal(doc.querySelector("[data-pk-cid]").value, "77", "옵션 밖 당사자 id 유지");
   assert.equal(doc.querySelector("[data-pk-input]").value, "김감독", "이름 표시");
+});
+
+// 회귀(2026-07-31): 개인 사업자 청구처 — 서버 payerDocMissing은 biz_no만 있어도 통과시키는데
+// payerCombo의 경고 판정이 현금영수증만 봐서 거짓 경고가 뜨고, app.js가 그 경고를 근거로 제출을 막았다.
+// 경고 판정은 서버 차단 조건과 반드시 같아야 한다(세션 겹침 '경고≡차단'과 같은 불변식).
+test("payerCombo: 개인이 사업자등록번호만 있어도 경고 없음 + 계산서 표기", () => {
+  const { payerCombo } = require("../src/views");
+  const clientOptions = [
+    { id: 11, name: "개인사업자", kind: "person", is_artist: 1 }, // biz_no만 보유
+    { id: 12, name: "현금영수증만", kind: "person", is_artist: 1 },
+    { id: 13, name: "아무것도없음", kind: "person", is_artist: 1 },
+  ];
+  const html = payerCombo({ clientOptions, contactOptions: [], taxInfoIds: [11], cashReceiptIds: [12] });
+  const items = JSON.parse(html.match(/data-pk-options>([\s\S]*?)<\/script>/)[1].replace(/\\u003c/g, "<"));
+  const by = (id) => items.find((i) => i.cid === id);
+  assert.equal(by(11).warn, "", "사업자등록번호 보유 개인 = 경고 없음(서버도 통과)");
+  assert.equal(by(11).biz, 1, "계산서 발행 대상 표시");
+  assert.equal(by(12).warn, "", "현금영수증 보유 개인 = 경고 없음");
+  assert.equal(by(12).biz, 0, "현금영수증 발행 대상");
+  assert.ok(by(13).warn, "둘 다 없으면 경고");
+
+  // 실제 폼에서 제출이 막히지 않는지(app.js 게이트는 fixBox 노출 여부로 판단)
+  const { win, doc } = mountDom(`<form><div data-inv-doc></div>${html}
+    <div data-payer-fix class="hidden"><p data-payer-warn></p><input data-payer-fix-input /><button type="button" data-payer-fix-btn></button></div>
+    <button type="submit" data-invoice-submit>청구 생성</button></form>`);
+  const input = doc.querySelector("[data-pk-input]");
+  input.value = "개인사업자"; fire(win, input, "input");
+  fire(win, doc.querySelector("[data-pk-pop]").querySelector("button[data-idx]"), "click");
+  assert.ok(doc.querySelector("[data-payer-fix]").classList.contains("hidden"), "경고 박스 미노출 = 제출 차단 없음");
+  assert.equal(doc.querySelector("[data-inv-doc]").textContent, "(계산서 발행)", "개인 사업자는 계산서");
 });
 
 // [5] data-confirm: 이미 막힌 제출엔 확인창을 띄우지 않는다(2026-07-15 검증 워크플로 잠복 엣지).

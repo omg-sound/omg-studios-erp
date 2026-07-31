@@ -80,9 +80,9 @@ router.post("/", asyncHandler(async (req, res) => {
     const id = createPerson({
       name: b.name, phone: b.phone, email: b.email, memo: b.memo,
       family_name: b.family_name, given_name: b.given_name, honorific: b.honorific,
-      nickname: b.nickname, company: b.company, job_title: b.job_title, department: b.department,
-      cash_receipt_no: b.cash_receipt_no, // 개인 청구처 → 현금영수증 발행 정보
-      biz_no: b.biz_no, // 개인 사업자 → 세금계산서용 사업자등록번호
+      activity_name: b.activity_name, company: b.company, job_title: b.job_title, department: b.department,
+      cash_receipt_no: b.tax_type === "biz" ? null : b.cash_receipt_no, // 개인 청구처 → 현금영수증 발행 정보
+      biz_no: b.tax_type === "cash" ? null : b.biz_no, // 개인 사업자 → 세금계산서용 사업자등록번호
     });
     // 생성 폼에서 현재 소속(회사/직함)을 같이 받았으면 첫 소속으로 등록.
     if (b.client_id || (b.title && String(b.title).trim())) {
@@ -90,7 +90,7 @@ router.post("/", asyncHandler(async (req, res) => {
     }
     if (!b.client_id) syncCompanyAffiliation(id, b.company, b.job_title); // '회사' 텍스트 입력 → 소속 이력 반영(업체 클라이언트 연결)
     if (b.group_id !== undefined) setPartyGroup(id, b.group_id); // 소속 그룹(밴드·아이돌) 연결
-    // 활동명(nickname→activity_name)은 createPerson가 party에 저장하며 is_artist를 자동 세팅(별도 아티스트 셸 없음).
+    // 활동명(activity_name)은 createPerson가 party에 저장하며 is_artist를 자동 세팅(별도 아티스트 셸 없음).
     // Google People push — fail-safe: 실패해도 앱 정상.
     try {
       const contact = getParty(id);
@@ -132,9 +132,9 @@ router.post("/:id", asyncHandler(async (req, res) => {
       email: isHouseEngineer ? c.email : b.email,  // 하우스: 기존 이메일 유지
       memo: b.memo,
       family_name: b.family_name, given_name: b.given_name, honorific: b.honorific,
-      nickname: b.nickname, company: b.company, job_title: b.job_title, department: b.department,
-      cash_receipt_no: b.cash_receipt_no, // 개인 청구처 → 현금영수증 발행 정보
-      biz_no: b.biz_no, // 개인 사업자 → 세금계산서용 사업자등록번호
+      activity_name: b.activity_name, company: b.company, job_title: b.job_title, department: b.department,
+      cash_receipt_no: b.tax_type === "biz" ? null : b.cash_receipt_no, // 개인 청구처 → 현금영수증 발행 정보
+      biz_no: b.tax_type === "cash" ? null : b.biz_no, // 개인 사업자 → 세금계산서용 사업자등록번호
     });
     syncCompanyAffiliation(id, b.company, b.job_title); // '회사' 텍스트 → 소속 이력 반영(현재 소속과 다르면 이직으로 등록)
     if (b.group_id !== undefined) setPartyGroup(id, b.group_id); // 소속 그룹(밴드·아이돌) 연결
@@ -267,7 +267,7 @@ function contactForm(c = {}, isEdit = false, manager = null, embedded = false, g
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
           <div><label class="label">아티스트명</label>
-            <input class="input" name="nickname" value="${esc(c.nickname || "")}" placeholder="예: 아티스트 활동명" autocomplete="off" />
+            <input class="input" name="activity_name" value="${esc(c.activity_name || "")}" placeholder="예: 아티스트 활동명" autocomplete="off" />
           </div>
           <div><label class="label">소속 그룹</label>
             ${groupCombo("group_id", c.group_id || "", (groups.find((g) => Number(g.id) === Number(c.group_id)) || {}).name || "", groups)}

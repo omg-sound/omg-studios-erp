@@ -129,7 +129,7 @@ test.after(() => cleanupDb(process.env.DB_PATH));
 test("세션 디렉터: 콤마 텍스트(라벨 포함)를 이름별 해석 — 기존 재사용·신규 생성·dedup", () => {
   const D = require("../src/data");
   const CHIEF = { id: 1, role: "chief", email: "chief@omg.test" };
-  const dirA = D.createPerson({ name: "표몽규", nickname: "몽규튠", honorific: "실장님" });
+  const dirA = D.createPerson({ name: "표몽규", activity_name: "몽규튠", honorific: "실장님" });
   const projId = Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('디렉터콤마','session',0)").run().lastInsertRowid);
   const s = D.createSession(CHIEF, projId, {
     session_type: "믹싱", session_date: "2026-08-01", all_day: "1", status: "예정",

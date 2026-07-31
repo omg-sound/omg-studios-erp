@@ -131,7 +131,7 @@ test("guardrail: personCombo 기본 companyOptions — 미전달 호출도 회�
 test("guardrail: updateParty — 미전송 필드 보존·빈 문자열 비움(사람)", () => {
   const id = createPerson({
     family_name: "가", given_name: "드레", honorific: "님", phone: "010-1234-5678", email: "g@x.kr",
-    memo: "메모보존", department: "A&R", job_title: "팀장", cash_receipt_no: "010-1234-5678", nickname: "가드",
+    memo: "메모보존", department: "A&R", job_title: "팀장", cash_receipt_no: "010-1234-5678", activity_name: "가드",
   });
   const before = getParty(id);
   updateParty(id, { name: before.name }); // 최소 업데이트(Google 동기화 시나리오)

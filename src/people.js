@@ -25,7 +25,7 @@ const {
   deleteParty,
   partyHasIssuedInvoice,
   setPartyGoogleRef,
-  currentAffiliation,
+  currentAffiliations,
   syncCompanyAffiliation,
 } = require("./data");
 
@@ -51,10 +51,10 @@ function personBodyFromContact(c) {
   if (c.honorific) nameFields.honorificPrefix = c.honorific;
   if (Object.keys(nameFields).length) body.names = [nameFields];
 
-  if (c.nickname) body.nicknames = [{ value: c.nickname }];
+  if (c.activity_name) body.nicknames = [{ value: c.activity_name }];
 
   // 회사는 당사자 모델에서 소속 이력(affiliations) — 현재 소속 org 이름을 Google organization으로 내보냄.
-  const company = c.company || (c.id ? (currentAffiliation(c.id) || {}).org_name : null);
+  const company = c.company || (c.id ? currentAffiliations(c.id).map(a => a.org_name).filter(Boolean).join(", ") || null : null);
   const orgFields = {};
   if (company) orgFields.name = company;
   if (c.job_title) orgFields.title = c.job_title;
@@ -148,7 +148,7 @@ function personToContactFields(person) {
   if (nameEntry.displayName) out.name = nameEntry.displayName;
 
   const nickEntry = (person.nicknames || [])[0];
-  if (nickEntry && nickEntry.value) out.nickname = nickEntry.value;
+  if (nickEntry && nickEntry.value) out.activity_name = nickEntry.value;
 
   const orgEntry = (person.organizations || [])[0] || {};
   if (orgEntry.name) out.company = orgEntry.name;
@@ -255,7 +255,7 @@ async function syncFromGoogle() {
           }
         } else {
           // 이름 식별 불가 연락처는 건너뜀
-          if (!fields.name && !fields.given_name && !fields.family_name && !fields.nickname) continue;
+          if (!fields.name && !fields.given_name && !fields.family_name && !fields.activity_name) continue;
           try {
             const newId = createPartyPerson(fields);
             if (fields.company) syncCompanyAffiliation(newId, fields.company, fields.job_title); // Google 회사 → 소속 이력

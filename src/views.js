@@ -7,7 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { PROJECT_SERVICE_LABELS, ROLE_LABELS } = require("./config");
+const { ROLE_LABELS } = require("./config");
 const { currentThemeAttrs } = require("./lib/request-theme");
 
 /**
@@ -65,7 +65,7 @@ function personName(p) {
   if (!p) return "";
   const n = String(p.name == null ? "" : p.name).trim();
   const h = String(p.honorific == null ? "" : p.honorific).trim();
-  const a = String((p.activity_name != null ? p.activity_name : p.nickname != null ? p.nickname : p.alt) || "").trim();
+  const a = String((p.activity_name != null ? p.activity_name : p.alt) || "").trim();
   const base = h && !n.endsWith(h) ? `${n} ${h}` : n;
   return a && a !== n ? `${base} (${a})` : base;
 }
@@ -84,45 +84,6 @@ function formatBytes(bytes) {
   return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
 }
 
-function projectServices(project) {
-  if (!project || !project.services) return [];
-  try {
-    const parsed = JSON.parse(project.services);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((item) => {
-        if (typeof item === "string") return { key: item, label: PROJECT_SERVICE_LABELS[item] || item };
-        if (!item || typeof item !== "object") return null;
-        const key = String(item.key || "").trim();
-        const label = String(item.label || PROJECT_SERVICE_LABELS[key] || "").trim();
-        return label ? { ...item, key, label } : null;
-      })
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-function serviceBadges(project) {
-  if (project && project.track_titles) {
-    const titles = String(project.track_titles)
-      .split("||")
-      .map((title) => title.trim())
-      .filter(Boolean);
-    if (titles.length) {
-      return titles.map((title) => `<span class="badge bg-bg text-muted">${esc(title)}</span>`).join("");
-    }
-  }
-  const services = projectServices(project);
-  if (!services.length) return `<span class="badge bg-muted/10 text-muted">곡·콘텐츠 미정</span>`;
-  return services
-    .map((s) => {
-      const trackTitle = String(s.track_title || "").trim();
-      const label = trackTitle ? `${s.label} · ${trackTitle}` : s.label;
-      return `<span class="badge bg-bg text-muted">${esc(label)}</span>`;
-    })
-    .join("");
-}
 
 // ── 라인 아이콘(lucide 스타일, currentColor stroke) ──
 const ICONS = {
@@ -464,16 +425,7 @@ function dirtyActionRow({ deleteFormId = "", deleteLabel = "삭제", saveLabel =
   return `<div class="flex items-center justify-between gap-3 pt-1">${left}<div class="flex items-center gap-3">${hint}${saveBtn}</div></div>`;
 }
 
-/**
- * 프로젝트 유형 배지 HTML.
- * @param {string} type "session" | "task" | 기타
- * @returns {string} HTML — .badge-primary(세션) | .badge-neutral(작업/미정)
- */
-function projectTypeBadge(type) {
-  if (type === "session") return `<span class="badge-primary">${esc("세션")}</span>`;
-  if (type === "task") return `<span class="badge-neutral">${esc("작업")}</span>`;
-  return `<span class="badge-neutral">${esc(type || "미정")}</span>`;
-}
+
 
 /**
  * 상세 페이지 밑줄 탭 바.
@@ -765,11 +717,16 @@ function personComboCompanyScript(id, companyOptions) {
  */
 function payerCombo({ selectedId = null, clientOptions = [], contactOptions = [], hint = "", taxInfoIds = [], cashReceiptIds = [] } = {}) {
   const sel = selectedId ? clientOptions.find((c) => Number(c.id) === Number(selectedId)) : null;
-  // 청구처 유형(co=회사 여부)·발행 정보 누락 경고(warn) — 회사=세금계산서 정보(사업자등록번호), 개인=현금영수증. app.js가 라벨·경고·차단 처리.
+  // 청구처 유형(co=회사 여부)·발행 정보 누락 경고(warn) — 회사=세금계산서 정보(사업자등록번호), 개인=현금영수증 **또는** 사업자등록번호. app.js가 라벨·경고·차단 처리.
+  // 🔒 판정은 서버 `payerDocMissing`과 같아야 한다 — app.js가 warn이 있으면 제출을 막으므로, 여기서만 좁게 보면
+  //    서버는 허용하는 개인 사업자 청구처가 폼에서 영영 막힌다(2026-07-31 실제 발생).
   const taxSet = new Set((taxInfoIds || []).map(Number));
   const cashSet = new Set((cashReceiptIds || []).map(Number));
   const CO_WARN = "세금계산서 정보(사업자등록번호)가 없습니다.";
-  const PS_WARN = "현금영수증 정보가 없습니다.";
+  const PS_WARN = "세무 증빙 정보(현금영수증 번호 또는 사업자등록번호)가 없습니다.";
+  // 개인 발행 문서 = 사업자등록번호가 있으면 계산서, 아니면 현금영수증(views.invoices.taxDocOf와 같은 규칙).
+  const personDoc = (id) => (taxSet.has(Number(id)) ? 1 : 0);
+  const personWarn = (id) => (cashSet.has(Number(id)) || taxSet.has(Number(id)) ? "" : PS_WARN);
   // 아티스트(개인)는 clientOptions(is_artist)에도, contactOptions(kind=person)에도 들어가 같은 party가 콤보에 두 번 뜬다 →
   // 이미 클라이언트로 노출된 사람은 담당자 중복 제외(중복 제거). 둘 다 같은 party.id라 청구처 결과는 동일.
   const clientIds = new Set(clientOptions.map((c) => Number(c.id)));
@@ -777,16 +734,16 @@ function payerCombo({ selectedId = null, clientOptions = [], contactOptions = []
   const items = [
     ...clientOptions.map((c) => {
       const co = c.kind === "company" ? 1 : 0;
-      const warn = co ? (taxSet.has(Number(c.id)) ? "" : CO_WARN) : (cashSet.has(Number(c.id)) ? "" : PS_WARN);
+      const warn = co ? (taxSet.has(Number(c.id)) ? "" : CO_WARN) : personWarn(c.id);
       const aff = [c.group_name, c.current_client].filter(Boolean).join(" · "); // 소속 그룹·회사로 식별
       const sub = kindLabel(c.kind) + (aff ? " · " + aff : "");
       // 아티스트(개인)는 **본명 (활동명)** 표기 — 현금영수증 명의(본명)와 직결돼 활동명만 보면 오해(2026-07-05 사용자 요청).
       const label = c.kind === "person" ? personLabel(c.real_name || c.name, c.activity_name) : c.name;
-      return { label, sub, cid: c.id, pid: 0, co, warn, email: c.email || null };
+      return { label, sub, cid: c.id, pid: 0, co, biz: co ? 0 : personDoc(c.id), warn, email: c.email || null };
     }),
     ...contactOptions.filter((o) => !clientIds.has(Number(o.id))).map((o) => {
       const aff = [o.group_name, o.current_client].filter(Boolean).join(" · "); // 소속 그룹·회사로 식별
-      return { label: personLabel(o.name, o.activity_name), sub: "담당자" + (aff ? " · " + aff : o.phone ? " · " + o.phone : ""), cid: 0, pid: o.id, co: 0, warn: cashSet.has(Number(o.id)) ? "" : PS_WARN, email: o.email || null }; // 담당자도 아티스트면 본명 (활동명)
+      return { label: personLabel(o.name, o.activity_name), sub: "담당자" + (aff ? " · " + aff : o.phone ? " · " + o.phone : ""), cid: 0, pid: o.id, co: 0, biz: personDoc(o.id), warn: personWarn(o.id), email: o.email || null }; // 담당자도 아티스트면 본명 (활동명)
     }),
   ];
   const json = JSON.stringify(items).replace(/</g, "\\u003c");
@@ -972,4 +929,4 @@ function groupCombo(fieldName, selectedId, currentName, groups = []) {
     </div>`;
 }
 
-module.exports = { esc, formatKRW, personLabel, personName, formatBytes, projectServices, serviceBadges, icon, layout, pageHeader, emptyState, errorPage, flashBanner, navItemsFor, NAV, detailsChevron, ddayPill, explain, dirtyActionRow, projectTypeBadge, tabBar, filterChips, searchBox, capList, listGroup, listRow, listRowLinked, dataTable, personCombo, personComboOptionsScript, personComboCompanyScript, payerCombo, companyCombo, groupCombo, copyable, dateCombo, fileViewerPage };
+module.exports = { esc, formatKRW, personLabel, personName, formatBytes, icon, layout, pageHeader, emptyState, errorPage, flashBanner, navItemsFor, NAV, detailsChevron, ddayPill, explain, dirtyActionRow, tabBar, filterChips, searchBox, capList, listGroup, listRow, listRowLinked, dataTable, personCombo, personComboOptionsScript, personComboCompanyScript, payerCombo, companyCombo, groupCombo, copyable, dateCombo, fileViewerPage };

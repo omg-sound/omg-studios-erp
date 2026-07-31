@@ -4,7 +4,6 @@ const express = require("express");
 const { db } = require("../db");
 const { requireAuth, requireEditor, requireBilling, requireChief, canEdit, canBill, isChief, isStaffOrChief } = require("../auth");
 const {
-  normalizeProjectType,
   normalizeDocType,
   docNumberWithType,
 } = require("../config");
@@ -51,7 +50,7 @@ const {
   ensureCompanyParty,
   addCompanyRole,
   resolvePartyByDisplay,
-  currentAffiliation,
+  currentAffiliations,
   setProjectArtists,
   setProjectContacts,
   hasPostprodSessionNeedingBilling,
@@ -170,9 +169,9 @@ function resolveProjectParties(b) {
   const productionId = prodPartyId || (prodText ? resolvePartyByDisplay(prodText) || ensureCompanyParty(prodText, "제작사") : null);
   // 소속/레이블 = 아티스트 속성 → 프로젝트 폼 입력 필드 제거(2026-07-11 사용자 결정). 첫(대표) 아티스트의 현재 소속에서 파생.
   // 다중 아티스트는 첫 아티스트 기준(사용자 확인), 소속 미설정이면 null(소속 지정은 아티스트/연락처 쪽에서). 표시 TEXT도 파생 이름 사용.
-  const aff = artistId ? currentAffiliation(artistId) : null;
-  const agencyId = aff && aff.org_id ? aff.org_id : null;
-  const agencyName = aff && aff.org_name ? aff.org_name : null;
+  const affs = artistId ? currentAffiliations(artistId) : [];
+  const agencyId = affs.length > 0 && affs[0].org_id ? affs[0].org_id : null;
+  const agencyName = affs.length > 0 ? affs.map(a => a.org_name).filter(Boolean).join(", ") || null : null;
   // 파생 소속사·제작/운영 회사에 클라이언트 역할 반영(사람이면 no-op·멱등, 2026-07-10). 소속/레이블 배지 일관.
   if (agencyId) addCompanyRole(agencyId, "소속사/레이블");
   if (productionId) addCompanyRole(productionId, "제작사");
@@ -311,7 +310,7 @@ router.get("/new", requireEditor, (req, res) => {
 router.post("/", requireEditor, (req, res) => {
   const b = req.body;
   const title = String(b.title || "").trim();
-  const type = normalizeProjectType(b.project_type);
+  const type = "session"; // project_type은 이제 session으로 고정
   if (!title) return res.send(layout({ title: "새 프로젝트", user: req.user, current: "/projects", body: projectForm({ ...b, project_type: type, _err: "프로젝트 명을 입력하세요." }) }));
   const parties = resolveProjectParties(b); // 아티스트/소속사/제작사/담당자 → party 참조(+ 아티스트 표시·중복 방지)
   // projects 행(denormalized 컬럼) + 다대다 아티스트·담당자를 한 트랜잭션으로 — 중간 실패 시 컬럼↔조인 불일치·빈 담당자 방지(세션 경로와 동일).

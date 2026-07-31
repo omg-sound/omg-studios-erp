@@ -246,7 +246,7 @@ test("연락처 2단: 목록/상세/편집 렌더 + 상한 없음", async (t) =>
     // 아티스트명 — 옛 datalist('목록에서 선택') 제거
     assert.ok(!/contact-artist-clients/.test(html), "아티스트명 datalist 제거");
     assert.ok(!/목록에서 선택/.test(html), "'목록에서 선택' 안내 없음");
-    assert.match(html, /name="nickname"[^>]*placeholder="예: 아티스트 활동명"/, "활동명 자유 입력 placeholder");
+    assert.match(html, /name="activity_name"[^>]*placeholder="예: 아티스트 활동명"/, "활동명 자유 입력 placeholder");
     // 소속 그룹 — <select>가 아니라 groupCombo(검색 + 새 그룹 간이 등록)
     assert.ok(!/<select name="group_id"/.test(html), "옛 select 제거");
     assert.match(html, /data-group-combo/, "groupCombo 마커");

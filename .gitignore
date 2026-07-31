@@ -11,6 +11,11 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 
+# 테스트가 남기는 임시 DB(격리 임시 DB를 쓰지만 cwd에 따라 흘러나올 수 있음)
+test/*.db
+test/*.db-wal
+test/*.db-shm
+
 # 백업(cron VACUUM INTO)·업로드 — 영속 디스크 데이터, 저장소에 넣지 않음
 data/backups/
 data/uploads/

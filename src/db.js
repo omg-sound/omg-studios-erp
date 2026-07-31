@@ -103,13 +103,7 @@ function init() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS project_service_items (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      key        TEXT NOT NULL UNIQUE,
-      label      TEXT NOT NULL,
-      active     INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+
 
     -- 단가표(과금 항목). 1Pro 기준시간/기준가 + 초과 단위/단가. 세션 시간 → 자동 산정의 기준.
     CREATE TABLE IF NOT EXISTS rate_items (
@@ -999,8 +993,6 @@ function init() {
 
 function seedDefaultCatalogs() {
   const d = db();
-  // project_service_items는 레거시(구 services JSON 라벨 호환) — 읽는 코드 없음(라벨은 config 상수). 시드 폐기, 테이블만 잔존.
-
   // 작업 종류 카탈로그 1회 시드(이후 치프의 편집·삭제가 영구히 유지되도록 플래그 게이트). ON CONFLICT으로 멱등.
   if (!getState("task_types_seed_v1")) {
     const insTaskType = d.prepare(

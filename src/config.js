@@ -117,19 +117,9 @@ const ROLE_LABELS = { owner: "대표", chief: "치프 엔지니어", staff: "스
 // 프로젝트 유형 2종(핵심 모티브):
 //  session = 클라이언트가 방문해 담당자와 실시간으로 진행. 예약 + 실제 작업시간이 존재(세션 일정 탭 노출).
 //  task    = 예약 없이 항목만 존재하는 업무흐름(세션 일정 탭 숨김, 곡·콘텐츠 중심).
-const PROJECT_TYPES = [
-  // label = 배지·제목용, menuLabel = '+ 새 프로젝트' 드롭다운 표기(액션형).
-  { key: "session", label: "세션", menuLabel: "세션 프로젝트 만들기", hint: "고객 방문 · 예약 · 실시간 작업" },
-  { key: "task", label: "작업", menuLabel: "작업 프로젝트 만들기", hint: "예약 없이 항목 단위로 진행" },
-];
-const PROJECT_TYPE_KEYS = PROJECT_TYPES.map((t) => t.key);
 
-const PROJECT_SERVICES = [
-  { key: "recording", label: "녹음" },
-  { key: "vocal_tune", label: "보컬튠" },
-  { key: "mixing", label: "믹싱" },
-  { key: "mastering", label: "마스터링" },
-];
+
+
 // 단가표 분류의 **1회 시드 데이터**(2026-07-05부터 진실원천은 DB `rate_categories` 테이블 — 치프가 관리>콘텐츠에서
 // 커스텀 분류를 추가·수정·삭제할 수 있게 전환. 이 4개는 시드 시 locked=1로 들어가 수정·삭제 불가). db.js seedDefaultCatalogs만 참조.
 // 분류→kind 조회·검증은 이제 DB 기반(`src/data/rate-categories.js`의 rateCategoryKind/listRateCategories)을 쓴다.
@@ -178,8 +168,7 @@ const TASK_TYPES = [
   { key: "Audio_Dub_Mixing", label: "더빙 믹싱", group: "Video_Audio", billing: "Fixed_Per_Track", price: 0, quick: false },
   { key: "SFX_Foley", label: "SFX/Foley", group: "Video_Audio", billing: "Fixed_Per_Track", price: 0, quick: false },
 ];
-// 작업 종류 분류(그룹) — 구조적 상수(요약·빠른버튼 그룹핑). 카탈로그 행이 이를 참조.
-const TASK_GROUPS = ["Recording", "Post_Production", "Mix_Master", "Video_Audio"];
+
 const BILLING_TYPES = ["Time_Charge", "Fixed_Per_Track"];
 const BILLING_TYPE_LABELS = {
   Time_Charge: "시간 과금",
@@ -241,18 +230,15 @@ function normalize(value, allowed, fallback) {
   return allowed.includes(v) ? v : fallback !== undefined ? fallback : allowed[0];
 }
 
-const PROJECT_SERVICE_LABELS = Object.fromEntries(PROJECT_SERVICES.map((s) => [s.key, s.label]));
+
 
 module.exports = {
   config,
   ROLES,
   ROLE_LABELS,
   normalizeRole: (v) => normalize(v, ROLES, "staff"),
-  PROJECT_TYPES,
-  PROJECT_TYPE_KEYS,
-  normalizeProjectType: (v) => normalize(v, PROJECT_TYPE_KEYS, "session"),
-  PROJECT_SERVICES,
-  PROJECT_SERVICE_LABELS,
+
+
   COMPANY_ROLES,
   DELIVERABLE_KINDS,
   TAX_STATUSES,
@@ -263,7 +249,7 @@ module.exports = {
   INVOICE_STATUS_BADGE,
   TRACK_CONTENT_TYPES,
   TASK_TYPES,
-  TASK_GROUPS,
+
   BILLING_TYPES,
   BILLING_TYPE_LABELS,
   TASK_STATUSES,

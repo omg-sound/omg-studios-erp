@@ -34,8 +34,8 @@ function resolveDisplayName({ name, honorific, family_name, given_name, activity
   throw new Error("PARTY_NAME_REQUIRED");
 }
 
-// 레거시 뷰 호환: 반환 행에 nickname 별칭(=activity_name) 부여(연락처 폼·상세가 c.nickname을 읽음). P4에서 제거.
-const withLegacy = (r) => (r ? { ...r, nickname: r.activity_name } : r);
+// 레거시 뷰 호환: 반환 행에 nickname 별칭(=activity_name) 부여(연락처 폼·상세가 c.nickname을 읽음). P4에서 제거됨.
+const withLegacy = (r) => r;
 
 // ── 조회 ──
 
@@ -65,9 +65,8 @@ function getParty(id) {
 
 // ── 생성/수정/삭제 ──
 
-/** 사람(person) 생성. 성·이름 미지정 시 표시명에서 한국식 자동 분리. activity_name(=nickname 별칭) 있으면 is_artist=1. */
+/** 사람(person) 생성. 성·이름 미지정 시 표시명에서 한국식 자동 분리. activity_name 있으면 is_artist=1. */
 function createPerson(b = {}) {
-  b = { ...b, activity_name: b.activity_name || b.nickname }; // 연락처 폼은 활동명을 nickname 필드로 보냄
   const name = resolveDisplayName({ ...b });
   let fam = blankToNull(b.family_name), giv = blankToNull(b.given_name);
   if (!fam && !giv) {
@@ -152,10 +151,8 @@ function updateParty(id, b = {}) {
     );
     return;
   }
-  // person / group — 활동명은 nickname 별칭(연락처 폼) 수용: 둘 다 미전송이면 보존.
-  const activityName = b.activity_name !== undefined ? blankToNull(b.activity_name)
-    : b.nickname !== undefined ? blankToNull(b.nickname)
-    : (cur.activity_name || null);
+  // person / group — activity_name 갱신: 미전송이면 보존.
+  const activityName = b.activity_name !== undefined ? blankToNull(b.activity_name) : (cur.activity_name || null);
   // 표시명(name) 재구성: 성/이름을 편집하면 반영되게 **성+이름(현재값 반영)을 옛 name보다 우선**한다.
   // (2026-07-18 버그: `name: b.name || cur.name`이라 성/이름을 고쳐도 resolveDisplayName이 옛 name을 그대로 반환 → 목록 미반영.)
   // 우선순위: 명시 name(폼엔 없음) > 성+이름 > 기존 name(레거시 단일필드·이름 없는 부분수정 보존) > 활동명/호칭(resolveDisplayName 폴백).
@@ -404,8 +401,8 @@ function partyOptions({ role } = {}) {
   else if (role === "person") where.push("kind IN ('person')");
   const sql =
     `SELECT p.id, p.name, p.activity_name, p.honorific, p.kind, p.is_artist,
-            (SELECT o.name FROM affiliations a LEFT JOIN parties o ON o.id = a.org_id
-              WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC LIMIT 1) AS company
+            (SELECT GROUP_CONCAT(name, ', ') FROM (SELECT o.name FROM affiliations a LEFT JOIN parties o ON o.id = a.org_id
+              WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC)) AS company
        FROM parties p` + (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY p.name COLLATE NOCASE";
   return db().prepare(sql).all().map((p) => ({
     id: p.id, name: p.name, activity_name: p.activity_name, honorific: p.honorific || "", kind: p.kind, is_artist: p.is_artist,
@@ -441,8 +438,8 @@ function classifyParty(party, preAff) {
     const u = p.user_id ? db().prepare("SELECT role FROM users WHERE id = ?").get(p.user_id) : null;
     if (u) badges.push({ label: u.role === "owner" ? "대표" : "녹음실 스태프", cls: "badge-info" });
     else {
-      const a = hasPreAff ? preAff : currentAffiliation(id);
-      if (a && a.org_id) badges.push({ label: "고객측 담당자", cls: "badge-success" });
+      const affs = hasPreAff ? [preAff].filter(Boolean) : currentAffiliations(id);
+      if (affs.some((a) => a.org_id)) badges.push({ label: "고객측 담당자", cls: "badge-success" });
     }
   }
   const director = db().prepare(
@@ -576,7 +573,7 @@ function resolvePersonByName(name, { createIfMissing = true } = {}) {
     }
     const byActivity = uniquePersonWhere("activity_name = ? AND TRIM(COALESCE(activity_name,'')) <> ''", [n]); // 활동명 단독
     if (byActivity) return byActivity;
-    if (createIfMissing && activity) return createPerson({ name: base, nickname: activity }); // 라벨 형식 신규 = 본명+활동명으로 분해 저장
+    if (createIfMissing && activity) return createPerson({ name: base, activity_name: activity }); // 라벨 형식 신규 = 본명+활동명으로 분해 저장
   }
   if (!createIfMissing) return null;
   return createPerson({ name: n });
@@ -615,8 +612,10 @@ function resolveOwnerParty(name, ownerId) {
  */
 function ensureOwnerAffiliation(ownerId, companyId) {
   if (!ownerId || !companyId) return;
-  const cur = currentAffiliation(ownerId);
-  if (!cur || Number(cur.org_id) !== Number(companyId)) addAffiliation(ownerId, { org_id: companyId, title: "대표", closeCurrent: true });
+  const currentAffs = currentAffiliations(ownerId);
+  if (!currentAffs.some((a) => Number(a.org_id) === Number(companyId))) {
+    addAffiliation(ownerId, { org_id: companyId, title: "대표", closeCurrent: false });
+  }
 }
 
 /** 이 회사의 대표자(공동대표 포함, 등록 순서). company_owners가 진실원천. */
@@ -823,10 +822,10 @@ function contactOptions() {
   return db()
     .prepare(
       `SELECT p.id, p.name, p.activity_name, p.honorific, p.phone, p.email,
-              (SELECT o.name FROM affiliations a LEFT JOIN parties o ON o.id = a.org_id
-                WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC LIMIT 1) AS current_client,
-              (SELECT a.title FROM affiliations a
-                WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC LIMIT 1) AS current_title,
+              (SELECT GROUP_CONCAT(name, ', ') FROM (SELECT o.name FROM affiliations a LEFT JOIN parties o ON o.id = a.org_id
+                WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC)) AS current_client,
+              (SELECT GROUP_CONCAT(title, ', ') FROM (SELECT a.title FROM affiliations a
+                WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC)) AS current_title,
               (SELECT g.name FROM parties g WHERE g.id = p.group_id AND g.kind = 'group') AS group_name
          FROM parties p WHERE p.kind = 'person' ORDER BY p.name COLLATE NOCASE`
     )
@@ -839,8 +838,8 @@ function clientOptions() {
     .prepare(
       `SELECT p.id, COALESCE(NULLIF(p.activity_name,''), p.name) AS name, p.name AS real_name, p.activity_name, p.kind, p.email,
               (SELECT g.name FROM parties g WHERE g.id = p.group_id AND g.kind = 'group') AS group_name,
-              (SELECT o.name FROM affiliations a LEFT JOIN parties o ON o.id = a.org_id
-                WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC LIMIT 1) AS current_client
+              (SELECT GROUP_CONCAT(name, ', ') FROM (SELECT o.name FROM affiliations a LEFT JOIN parties o ON o.id = a.org_id
+                WHERE a.person_id = p.id AND a.ended_on IS NULL ORDER BY a.started_on DESC, a.id DESC)) AS current_client
          FROM parties p WHERE p.kind IN ('company','group') OR p.is_artist = 1 ORDER BY name COLLATE NOCASE`
     )
     .all();
@@ -942,13 +941,15 @@ function groupOfParty(personId) {
  */
 function setAgencyRaw(pid, gid) {
   gid = gid ? Number(gid) : null;
-  const cur = currentAffiliation(pid);
+  const currentAffs = currentAffiliations(pid);
   if (gid) {
     const org = db().prepare("SELECT id FROM parties WHERE id = ? AND kind = 'company'").get(gid);
     if (!org) return; // 회사가 아니면 무시(오연결 방지)
-    if (!cur || Number(cur.org_id) !== gid) addAffiliation(pid, { org_id: gid, closeCurrent: true });
-  } else if (cur) {
-    endAffiliation(cur.id, todayYmd()); // '없음' → 현재 소속 종료(이력 보존)
+    if (!currentAffs.some((a) => Number(a.org_id) === gid)) {
+      addAffiliation(pid, { org_id: gid, closeCurrent: false });
+    }
+  } else {
+    currentAffs.forEach((cur) => endAffiliation(cur.id, todayYmd())); // '없음' → 현재 소속 모두 종료(이력 보존)
   }
 }
 

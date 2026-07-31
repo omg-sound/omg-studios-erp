@@ -913,6 +913,10 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
         ${payerSuggestChips(project)}
         <div data-payer-fix class="mt-1.5 hidden rounded-lg bg-warning/10 px-3 py-2">
           <p data-payer-warn class="text-sm text-warning"></p>
+          <div data-payer-tax-toggle class="mt-2 hidden flex gap-4">
+            <label class="flex items-center gap-1 text-sm"><input type="radio" name="inline_tax_type" value="cash" checked> 현금영수증 (개인)</label>
+            <label class="flex items-center gap-1 text-sm"><input type="radio" name="inline_tax_type" value="biz"> 세금계산서 (사업자)</label>
+          </div>
           <div class="mt-2 flex gap-2">
             <input type="text" data-payer-fix-input class="input flex-1 py-1.5 text-sm" autocomplete="off" />
             <button type="button" data-payer-fix-btn class="btn-primary btn-sm shrink-0">입력</button>

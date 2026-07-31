@@ -36,8 +36,8 @@ test("init() 멱등: 재실행해도 안전(스키마 불변)", () => {
 });
 
 // ── 당사자 생성: kind·is_artist·활동명 ──
-test("createPerson: 활동명(nickname 별칭) 있으면 is_artist=1", () => {
-  const solo = D.createPerson({ name: "김철수", nickname: "레미" }); // nickname → activity_name
+test("createPerson: 활동명(activity_name 별칭) 있으면 is_artist=1", () => {
+  const solo = D.createPerson({ name: "김철수", activity_name: "레미" }); // activity_name → activity_name
   const p = D.getParty(solo);
   assert.equal(p.kind, "person");
   assert.equal(p.is_artist, 1);
@@ -102,7 +102,7 @@ test("ensurePartyForManager: 외주 담당자 → 연동 party 생성(멱등)", 
 
 // ── 역할 배지 ──
 test("classifyParty: 아티스트·조직·그룹 배지", () => {
-  const artist = D.createPerson({ name: "가수", nickname: "STAR" });
+  const artist = D.createPerson({ name: "가수", activity_name: "STAR" });
   assert.ok(D.classifyParty(artist).map((b) => b.label).includes("아티스트"));
   const co = D.createCompany({ name: "레이블B" });
   assert.ok(D.classifyParty(co).map((b) => b.label).includes("조직"));
@@ -113,7 +113,7 @@ test("classifyParty: 아티스트·조직·그룹 배지", () => {
 // 배경: 음악감독이 턴키로 받아 감독 개인이 결제하는 등, 결제 주체가 제작사가 아닌 경우가 실제로 발생.
 // 조용한 기본값이 오발행을 부르므로 미선택이면 생성 자체를 막는다(폼은 당사자를 '추천 칩'으로만 제시).
 test("createInvoiceFromTasks: 청구처 미지정이면 PAYER_REQUIRED로 차단(자동 파생 없음)", () => {
-  const artistId = D.createPerson({ name: "가창", nickname: "보컬A" });
+  const artistId = D.createPerson({ name: "가창", activity_name: "보컬A" });
   const agencyId = D.createCompany({ name: "소속C", biz_no: "123-45-67890" });
   const proj = db()
     .prepare("INSERT INTO projects (title, project_type, rate, artist_id, agency_id) VALUES (?, 'task', 0, ?, ?)")
@@ -315,12 +315,12 @@ test("listAssociates: 관계자→아티스트 전환 시 역할 있으면 유�
   assert.ok(inAssoc(dir), "아티스트가 됐어도 디렉터 역할이 있으면 관계자 탭 유지");
 
   // ③ 순수 솔로 아티스트(아무 관계자 역할 없음) → 관계자 탭 제외(오염 방지)
-  const soloArtist = D.createPerson({ name: "이아이유", nickname: "아이유" }); // 활동명 → is_artist=1
+  const soloArtist = D.createPerson({ name: "이아이유", activity_name: "아이유" }); // 활동명 → is_artist=1
   assert.equal(D.getParty(soloArtist).is_artist, 1);
   assert.ok(!inAssoc(soloArtist), "역할 없는 순수 아티스트는 관계자 탭 제외");
 
   // ④ 프로젝트 고객측 담당자 참조로도 유지
-  const contactArtist = D.createPerson({ name: "최담당", nickname: "쵸이" });
+  const contactArtist = D.createPerson({ name: "최담당", activity_name: "쵸이" });
   assert.ok(!inAssoc(contactArtist), "참조 전에는 순수 아티스트라 제외");
   db().prepare("UPDATE projects SET contact_party_id = ? WHERE id = ?").run(contactArtist, proj);
   assert.ok(inAssoc(contactArtist), "프로젝트 담당자로 참조되면 관계자 탭 노출");
@@ -346,7 +346,7 @@ test("createPerson: 성+이름+호칭 → name은 순수 본명, honorific은 �
   assert.equal(personName(D.getParty(id3)), "명승원", "호칭 없으면 본명만");
 
   // 활동명 병기 + 호칭
-  const id4 = D.createPerson({ family_name: "박", given_name: "수한", honorific: "대표님", nickname: "워터멜론" });
+  const id4 = D.createPerson({ family_name: "박", given_name: "수한", honorific: "대표님", activity_name: "워터멜론" });
   assert.equal(D.getParty(id4).name, "박수한", "name 순수");
   assert.equal(personName(D.getParty(id4)), "박수한 대표님 (워터멜론)", "본명 호칭 (활동명)");
 });
@@ -362,7 +362,7 @@ test("personName: 레거시 name에 호칭 박혀 있어도 중복 안 붙임", 
 test("청구처 표시: 아티스트는 본명 (활동명), 회사는 상호 그대로", () => {
   const { payerName } = require("../src/views.invoices");
   // 아티스트 청구처(현금영수증 정보 필요)
-  const artist = D.createPerson({ name: "조형우", nickname: "형우비트" });
+  const artist = D.createPerson({ name: "조형우", activity_name: "형우비트" });
   db().prepare("UPDATE parties SET cash_receipt_no='010-9999-8888' WHERE id=?").run(artist);
   const pid = Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('청구처표기','task',0)").run().lastInsertRowid);
   const tr = Number(db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(pid).lastInsertRowid);
@@ -468,15 +468,15 @@ test("발행 이메일 override: 스냅샷에만 기록·party 불변·빈값=�
 
 // ── 회귀(2026-07-05 전수점검): 이름 해석 안전망 — 표시 라벨 텍스트가 유령 party를 만들지 않게 ──
 test("resolvePersonByName: 라벨('본명 호칭'·'본명 (활동명)'·활동명) 텍스트도 기존 사람으로 해석", () => {
-  const p = D.createPerson({ name: "한도윤", nickname: "도윤사운드", honorific: "실장님" });
+  const p = D.createPerson({ name: "한도윤", activity_name: "도윤사운드", honorific: "실장님" });
   assert.equal(D.resolvePersonByName("한도윤"), p, "순수 본명");
   assert.equal(D.resolvePersonByName("한도윤 실장님"), p, "본명+호칭 라벨");
   assert.equal(D.resolvePersonByName("한도윤 (도윤사운드)"), p, "본명 (활동명) 라벨");
   assert.equal(D.resolvePersonByName("한도윤 실장님 (도윤사운드)"), p, "본명 호칭 (활동명) 전체 라벨");
   assert.equal(D.resolvePersonByName("도윤사운드"), p, "활동명 단독(유일)");
   // 동명이인 2+ 활동명은 보수(생성) — 유일 매칭만 재사용
-  D.createPerson({ name: "김중복", nickname: "겹침" });
-  D.createPerson({ name: "이중복", nickname: "겹침" });
+  D.createPerson({ name: "김중복", activity_name: "겹침" });
+  D.createPerson({ name: "이중복", activity_name: "겹침" });
   const created = D.resolvePersonByName("겹침");
   assert.ok(created && D.getParty(created).name === "겹침", "2+ 매칭이면 임의 병합 대신 신규(보수)");
   // 라벨 형식 신규는 본명·활동명으로 분해 저장
@@ -488,7 +488,7 @@ test("resolvePersonByName: 라벨('본명 호칭'·'본명 (활동명)'·활동�
 
 test("resolvePartyByDisplay: 회사 상호·사람 라벨 해석(생성 없음), 제작/운영 오생성 방지", () => {
   const co = D.createCompany({ name: "표시해석상사" });
-  const pe = D.createPerson({ name: "표진표", nickname: "표비트" });
+  const pe = D.createPerson({ name: "표진표", activity_name: "표비트" });
   assert.equal(D.resolvePartyByDisplay("표시해석상사"), co, "회사 상호 정확");
   assert.equal(D.resolvePartyByDisplay("표진표 (표비트)"), pe, "사람 라벨 → 그 사람(회사 오생성 없음)");
   assert.equal(D.resolvePartyByDisplay("표비트"), pe, "활동명 단독");
@@ -499,7 +499,7 @@ test("resolvePartyByDisplay: 회사 상호·사람 라벨 해석(생성 없음),
 });
 
 test("관계자 역할에 제작/운영 포함 + classifyParty 배지", () => {
-  const producer = D.createPerson({ name: "차제작", nickname: "차피디" }); // 아티스트 겸 개인 제작자
+  const producer = D.createPerson({ name: "차제작", activity_name: "차피디" }); // 아티스트 겸 개인 제작자
   db().prepare("INSERT INTO projects (title, project_type, rate, production_id) VALUES ('개인제작역할','session',0,?)").run(producer);
   assert.ok(D.listAssociates({}).some((p) => p.id === producer), "제작/운영으로 참조된 아티스트도 관계자 탭 유지");
   const labels = D.classifyParty(producer).map((b) => b.label);
@@ -509,8 +509,8 @@ test("관계자 역할에 제작/운영 포함 + classifyParty 배지", () => {
 
 // ── 프로젝트 아티스트 다대다(2026-07-05 — 콤마 여러 명): setProjectArtists·연결 프로젝트·삭제 정리 ──
 test("project_artists: 다중 기록·교체·dedup·연결 프로젝트 매칭·party 삭제 정리", () => {
-  const a1 = D.createPerson({ name: "권보라", nickname: "보라빛" });
-  const a2 = D.createPerson({ name: "정노을", nickname: "노을템포" });
+  const a1 = D.createPerson({ name: "권보라", activity_name: "보라빛" });
+  const a2 = D.createPerson({ name: "정노을", activity_name: "노을템포" });
   const g1 = D.createGroup({ name: "새벽밴드" });
   const pid = Number(db().prepare("INSERT INTO projects (title, project_type, rate, artist, artist_id) VALUES ('다중아티스트','session',0,'보라빛, 노을템포, 새벽밴드',?)").run(a1).lastInsertRowid);
   D.setProjectArtists(pid, [a1, a2, g1, a2]); // dedup 포함
@@ -838,9 +838,9 @@ test("setPartyAgency와 syncCompanyAffiliation은 같은 현재 소속을 만든
 
 test("updateParty: 성/이름 편집 시 표시명(name) 재구성 — 옛 name에 막히지 않음(2026-07-18 버그)", () => {
   // 단일필드 이름 '내원'(활동명도 내원)으로 생성 → 성=공, 이름=내원 편집 → name이 '공내원'으로 반영돼야.
-  const id = D.createPerson({ name: "내원", nickname: "내원" });
+  const id = D.createPerson({ name: "내원", activity_name: "내원" });
   assert.equal(D.getParty(id).name, "내원", "생성 직후 단일필드 이름");
-  D.updateParty(id, { family_name: "공", given_name: "내원", nickname: "내원" });
+  D.updateParty(id, { family_name: "공", given_name: "내원", activity_name: "내원" });
   assert.equal(D.getParty(id).name, "공내원", "성+이름으로 재구성");
   assert.equal(D.getParty(id).family_name, "공");
   assert.equal(D.getParty(id).given_name, "내원");
