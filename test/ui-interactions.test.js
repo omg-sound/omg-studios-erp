@@ -1562,6 +1562,51 @@ test("목록 실시간 필터: 타이핑하면 매칭 행만 남고, 매칭 0이
   assert.ok(vis(rows[0]) && vis(rows[1]) && vis(rows[2]) && empty.hidden, "빈 검색 → 전부 표시");
 });
 
+// ── 초성 검색(2026-08-02): 검색어가 초성만이면 행의 data-cho(서버가 찍은 초성열)로 매칭 ──
+// 서버(listContacts)와 같은 결과를 내야 한다 — 갈리면 "치는 동안엔 보이다가 엔터를 치면 사라진다"가 된다.
+// 실제 연락처 목록 렌더러로 마크업을 만들어(계약 드리프트 방지) 실제 app.js를 돌린다.
+test("목록 실시간 필터: 초성만 치면 초성으로 매칭(부분 일치·쌍자음 병합)", () => {
+  const rows = [
+    { id: 1, name: "박광현" },
+    { id: 2, name: "박서준" },
+    { id: 3, name: "김보종" },
+    { id: 4, name: "까치산" },
+    { id: 5, name: "이수민", activity_name: "루나" },
+  ];
+  const html = searchBox({ action: "/contacts", liveFilter: true, placeholder: "이름" })
+    + contactNameList({ rows, hrefFn: (c) => `/contacts/${c.id}` });
+  const { win, doc } = mountDom(html);
+  const input = doc.querySelector("[data-live-filter]");
+  const type = (v) => { input.value = v; fire(win, input, "input"); };
+  const shown = () => Array.prototype.filter
+    .call(doc.querySelectorAll("[data-filter-list] > a"), (a) => a.style.display !== "none")
+    .map((a) => a.textContent.trim()).sort();
+
+  type("ㅂㄱㅎ");
+  assert.deepEqual(shown(), ["박광현"], "초성열 전체 일치");
+  type("ㄱㅎ");
+  assert.deepEqual(shown(), ["박광현"], "이름 뒷부분 초성만으로도(부분 일치)");
+  type("ㄲㅊㅅ");
+  assert.deepEqual(shown(), ["까치산"], "질의 쌍자음은 기본 자음으로 병합해 맞춘다");
+  type("ㄹㄴ");
+  assert.deepEqual(shown(), ["이수민 (루나)"], "활동명(루나) 초성도 대상 — 표시는 '본명 (활동명)'");
+  type("박광");
+  assert.deepEqual(shown(), ["박광현"], "완성형은 종전대로 텍스트 매칭");
+  type("");
+  assert.equal(shown().length, 5, "빈 검색 → 전부 표시");
+});
+
+test("초성 검색 중에는 초성 그룹 헤더도 함께 숨는다(data-cho 없는 행)", () => {
+  const html = searchBox({ action: "/contacts", liveFilter: true })
+    + contactNameList({ rows: [{ id: 1, name: "박광현" }, { id: 2, name: "김보종" }], hrefFn: (c) => `/c/${c.id}` });
+  const { win, doc } = mountDom(html);
+  const input = doc.querySelector("[data-live-filter]");
+  input.value = "ㅂㄱㅎ"; fire(win, input, "input");
+  const heads = doc.querySelectorAll("[data-cho-head]");
+  assert.ok(heads.length > 0, "전제: 초성 헤더가 렌더된다");
+  assert.ok(Array.prototype.every.call(heads, (h) => h.style.display === "none"), "헤더는 전부 숨김(기존 텍스트 검색과 동일)");
+});
+
 // ── 실시간 필터 서버 보강([data-live-remote]): 상한(capList) 밖 항목도 타이핑하면 서버 전체 검색 결과로 교체(2026-07-17) ──
 test("실시간 필터 원격 보강: 상한 밖 항목도 타이핑하면 서버 결과로 채우고, 비우면 원본 복원", async () => {
   const serverHtml = `<table><tbody data-filter-list><tr><td>차가을 · 010-9999</td></tr></tbody></table><div data-filter-empty hidden></div>`;

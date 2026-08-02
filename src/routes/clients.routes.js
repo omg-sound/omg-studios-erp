@@ -25,6 +25,7 @@ const { layout, pageHeader, esc, personLabel, personName, flashBanner, emptyStat
 const { FILE_KINDS, fileKindLabel, clientFilesBlock, clientForm, clientReadView, clientEditPane } = require("../views.clients");
 const { contactPanes, contactNameList } = require("../views.contacts");
 const { coreCompanyName, byCompanyName, splitCompanyName } = require("../lib/company-name");
+const { chosungMatcher } = require("../lib/chosung"); // 초성 검색 — 연락처·목록 행 data-cho와 같은 규칙
 
 // 업체 목록 라벨 — 법인 표기(주식회사·(주) 등)만 옅게, **자리는 그대로**(2026-07-20 사용자 결정).
 // 눈이 회색을 건너뛰고 실제 상호에 걸리게 해서 초성 헤더(정렬 기준)와의 인지 부조화를 줄인다.
@@ -82,10 +83,18 @@ function renderClients(req, sel, rightHtml, backHref) {
   const companyCount = all.filter((c) => c.kind === "company").length;
   const groupCount = all.filter((c) => c.kind === "group").length;
   // 업체는 법인 표기(주식회사·(주) 등)를 뗀 상호로 정렬한다(2026-07-20 사용자 요청). 그룹은 법인 표기가 없어 그대로.
-  // ⚠️ 정렬은 **capList(100개 상한) 전에** 끝나야 한다 — 상한 뒤에 정렬하면 잘린 뒤 순서라 틀린다.
+  // ⚠️ 정렬은 **잘라내기(검색 필터) 전에** 끝나야 한다 — 뒤에 정렬하면 잘린 뒤 순서라 틀린다.
+  // (옛 capList 100건 상한은 목록이 이름만 렌더하게 되며 제거됐다 — 지금은 전 명단을 그린다.)
   let rows = all.filter((c) => c.kind === group);
   if (group === "company") rows = rows.slice().sort(byCompanyName);
-  if (q) { const ql = q.toLowerCase(); rows = rows.filter((c) => String(c.name || "").toLowerCase().includes(ql)); }
+  // 초성 검색(2026-08-02) — 연락처와 **같은 매처**(lib/chosung)를 쓴다. 목록 행의 data-cho도 같은 규칙이라
+  // 타이핑 중 실시간 필터와 Enter 결과가 갈리지 않는다. 초성이 아니면 종전 상호 부분일치.
+  // 법인 표기('주식회사 오메가' → ㅈㅅㅎㅅㅇㅁㄱ)는 부분일치라 'ㅇㅁㄱ'로도 잡힌다 — 별도 처리 불필요.
+  if (q) {
+    const chosung = chosungMatcher(q);
+    const ql = q.toLowerCase();
+    rows = rows.filter((c) => (chosung ? chosung(c.name || "") : String(c.name || "").toLowerCase().includes(ql)));
+  }
   const keep = `?group=${group}${q ? "&q=" + encodeURIComponent(q) : ""}`;
 
   const tabs = tabBar({

@@ -46,7 +46,7 @@ function contactPanes({ left, right, hasSelection, backHref = "", backLabel = ""
  *   글자는 그대로라 실시간 필터(textContent 매칭)와 검색은 영향받지 않는다.
  */
 function contactNameList({ rows, selectedId = null, hrefFn, keyFn = null, labelFn = null, scrollKey = "" }) {
-  const { chosungOf } = require("./lib/chosung"); // 지연 require
+  const { chosungOf, chosungTextOf } = require("./lib/chosung"); // 지연 require
   // 초성별 그룹 헤더(iCloud식) — 목록은 이미 이름순 정렬이라 같은 초성이 연속. 초성이 바뀌는 지점에 sticky 헤더 삽입.
   // 헤더는 <div>(키보드 이동은 <a>만 순회해 자연히 건너뜀). 검색 중엔 실시간 필터가 헤더 텍스트도 안 맞아 함께 숨김(iCloud와 동일).
   const items = [];
@@ -61,7 +61,13 @@ function contactNameList({ rows, selectedId = null, hrefFn, keyFn = null, labelF
     }
     const active = Number(selectedId) === Number(c.id);
     const cls = active ? "bg-primary/10 font-semibold text-fg" : "text-fg";
-    items.push(`<a href="${esc(hrefFn(c))}" class="row-link block truncate px-3 py-2 text-sm ${cls}"${active ? ' aria-current="true"' : ""}>${labelFn ? labelFn(c) : esc(personName(c))}</a>`);
+    // 초성 검색 키(2026-08-02) — **서버가 찍어 두고 app.js는 비교만 한다**(클라이언트가 초성을 다시 계산하면
+    // 한글 자모 규칙이 두 벌이 된다). 본명·활동명 각각의 초성열을 공백으로 이어 붙인다: 질의는 초성만이라
+    // 공백을 포함하지 않으므로 부분 일치가 토큰을 넘나들 일이 없다. 서버 검색(listContacts)도 같은 두 필드를 본다.
+    const cho = [c.name, c.activity_name].filter(Boolean).map(chosungTextOf).filter(Boolean).join(" ");
+    // ⚠️data-cho는 aria-current **앞**에 — 뒤에 붙이면 `aria-current="true">이름<` 인접을 검사하는
+    // 기존 계약 테스트(clients-panes)가 깨진다(선택 행이 이름을 보여주는지가 그 테스트의 요지).
+    items.push(`<a href="${esc(hrefFn(c))}" class="row-link block truncate px-3 py-2 text-sm ${cls}"${cho ? ` data-cho="${esc(cho)}"` : ""}${active ? ' aria-current="true"' : ""}>${labelFn ? labelFn(c) : esc(personName(c))}</a>`);
   });
   // 오른쪽 초성 인덱스 레일(스크롤쪽) — 클릭/드래그로 그 초성 섹션으로 이동(app.js [data-cho-rail], lg 이상만).
   const rail = keys.length > 1

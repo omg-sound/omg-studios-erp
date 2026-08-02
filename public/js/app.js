@@ -3260,10 +3260,28 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
 (function () {
   "use strict";
   var remoteTimer = null, remoteToken = 0;
+  // 초성 검색(2026-08-02): 검색어가 **초성만**이면 행의 data-cho(서버가 찍은 초성열)로 매칭한다.
+  // 초성 변환은 서버(lib/chosung.js)에만 두고 여기선 ①초성만인지 판정 ②쌍자음 병합만 한다 —
+  // 자모 규칙을 양쪽에 두면 갈린다. 이 두 상수는 lib/chosung.js의 COMPAT·MERGE와 같아야 한다.
+  var CHO_COMPAT = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+  var CHO_MERGE = { "ㄲ": "ㄱ", "ㄸ": "ㄷ", "ㅃ": "ㅂ", "ㅆ": "ㅅ", "ㅉ": "ㅈ" };
+  function isChosungQuery(q) {
+    if (!q) return false;
+    for (var i = 0; i < q.length; i++) if (CHO_COMPAT.indexOf(q[i]) < 0) return false;
+    return true;
+  }
+  function normalizeChosung(q) {
+    var out = "";
+    for (var i = 0; i < q.length; i++) out += CHO_MERGE[q[i]] || q[i];
+    return out;
+  }
   function clientFilter(list, q) {
     var rows = list.children, shown = 0;
+    var cho = isChosungQuery(q) ? normalizeChosung(q) : null; // 초성 질의면 data-cho만 본다(초성 헤더는 속성이 없어 함께 숨는다)
     for (var i = 0; i < rows.length; i++) {
-      var match = !q || (rows[i].textContent || "").toLowerCase().indexOf(q) >= 0;
+      var match = !q || (cho
+        ? ((rows[i].getAttribute && rows[i].getAttribute("data-cho")) || "").indexOf(cho) >= 0
+        : (rows[i].textContent || "").toLowerCase().indexOf(q) >= 0);
       // ⚠️ 행은 class="flex ..."(display:flex)라 [hidden] 속성(display:none, UA 스타일)이 밀린다 → 인라인 style로 숨긴다(인라인이 클래스 규칙을 이김).
       rows[i].style.display = match ? "" : "none";
       if (match) shown++;

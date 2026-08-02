@@ -15,6 +15,7 @@ const { db } = require("../db");
 const { splitKoreanName, honorificFromTitle } = require("../lib/korean-name");
 const { todayYmd } = require("../lib/date");
 const { formatPhone, formatBizNo } = require("../lib/format"); // 전화·사업자번호 하이픈 정규화(전 저장 경로 공통, lib으로 승격 — studio·db 백필과 공유)
+const { chosungMatcher } = require("../lib/chosung"); // 초성 검색(목록 행 data-cho와 같은 규칙)
 
 const blankToNull = (v) => { const s = String(v == null ? "" : v).trim(); return s || null; };
 
@@ -795,7 +796,11 @@ function listContacts({ q, tab, staff } = {}) {
   const where = ["p.kind = 'person'"];
   const args = [];
   const term = String(q || "").trim();
-  if (term) { where.push("(p.name LIKE ? OR p.activity_name LIKE ? OR p.phone LIKE ?)"); args.push(`%${term}%`, `%${term}%`, `%${term}%`); }
+  // 초성 검색(2026-08-02): 초성만 친 질의는 SQL LIKE로 못 잡는다(저장된 건 완성형 음절) → SQL에서 빼고 아래에서
+  // JS로 거른다. 202명 규모라 전건 순회로 충분(searchInvoices가 93건에 같은 판단). ⚠️판정·초성열 규칙은
+  // lib/chosung.js 하나뿐이고 목록 행의 data-cho도 같은 함수로 찍는다 — 갈리면 실시간 필터와 Enter 결과가 달라진다.
+  const chosung = chosungMatcher(term);
+  if (term && !chosung) { where.push("(p.name LIKE ? OR p.activity_name LIKE ? OR p.phone LIKE ?)"); args.push(`%${term}%`, `%${term}%`, `%${term}%`); }
   const workerSub = "p.id IN (SELECT party_id FROM project_managers WHERE user_id IS NULL AND party_id IS NOT NULL)";
   if (tab === "staff") where.push("p.user_id IS NOT NULL");
   else if (tab === "worker") where.push("p.user_id IS NULL AND " + workerSub);
@@ -804,7 +809,10 @@ function listContacts({ q, tab, staff } = {}) {
     where.push("p.user_id IS NULL", "NOT (" + workerSub + ")", `(p.is_artist = 0 OR p.id IN (${ASSOCIATE_ROLE_SUBQUERY}))`);
   }
   const sql = "SELECT p.* FROM parties p WHERE " + where.join(" AND ") + " ORDER BY " + hangulFirstOrder("p.name");
-  return db().prepare(sql).all(...args).map(withLegacy);
+  const rows = db().prepare(sql).all(...args).map(withLegacy);
+  if (!chosung) return rows;
+  // 목록 행의 data-cho와 **같은 두 필드**(본명·활동명)를 같은 매처로 본다(views.contacts contactNameList).
+  return rows.filter((r) => [r.name, r.activity_name].some((v) => v && chosung(v)));
 }
 
 /**

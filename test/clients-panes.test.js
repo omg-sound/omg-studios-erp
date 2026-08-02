@@ -76,6 +76,25 @@ test("업체·그룹 2단: 목록/상세/편집", async (t) => {
     assert.match(html, /aria-current="true">더윈드</, "그룹 행이 선택 강조됨");
   });
 
+  // 초성 검색(2026-08-02 사용자 요청) — 연락처와 같은 매처(lib/chosung)를 라우트가 실제로 배선했는지.
+  // 매처 단위 테스트는 contact-chosung-search가 잠그고, 여기선 **라우트 배선**(탭·완성형 비회귀)을 본다.
+  await t.test("GET /clients?q=초성 = 상호 초성으로 검색(탭 유지·완성형 비회귀)", async () => {
+    const cho = await get("/clients?group=company&q=" + encodeURIComponent("ㅌㅅㅌ"));
+    assert.equal(cho.status, 200);
+    // ⚠️업체 행 라벨은 법인 표기를 muted span으로 갈라 렌더하므로("(주)"+"테스트") 이름 문자열로 단언하면 안 된다 —
+    // 행의 data-cho(초성열)로 확인한다(그 자체가 실시간 필터가 쓰는 키라 검증 가치도 더 크다).
+    assert.match(cho.html, /data-cho="ㅈㅌㅅㅌ"/, "'(주)테스트' → ㅈㅌㅅㅌ 안의 ㅌㅅㅌ 부분일치");
+
+    const grp = await get("/clients?group=group&q=" + encodeURIComponent("ㄷㅇㄷ"));
+    assert.match(grp.html, /더윈드/, "그룹 탭에서도 초성 검색");
+
+    const miss = await get("/clients?group=company&q=" + encodeURIComponent("ㄷㅇㄷ"));
+    assert.match(miss.html, /검색 결과가 없습니다/, "탭 밖(그룹)은 안 잡힌다 — 초성 분기가 탭 필터를 지우지 않는다");
+
+    const plain = await get("/clients?group=company&q=" + encodeURIComponent("테스트"));
+    assert.match(plain.html, /data-cho="ㅈㅌㅅㅌ"/, "완성형 상호 검색은 종전 그대로");
+  });
+
   server.close(); // 서버가 이벤트 루프를 붙잡아 node --test가 안 끝나는 것 방지(contacts-panes와 동일)
   t.after(() => cleanupDb(process.env.DB_PATH, db()));
 });
