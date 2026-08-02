@@ -529,7 +529,10 @@ function ensurePartyForUser(user) {
   const existing = d.prepare("SELECT id FROM parties WHERE user_id = ?").get(user.id);
   if (existing) {
     partyId = existing.id;
-    if (user.email) d.prepare("UPDATE parties SET email = COALESCE(NULLIF(email, ''), ?) WHERE id = ?").run(user.email, partyId);
+    // 🔒 로그인 계정 연락처의 이메일 = **users.email 미러**(2026-08-02): 폼에서 이 칸을 잠갔으므로(emailLocked)
+    // 값이 한 번 틀어지면 화면으로 고칠 방법이 없다. 로그인 때마다 계정 이메일로 되맞춰 그 막다른 길을 없앤다.
+    // (옛 동작은 '비어 있을 때만 채우기'라 구글 연락처 pull 등이 덮어쓴 값이 영구히 남았다.)
+    if (user.email) d.prepare("UPDATE parties SET email = ? WHERE id = ?").run(user.email, partyId);
   } else {
     const mc = d.prepare("SELECT party_id FROM project_managers WHERE user_id = ? AND party_id IS NOT NULL").get(user.id);
     if (mc && mc.party_id) {

@@ -132,9 +132,9 @@ router.post("/:id", asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const c = getParty(id);
   if (!c) return res.status(404).send(errorPage({ code: 404, title: "연락처를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-  // 하우스 엔지니어 연동 연락처면 이메일은 기존값 유지(users.email 보호)
+  // 로그인 계정 연락처면 이메일은 기존값 유지(users.email 보호) — 판정은 emailLocked 하나로(아래 정의).
   const linkedManager = getManagerByPartyId(id);
-  const isHouseEngineer = linkedManager && linkedManager.user_id != null;
+  const locked = emailLocked(c, linkedManager);
   const b = req.body;
   try {
     const companies = (Array.isArray(b.company) ? b.company : (b.company ? [b.company] : []));
@@ -147,7 +147,7 @@ router.post("/:id", asyncHandler(async (req, res) => {
 
     updateParty(id, {
       name: b.name, phone: b.phone,
-      email: isHouseEngineer ? c.email : b.email,  // 하우스: 기존 이메일 유지
+      email: locked ? c.email : b.email,  // 로그인 계정: 기존 이메일 유지(폼도 readonly)
       memo: b.memo,
       family_name: b.family_name, given_name: b.given_name, honorific: b.honorific,
       activity_name: b.activity_name, company: companies.length ? companies[0] : "", job_title: b.job_title, department: b.department,
@@ -252,6 +252,18 @@ router.get("/:id", (req, res) => {
   res.send(renderContacts(req, c));
 });
 
+/**
+ * 🔒 이메일 잠금 판정 — **이메일의 주인은 로그인 계정이다**(2026-08-02 사용자 결정).
+ * 폼(readonly)과 저장(기존값 유지)이 **이 함수 하나**를 봐야 한다 — 갈리면 화면은 막는데 서버는 저장하거나
+ * 그 반대가 되고, 둘 다 조용히 어긋난다(청구처 세무 증빙 판정 3곳을 한 규칙으로 묶은 것과 같은 이유).
+ * ⚠️`parties.user_id`를 먼저 본다: 대표(owner)는 `getManagerByPartyId`가 일부러 제외하므로 담당자 연동만
+ * 보던 옛 판정에 안 걸렸고, 그래서 **대표 연락처에서만 이메일이 편집됐다**(2026-08-02 실측으로 발견).
+ * 담당자 조건도 남긴다 — 아직 로그인한 적 없어 `parties.user_id`가 안 붙은 하우스 엔지니어를 놓치지 않으려고.
+ */
+function emailLocked(party, manager) {
+  return Boolean(party && party.user_id) || Boolean(manager && manager.user_id != null);
+}
+
 // ── 폼(추가/수정 공용) ──
 // returnTo: 편집 진입 시 실어온 복귀 경로(safePath 검증된 값만) — 저장 시 그리로 돌아가기 위해 hidden으로 함께 제출.
 function contactForm(c = {}, isEdit = false, manager = null, embedded = false, groups = [], returnTo = null) {
@@ -259,16 +271,20 @@ function contactForm(c = {}, isEdit = false, manager = null, embedded = false, g
   const action = isEdit ? `/contacts/${c.id}` : "/contacts";
   const cancelHref = isEdit ? (returnTo || `/contacts/${c.id}`) : "/contacts";
   const isHouseEngineer = manager && manager.user_id != null;
+  const lockEmail = emailLocked(c, manager);
   // (구 '현재 소속' 블록 제거 — 2026-07-04 구식 필드 전수 정리: 아래 '회사' companyCombo + '직책'이
   //  syncCompanyAffiliation으로 첫 소속을 등록하므로 평면 select와 기능 중복. 무소속=회사 비움.)
   const affBlock = "";
+  // 잠겼는데 안내가 없으면 "고쳤는데 저장이 안 된다"가 된다 — 담당자 연동이 없는 로그인 계정(대표)도 배너를 받는다.
   const managerBanner = manager
     ? `<div class="rounded-lg px-3 py-2 text-sm ${isHouseEngineer ? "bg-info/10 text-info" : "bg-neutral/10 text-fg"}">
         ${isHouseEngineer
           ? `<span class="badge badge-info">하우스 엔지니어</span> <strong>${esc(manager.name)}</strong> 연동 연락처 — 이메일은 로그인 계정이라 변경할 수 없습니다.`
           : `<span class="badge badge-neutral">외주 작업자</span> <strong>${esc(manager.name)}</strong> 연동 연락처 — 전화·이메일이 양방향으로 동기화됩니다.`}
       </div>`
-    : "";
+    : lockEmail
+      ? `<div class="rounded-lg bg-info/10 px-3 py-2 text-sm text-info">로그인 계정 연락처 — 이메일은 로그인에 쓰는 주소라 변경할 수 없습니다.</div>`
+      : "";
   // embedded=상세 페이지에 인라인으로 들어갈 때 — 페이지 헤더(연락처 수정/상세 back) 생략(상단 이름 헤더가 이미 있음).
   return `
     ${embedded ? "" : pageHeader({ title: isEdit ? "연락처 수정" : "새 연락처", back: { href: cancelHref, label: isEdit ? "연락처 상세" : "연락처" } })}
@@ -304,7 +320,7 @@ function contactForm(c = {}, isEdit = false, manager = null, embedded = false, g
         <div><label class="label">전화</label><input class="input" name="phone" autocomplete="off" value="${esc(c.phone || "")}" placeholder="010-0000-0000" /></div>
         <div>
           <label class="label">이메일${isHouseEngineer ? ` <span class="font-normal text-muted">(로그인 계정)</span>` : ""}</label>
-          <input class="input${isHouseEngineer ? " opacity-60 cursor-not-allowed" : ""}" type="email" name="email" value="${esc(c.email || "")}"${isHouseEngineer ? ' readonly aria-readonly="true"' : ""} />
+          <input class="input${lockEmail ? " opacity-60 cursor-not-allowed" : ""}" type="email" name="email" value="${esc(c.email || "")}"${lockEmail ? ' readonly aria-readonly="true"' : ""} />
           ${isHouseEngineer ? `<p class="mt-0.5 text-xs text-muted">하우스 엔지니어 로그인 계정 이메일이라 변경 불가합니다.</p>` : ""}
         </div>
       </div>
@@ -497,3 +513,4 @@ function editPaneFor(c, returnTo = null) {
 }
 
 module.exports = router;
+module.exports.emailLocked = emailLocked; // 회귀 테스트·재사용(sessions.routes의 eventInputForSession과 같은 패턴)
