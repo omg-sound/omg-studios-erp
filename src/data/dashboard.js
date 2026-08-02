@@ -8,7 +8,7 @@
  */
 
 const { db } = require("../db");
-const { canInvoice, isChief } = require("../auth");
+const { canInvoice, isChief, isOwner } = require("../auth");
 const { invoiceStats } = require("./invoices"); // 무순환
 const { getManagerByUserId } = require("./parties");
 const { todayYmd } = require("../lib/date");
@@ -68,7 +68,36 @@ function myTodo(user) {
   return { name: me.name, sessions, tasks };
 }
 
+/**
+ * 대표의 '내 할 일' — 계산서 발행 · 입금 확인(2026-08-02 사용자 결정: "대표는 할 일이 계산서 발행이랑 입금 확인").
+ * 대표도 세션·작업에 배정되지만(myTodo) 실제 업무의 본체는 청구 뒤처리라, 그것만으론 할 일 표면이 비어 있었다.
+ * 🔒 **분류는 청구 목록 필터칩과 같은 기준이어야 한다**(`invoiceTaxTab`: 계산서 미발행=todo / 계산서 발행·미입금=done)
+ *   — 카드 건수와 눌러서 도착하는 목록의 건수가 다르면 그 자체로 거짓말이 된다(대시보드 '청구 필요' 헤더 링크와 같은 규율).
+ *   그래서 `status`(발행/미발행 축)로 거르지 않는다 — 필터칩도 전 건을 세기 때문.
+ * 금액 축이 둘인 이유: 발행 필요는 아직 안 끊은 **총액**, 입금 확인은 받을 **잔금**(부분납 반영)이다.
+ * 대표만 — 치프는 담당 세션·작업이 이미 할 일 표면이고, 사용자가 대표만으로 정했다.
+ */
+function invoiceTodo(user) {
+  if (!isOwner(user)) return null;
+  const TODO = "COALESCE(tax_status, '계산서 미발행') NOT IN ('계산서 발행', '입금완료')"; // NULL도 todo(invoiceTaxTab의 else)
+  const r = db()
+    .prepare(
+      `SELECT
+         COUNT(CASE WHEN ${TODO} THEN 1 END) AS bill_cnt,
+         COALESCE(SUM(CASE WHEN ${TODO} THEN amount END), 0) AS bill_amount,
+         COUNT(CASE WHEN tax_status = '계산서 발행' THEN 1 END) AS collect_cnt,
+         COALESCE(SUM(CASE WHEN tax_status = '계산서 발행' THEN MAX(amount - paid_amount, 0) END), 0) AS collect_amount
+       FROM invoices`
+    )
+    .get();
+  return {
+    bill: { count: r.bill_cnt, amount: r.bill_amount },
+    collect: { count: r.collect_cnt, amount: r.collect_amount },
+  };
+}
+
 module.exports = {
   dashboardStats,
   myTodo,
+  invoiceTodo,
 };

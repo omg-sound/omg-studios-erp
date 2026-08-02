@@ -2,7 +2,7 @@
 
 const express = require("express");
 const { db } = require("../db");
-const { requireAuth, requireEditor, requireBilling, requireChief, canEdit, canBill, isChief, isStaffOrChief } = require("../auth");
+const { requireAuth, requireEditor, requireBilling, requireChief, canEdit, canBill, isChief, isOwner, isStaffOrChief } = require("../auth");
 const {
   normalizeDocType,
   docNumberWithType,
@@ -205,20 +205,26 @@ router.get("/", requireAuth, (req, res) => {
   let rows = listProjects(user, { q });
 
   // '내 프로젝트만' 필터(2026-07-12) — 전 프로젝트 열람은 유지하되 **기본으로 켜 둔다**(2026-07-30 사용자 요청).
-  // 끄려면 `?mine=0`(토글 pill). ⚠️여전히 **상태를 기억하지 않는다**([[no-list-filter-memory]]) — 고정 기본값일 뿐이라
-  // 주소를 지우고 새로 들어오면 항상 '내 프로젝트만'이다(마지막 선택을 복원하지 않는다).
+  // 토글 pill로 뒤집는다(`?mine=0` 끔 / `?mine=1` 켬). ⚠️여전히 **상태를 기억하지 않는다**([[no-list-filter-memory]])
+  // — 고정 기본값일 뿐이라 주소를 지우고 새로 들어오면 항상 그 역할의 기본값이다(마지막 선택을 복원하지 않는다).
   // 내 것 = 로그인 사용자의 담당자(project_managers) 기준 PM·담당 세션·담당 작업 관여(listProjectIdsForManager).
-  // 담당자 행이 없는 계정(대표 등)은 관여 개념이 없어 토글을 숨기고 전체를 보여준다(기본 켜짐도 적용 안 됨).
+  // 담당자 행이 없는 계정은 관여 개념이 없어 토글을 숨기고 전체를 보여준다.
+  // ⚠️대표(owner)는 담당자 행이 있어도 **기본 꺼짐**(2026-08-02 사용자 결정) — 대표의 일은 자기 배정분이 아니라
+  // 전사 청구(계산서 발행·입금 확인)라 목록이 관여분으로 좁아지면 안 된다. 토글은 남겨 필요할 때 켠다(`?mine=1`).
   const myManager = getManagerByUserId(user.id);
   const mineAvailable = Boolean(myManager);
-  const mine = mineAvailable && req.query.mine !== "0";
+  const mineDefault = !isOwner(user);
+  const mine = mineAvailable && (mineDefault ? req.query.mine !== "0" : req.query.mine === "1");
   if (mine) {
     const myIds = listProjectIdsForManager(myManager.id);
     rows = rows.filter((p) => myIds.has(p.id));
   }
-  // 탭·더보기·검색 링크에 필터 상태 보존. 기본이 켜짐이라 **보존해야 하는 쪽은 '끔'(mine=0)** 이다.
-  const offQ = mineAvailable && !mine ? "&mine=0" : "";
-  const keepQ = `${q ? "&q=" + encodeURIComponent(q) : ""}${offQ}`;
+  // 링크·폼에 보존해야 하는 건 **기본과 다른 상태**뿐이다(스태프=끔 `mine=0` / 대표=켬 `mine=1`).
+  // 기본과 같은 상태에 파라미터를 달면 주소만 지저분해지고, 빠뜨리면 탭을 누를 때마다 기본으로 튄다.
+  const mineParam = (on) => (!mineAvailable || on === mineDefault ? "" : on ? "mine=1" : "mine=0");
+  const stateP = mineParam(mine);
+  const stateQ = stateP ? `&${stateP}` : "";
+  const keepQ = `${q ? "&q=" + encodeURIComponent(q) : ""}${stateQ}`;
 
   const searched = Boolean(q);
   // 3탭 분류(진행 중/청구 필요/완료). active는 splitProjectTabs 내부에서 이미 세션 임박순 정렬됨.
@@ -238,16 +244,18 @@ router.get("/", requireAuth, (req, res) => {
         hrefFn: (k) => `/projects?tab=${k}${keepQ}`,
       })
     : "";
-  // '내 프로젝트만' 토글 pill — 담당자 계정만 노출. 켜짐=강조(기본), 클릭하면 끈다(tab·q 보존).
+  // '내 프로젝트만' 토글 pill — 담당자 계정만 노출. 켜짐=강조, 클릭하면 반대 상태로(tab·q 보존).
+  const flipP = mineParam(!mine);
   const minePill = mineAvailable
-    ? `<a href="/projects?tab=${tab}${q ? "&q=" + encodeURIComponent(q) : ""}${mine ? "&mine=0" : ""}" class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm ${mine ? "border-primary bg-primary/10 font-medium text-primary" : "border-border text-muted hover:text-fg"}">${mine ? "✓ " : ""}내 프로젝트만</a>`
+    ? `<a href="/projects?tab=${tab}${q ? "&q=" + encodeURIComponent(q) : ""}${flipP ? `&${flipP}` : ""}" class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm ${mine ? "border-primary bg-primary/10 font-medium text-primary" : "border-border text-muted hover:text-fg"}">${mine ? "✓ " : ""}내 프로젝트만</a>`
     : "";
   // (밀도 토글 폐지 2026-07-16 — 목록이 청구식 컬럼 표로 통일되면서 좁게/넓게 개념 제거.)
   const mineToggle = minePill ? `<div class="mb-3 flex items-center gap-2">${minePill}</div>` : "";
   let list;
   // ⚠️'내 프로젝트만'이 기본이라 **빈 화면에서 나갈 길**을 반드시 준다(2026-07-30): 관여한 프로젝트가 없는
   // 계정(새 스태프 등)은 첫 진입이 빈 목록인데, 토글 pill만으로는 '전체엔 있다'는 걸 모른다.
-  const allCta = { href: `/projects?tab=${tab}${q ? "&q=" + encodeURIComponent(q) : ""}&mine=0`, label: "전체 프로젝트 보기" };
+  const offP = mineParam(false);
+  const allCta = { href: `/projects?tab=${tab}${q ? "&q=" + encodeURIComponent(q) : ""}${offP ? `&${offP}` : ""}`, label: "전체 프로젝트 보기" };
   if (!rows.length) {
     list = searched
       ? emptyState(`"${esc(q)}" 검색 결과가 없습니다.`, { card: true, cta: mine ? allCta : null })
@@ -270,17 +278,17 @@ router.get("/", requireAuth, (req, res) => {
     const limitQ = Number(req.query.limit) > 0 ? `&limit=${Number(req.query.limit)}` : "";
     const openQ = openId ? `&open=${openId}` : "";
     const listQuery = `/projects?tab=${tab}${keepQ}${limitQ}${openQ}`;
-    list = `<div class="overflow-hidden rounded-lg border border-border/50 bg-surface [&>details:last-child]:border-b-0" data-sort-rows>${projectTableHead()}${cap.shown.map((p) => projectListRow(p, summaries[p.id], { tab, isAdmin, openId, mine, listQuery })).join("")}</div>${cap.more}`;
+    list = `<div class="overflow-hidden rounded-lg border border-border/50 bg-surface [&>details:last-child]:border-b-0" data-sort-rows>${projectTableHead()}${cap.shown.map((p) => projectListRow(p, summaries[p.id], { tab, isAdmin, openId, mineQ: stateQ, listQuery })).join("")}</div>${cap.more}`;
   }
 
   const action = canCreate ? newProjectMenu() : "";
 
   const searchBar = searchBox({
     action: "/projects", q, placeholder: "프로젝트 · 아티스트 검색", label: "프로젝트 검색",
-    suggestUrl: "/projects/suggest", hidden: `<input type="hidden" name="tab" value="${esc(tab)}" />${offQ ? `<input type="hidden" name="mine" value="0" />` : ""}`,
+    suggestUrl: "/projects/suggest", hidden: `<input type="hidden" name="tab" value="${esc(tab)}" />${stateP ? `<input type="hidden" name="mine" value="${mine ? "1" : "0"}" />` : ""}`,
   });
   const resultNote = searched
-    ? `<div class="mb-3 text-sm text-muted">"${esc(q)}" 결과 ${rows.length}건 · <a href="/projects${offQ ? "?mine=0" : ""}" class="text-primary hover:underline">전체 보기</a></div>`
+    ? `<div class="mb-3 text-sm text-muted">"${esc(q)}" 결과 ${rows.length}건 · <a href="/projects${stateP ? `?${stateP}` : ""}" class="text-primary hover:underline">전체 보기</a></div>`
     : "";
 
   const body = `

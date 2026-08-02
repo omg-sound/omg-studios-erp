@@ -316,14 +316,17 @@ test("listProjectIdsForManager: PM·담당 세션·담당 작업 합집합 + 무
   assert.strictEqual(D.listProjectIdsForManager(99999).size, 0, "관여 없는 담당자는 빈 집합");
 });
 
-// '내 프로젝트만'이 **기본 켜짐**(2026-07-30)이라 복귀 경로에 실어야 하는 상태는 **끔(mine=0)** 이다.
-// 반대로 실으면(옛 mine=1) 전체 보기로 훑던 사람이 완료 토글 한 번에 '내 프로젝트만'으로 튄다.
-test("projectSummaryHtml: mine=false(전체 보기)면 완료 복귀 경로에 &mine=0 보존", () => {
+// 완료 토글의 복귀 경로에 '내 프로젝트만' 상태를 그대로 실어야 한다 — 안 실으면 지금 보던 화면이 아니라
+// 기본 상태로 튄다. ⚠️기본값이 역할마다 갈리므로(스태프=켜짐 / 대표=꺼짐, 2026-08-02) 뷰는 불리언이 아니라
+// **라우트가 만들어 준 파라미터 문자열(mineQ)** 을 받는다(뷰가 기본값을 알 방법이 없다).
+test("projectSummaryHtml: mineQ를 완료 복귀 경로에 그대로 보존", () => {
   const summary = { sessions: [{ id: 42, session_date: "2999-07-15", start_time: "14:00", end_time: "17:30", session_type: "녹음", status: "예정" }], tracks: [], taskTypes: [] };
-  const off = views.projectSummaryHtml(summary, { isAdmin: true, projectId: 7, tab: "active", mine: false });
-  assert.match(off, /name="return" value="\/projects\?tab=active&mine=0&open=7"/, "끔 상태 보존");
-  const on = views.projectSummaryHtml(summary, { isAdmin: true, projectId: 7, tab: "active", mine: true });
-  assert.doesNotMatch(on, /mine=/, "켜짐(기본)은 파라미터 없이");
+  const off = views.projectSummaryHtml(summary, { isAdmin: true, projectId: 7, tab: "active", mineQ: "&mine=0" });
+  assert.match(off, /name="return" value="\/projects\?tab=active&mine=0&open=7"/, "끔 상태 보존(스태프)");
+  const on = views.projectSummaryHtml(summary, { isAdmin: true, projectId: 7, tab: "active", mineQ: "&mine=1" });
+  assert.match(on, /name="return" value="\/projects\?tab=active&mine=1&open=7"/, "켬 상태 보존(대표)");
+  const dflt = views.projectSummaryHtml(summary, { isAdmin: true, projectId: 7, tab: "active" });
+  assert.doesNotMatch(dflt, /mine=/, "기본 상태는 파라미터 없이");
 });
 
 // ── 완료 판정: 오늘 날짜 세션의 상태 반영(2026-07-15 사용자 리포트) ──

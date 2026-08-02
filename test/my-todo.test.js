@@ -62,3 +62,33 @@ test("myTodo: 레거시 engineer_name(다대다 배정 없음)도 내 세션으�
   const t = myTodo({ id: 1 });
   assert.ok(t.sessions.some((x) => x.id === s2), "engineer_name 매칭 세션 포함");
 });
+
+// ── 대표의 '내 할 일' = 계산서 발행 · 입금 확인(2026-08-02 사용자 결정) ──
+// 🔒 분류가 청구 목록 필터칩(invoiceTaxTab)과 갈리면 카드 건수와 도착지 목록 건수가 어긋난다 — 그 정합을 잠근다.
+const { invoiceTodo } = require("../src/data");
+const OWNER = { id: 2, role: "owner" };
+const CHIEF = { id: 1, role: "chief" };
+
+D.prepare("INSERT INTO invoices (title, amount, paid_amount, status, tax_status) VALUES ('미발행분', 4000000, 0, '발행', '계산서 미발행')").run();
+D.prepare("INSERT INTO invoices (title, amount, paid_amount, status, tax_status) VALUES ('발행됨·미입금', 1000000, 0, '발행', '계산서 발행')").run();
+D.prepare("INSERT INTO invoices (title, amount, paid_amount, status, tax_status) VALUES ('발행됨·부분납', 1000000, 300000, '발행', '계산서 발행')").run();
+D.prepare("INSERT INTO invoices (title, amount, paid_amount, status, tax_status) VALUES ('끝난 건', 5000000, 5000000, '발행', '입금완료')").run();
+
+test("invoiceTodo: 계산서 발행 필요 = 미발행분 총액 / 입금 확인 = 발행됨의 잔금", () => {
+  const t = invoiceTodo(OWNER);
+  assert.ok(t, "대표는 객체 반환");
+  assert.deepEqual(t.bill, { count: 1, amount: 4000000 }, "발행 필요는 총액");
+  // 입금 확인 = 잔금(부분납 반영): 1,000,000 + (1,000,000 - 300,000) = 1,700,000
+  assert.deepEqual(t.collect, { count: 2, amount: 1700000 }, "입금 확인은 잔금");
+});
+
+test("invoiceTodo: 입금완료 건은 어느 쪽에도 안 센다", () => {
+  const t = invoiceTodo(OWNER);
+  assert.equal(t.bill.count + t.collect.count, 3, "전체 4건 중 입금완료 1건 제외");
+});
+
+test("invoiceTodo: 대표가 아니면 null → 청구 줄 자체를 안 그린다", () => {
+  assert.equal(invoiceTodo(CHIEF), null, "치프 제외(사용자 결정)");
+  assert.equal(invoiceTodo({ id: 3, role: "staff" }), null);
+  assert.equal(invoiceTodo(null), null);
+});

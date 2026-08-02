@@ -151,8 +151,10 @@ function projectTableHead() {
  *  - 다음 세션=진행 중 탭만(디데이 pill), 금액=프로젝트 버짓(청구 필요 탭은 '청구 필요 N' 배지 병기), 작성일=전 탭.
  *  - 반응형: <640px면 thead 숨기고 아티스트·프로젝트 + 탭 값만 2줄 카드(제작사·PM·작성일 숨김).
  */
-// mine 기본값 = true — 앱의 기본 뷰가 '내 프로젝트만'이라(2026-07-30) 생략 시 그 상태로 읽는다.
-function projectListRow(p, summary, { tab = "active", isAdmin = false, openId = null, mine = true, listQuery = "" } = {}) {
+// mineQ = 복귀 경로에 실을 '내 프로젝트만' 상태 파라미터(`&mine=0`·`&mine=1`·기본값이면 빈 문자열).
+// ⚠️불리언이 아니라 문자열인 이유: 기본값이 역할마다 다르다(스태프=켜짐·대표=꺼짐, 2026-08-02) — 여기서
+// 불리언으로 되돌리면 어느 쪽이 기본인지 뷰가 알 수 없어 대표의 '켬' 상태가 복귀 때마다 풀린다.
+function projectListRow(p, summary, { tab = "active", isAdmin = false, openId = null, mineQ = "", listQuery = "" } = {}) {
   const href = projectRowHref(p, tab, listQuery);
   const dash = '<span class="text-muted">—</span>';
   // sortVal = 정렬 원값(헤더 클릭 정렬). **항상 명시한다** — 보이는 텍스트로 정렬하면 틀리는 열이 많다:
@@ -189,20 +191,20 @@ function projectListRow(p, summary, { tab = "active", isAdmin = false, openId = 
         ${cellLink(`${amount}${billingBadge}`, "pt-amount tabular", "금액", "amount", amt || "")}
         <span class="proj-toggle" aria-hidden="true" title="펼치기"><svg class="proj-chevron transition-transform group-open/proj:rotate-180" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8l4 4 4-4" /></svg></span>
       </summary>
-      <div class="proj-expand border-t border-border/40 bg-elevated/40 px-4 py-3 text-xs leading-relaxed">${projectSummaryHtml(summary, { isAdmin, projectId: p.id, tab, mine })}</div>
+      <div class="proj-expand border-t border-border/40 bg-elevated/40 px-4 py-3 text-xs leading-relaxed">${projectSummaryHtml(summary, { isAdmin, projectId: p.id, tab, mineQ })}</div>
     </details>`;
 }
 
 
 /** 인라인 요약 본문 — 세션 일정(날짜·시간) + 곡·콘텐츠(아티스트·제목·작업자). data.listProjectSummaries 결과 1건. */
-function projectSummaryHtml(s, { isAdmin = false, projectId = null, tab = "active", mine = true } = {}) {
+function projectSummaryHtml(s, { isAdmin = false, projectId = null, tab = "active", mineQ = "" } = {}) {
   if (!s || (!s.sessions.length && !s.tracks.length)) {
     return `<span class="text-muted">등록된 세션·곡·콘텐츠가 없습니다.</span>`;
   }
   // 완료 후 목록으로 복귀하며 이 카드를 다시 펼친다(?open=). 스크롤은 app.js가 보존(경로 동일).
-  // '내 프로젝트만'은 **기본 켜짐**이라(2026-07-30) 복귀 경로에 실어야 하는 상태는 **끔(`mine=0`)** 이다
-  // — 안 실으면 전체 보기로 훑던 사람이 완료 토글 한 번에 '내 프로젝트만'으로 튄다.
-  const ret = `/projects?tab=${esc(tab)}${mine ? "" : "&mine=0"}${projectId ? `&open=${projectId}` : ""}`;
+  // '내 프로젝트만' 상태를 복귀 경로에 그대로 싣는다(mineQ, 라우트가 기본값과 비교해 만들어 넘긴다)
+  // — 안 실으면 전체 보기로 훑던 사람이 완료 토글 한 번에 기본 상태로 튄다.
+  const ret = `/projects?tab=${esc(tab)}${mineQ}${projectId ? `&open=${projectId}` : ""}`;
   // 프로젝트 목록 펼침에서 바로 완료(2026-07-11 사용자 요청 — 프로젝트 안 안 들어가고 완료). 편집 권한자·예정/완료 세션만.
   const sessToggle = (se) => {
     if (!isAdmin || (se.status !== "예정" && se.status !== "완료")) return "";
