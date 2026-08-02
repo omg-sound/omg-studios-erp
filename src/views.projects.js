@@ -528,13 +528,25 @@ function artistCombo(p = {}) {
 // companyCombo는 views.js 공용 헬퍼로 이동(연락처 폼과 공유, 2026-07-04).
 
 
-/** 내부 담당자(프로젝트 매니저) 선택 — 하우스/외주 엔지니어 목록. 고객측 담당자(personCombo)와 별개 필드. */
+/** 내부 담당자(프로젝트 매니저) 선택 — 하우스/외주 엔지니어 목록. 고객측 담당자(personCombo)와 별개 필드.
+ * 🔒 **현재값이 목록에 없어도 보존한다**(2026-08-02 사용자 결정 '기록은 기록이다 — PM이었던 기록이 남아도 된다').
+ * 목록은 활성 담당자만인데(`listProjectManagers`) 퇴사·비활성 처리된 사람이 PM인 프로젝트가 있다. 보존 옵션이
+ * 없으면 그 프로젝트의 폼이 **'미지정'으로 열리고**, 정보 탭에서 **다른 항목만 고쳐 저장해도 PM이 조용히 지워졌다**
+ * (`manager_id: b.manager_id ? … : null`). 목록의 PM 컬럼은 active를 안 봐서 이름이 그대로 보이던 터라
+ * '목록엔 있는데 상세는 미지정'인 불일치이기도 했다. 세션 폼의 예약 담당자(`managerOptions`)는 이미 같은
+ * 보존을 하고 있었고 PM만 빠져 있었다 — 그 비대칭을 없앤다. */
 function managerSelect(selectedId) {
   const opts = listProjectManagers();
+  const cur = Number(selectedId) || null;
+  // 활성 목록에 없을 때만 추가 조회(평소엔 쿼리 1회 그대로).
+  const missing = cur && !opts.some((m) => m.id === cur)
+    ? listProjectManagers({ includeInactive: true }).find((m) => m.id === cur) || null
+    : null;
   return `
     <select name="manager_id" class="input">
       <option value="">프로젝트 매니저 미지정</option>
-      ${opts.map((m) => `<option value="${m.id}" ${Number(selectedId) === m.id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
+      ${missing ? `<option value="${missing.id}" selected>${esc(missing.name)} (목록에 없음)</option>` : ""}
+      ${opts.map((m) => `<option value="${m.id}" ${cur === m.id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
     </select>`;
 }
 
@@ -683,6 +695,17 @@ function engineerSelect(managers, task) {
   const out = [`<option value="">담당자 미지정</option>`];
   if (legacyName) {
     out.push(`<option value="legacy" selected>${esc(legacyName)} (목록에 없음)</option>`);
+  }
+  // 🔒 비활성(퇴사·계정 비활성) 담당자가 배정돼 있으면 활성 목록에 없다 → 보존 옵션(2026-08-02 전수 점검).
+  // 없으면 폼이 '미지정'으로 열리고, 종류만 바꿔 저장해도 **engineer_id·engineer_name이 통째로 null이 되고
+  // worker_rate까지 0으로 리셋**된다(실측). 지급완료(worker_paid=1) 작업에서도 그래서 정산·원천세 근거가
+  // 소급 소멸한다 — PAYOUT_LOCKED는 '삭제'만 막고 이 UPDATE는 막지 않는다.
+  // 담당자 행을 되짚는 이유: 이름뿐 아니라 `data-external`(외주 지급단가 칸 노출)이 user_id에 달려 있다.
+  const missing = curId && !managers.some((m) => Number(m.id) === curId)
+    ? listProjectManagers({ includeInactive: true }).find((m) => Number(m.id) === curId) || null
+    : null;
+  if (missing) {
+    out.push(`<option value="${missing.id}" selected data-external="${missing.user_id ? "" : "1"}">${esc(missing.name)} (목록에 없음)</option>`);
   }
   for (const m of managers) {
     // data-external: 외주 작업자(user_id 없음)=1 → app.js가 외주 지급단가 토글. 하우스 엔지니어는 단가 숨김.

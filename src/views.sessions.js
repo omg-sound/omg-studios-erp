@@ -5,7 +5,7 @@
 const { config, SESSION_TYPES, RENTAL_SESSION_TYPES, SESSION_STATUS_BADGE, SESSION_TYPE_RATE_KIND, SESSION_SEGMENT_KINDS, SESSION_SEGMENT_LABELS } = require("./config");
 const { esc, formatKRW, emptyState, detailsChevron, explain, dirtyActionRow, personCombo, personComboOptionsScript, personComboCompanyScript, personLabel, dateCombo } = require("./views");
 const { formatYmdShort, ddayLabel, todayYmd, minutesBetween, durationKo, calendarMonthCells } = require("./lib/date");
-const { listRooms, getRoom, listSessionSegments, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listRateCategories, rateCategoryKind } = require("./data");
+const { listRooms, getRoom, listSessionSegments, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listProjectManagers, listRateItems, listRateCategories, rateCategoryKind } = require("./data");
 
 /**
  * 룸 목록 보장 — 인자로 받으면 그대로, 아니면 **예약 대상 장소**만 조회(폴백).
@@ -56,6 +56,14 @@ function managerOptions(managers, current, placeholder = "담당자 미지정", 
 function managerOptionsById(managers, selectedId) {
   const cur = selectedId == null ? "" : String(selectedId);
   const out = [`<option value="">엔지니어 선택</option>`];
+  // 🔒 비활성 담당자가 배정돼 있으면 목록에 없다 → 보존 옵션(2026-08-02 전수 점검). 없으면 그 행이 빈 선택으로
+  // 열려 저장 시 **배정에서 빠진 것으로 해석**된다. 지급완료 엔지니어면 setSessionEngineers가 PAYOUT_LOCKED로
+  // 409를 내므로, 시간·룸만 바꾸려 해도 세션 편집 자체가 막히는 막다른 길이 된다(그 가드의 의도는 '삭제 차단'이지
+  // '편집 차단'이 아니다). 활성 목록에 없을 때만 되짚으므로 평소 쿼리 수는 그대로.
+  const missing = cur && !managers.some((m) => String(m.id) === cur)
+    ? listProjectManagers({ includeInactive: true }).find((m) => String(m.id) === cur) || null
+    : null;
+  if (missing) out.push(`<option value="${missing.id}" selected data-external="${missing.user_id ? "" : "1"}">${esc(missing.name)} (목록에 없음)</option>`);
   for (const m of managers) out.push(`<option value="${m.id}" ${String(m.id) === cur ? "selected" : ""} data-external="${m.user_id ? "" : "1"}">${esc(m.name)}${m.user_id ? "" : " · 외주"}</option>`);
   return out.join("");
 }
@@ -134,7 +142,18 @@ function rateOptionsHtml(rateItems, currentId) {
   });
   const cats = [...catOrder.filter((c) => groups[c]), ...Object.keys(groups).filter((c) => !catOrder.includes(c))];
   const opt = (r) => `<option value="${r.id}" data-minutes="${Number(r.base_minutes) || 0}" ${String(r.id) === String(currentId || "") ? "selected" : ""}>${esc(r.name)}</option>`;
-  return `<option value="" data-minutes="0">미지정</option>` + cats.map((c) => `<optgroup label="${esc(c)}">${groups[c].map(opt).join("")}</optgroup>`).join("");
+  // 🔒 비활성 처리된 단가 항목이 이미 걸린 세션은 목록에 없다 → 보존 옵션(2026-08-02 전수 점검).
+  // 없으면 폼이 '미지정'으로 열리고 시간만 고쳐 저장해도 **rate_item_id가 null**이 된다(실측) → 그 세션은
+  // '단가 미선택'으로 떨어져 청구 발행이 막히는데 미청구 집계에는 남는다(조용히 매출이 새는 형태).
+  // `data-minutes`도 함께 살린다 — app.js가 1Pro 기준시간·소요 계산에 쓴다.
+  const cur = String(currentId || "");
+  const missing = cur && !rateItems.some((r) => String(r.id) === cur)
+    ? listRateItems({ includeInactive: true }).find((r) => String(r.id) === cur) || null
+    : null;
+  const missingOpt = missing
+    ? `<option value="${missing.id}" data-minutes="${Number(missing.base_minutes) || 0}" selected>${esc(missing.name)} (사용 안 함)</option>`
+    : "";
+  return `<option value="" data-minutes="0">미지정</option>` + missingOpt + cats.map((c) => `<optgroup label="${esc(c)}">${groups[c].map(opt).join("")}</optgroup>`).join("");
 }
 
 /**
@@ -453,7 +472,12 @@ function sessionProjectCard(sessions, { isAdmin = false, managers = [], rateItem
 /** 프로젝트 상세용 세션 섹션. 유형 구분 없이 항상 펼친 <section>으로 렌더(목록 + '새 세션 추가' 폼). */
 function sessionsSection({ project, rows, isAdmin, managers = [], rateItems = [], rooms, defaultBooker = "" }) {
   // PM(프로젝트 담당 엔지니어) — 세션 폼 우측 사이드에 읽기 전용 표기(구글 캘린더식 레이아웃, 수정은 프로젝트 탭에서).
-  const pmName = (managers.find((m) => Number(m.id) === Number(project.manager_id)) || {}).name || "";
+  // managers는 **활성만**이라 퇴사·비활성 담당자가 PM이면 여기서 못 찾는다 → 그때만 비활성 포함으로 되짚는다.
+  // 안 그러면 정보 탭은 'OOO (목록에 없음)'으로 기록을 보여주는데 세션 탭만 빈칸이 되는 비대칭이 생긴다
+  // (2026-08-02 사용자 결정 '기록은 기록이다'). 평소엔 추가 조회가 없다.
+  const pmId = Number(project.manager_id) || null;
+  const pmName = (managers.find((m) => Number(m.id) === pmId) || {}).name
+    || (pmId ? (listProjectManagers({ includeInactive: true }).find((m) => Number(m.id) === pmId) || {}).name || "" : "");
   const roomList = resolveRooms(rooms); // 룸 1회 조회 후 폼·행에 전달(호출부가 안 넘겨도 채워짐)
   const upcoming = rows.filter((s) => s.status !== "취소" && s.session_date >= todayYmd()).length;
   // 연락처·회사 옵션 JSON은 페이지당 1회(공유 스크립트) — 세션 폼(행 편집+추가)마다 전체 임베드가 페이지를 불리던 것(2026-07-09~10 스케일 점검).

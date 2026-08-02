@@ -42,7 +42,7 @@ test("옛 데이터로 비활성 상태인 대표 담당자 행은 로그인 시
 test("대표가 담당자 목록·PM 선택지에 나온다", () => {
   assert.ok(listProjectManagers().some((m) => m.name === "박광현"), "listProjectManagers(활성만)에 포함");
   // 이 목록이 곧 PM·예약 담당자·담당 엔지니어 select의 선택지다(views.projects.managerSelect / views.sessions.managerOptions).
-  const html = projectForm({ p: {} });
+  const html = projectForm({}); // ⚠️projectForm(p, err) — 프로젝트는 **첫 인자**(감싸면 manager_id가 안 읽힌다)
   assert.match(html, /<select name="manager_id"[\s\S]*?박광현[\s\S]*?<\/select>/);
 });
 

@@ -448,6 +448,9 @@ function bookingDefaultsSection() {
           <label class="label mb-0.5 text-xs">예약 담당자 <span class="font-normal text-muted">(세션 예약 폼에서 기본 선택)</span></label>
           <select class="input py-1.5 text-sm" name="default_booker">
             <option value="">지정 안 함</option>
+            ${/* 🔒 비활성 담당자가 기본 예약 담당자로 남아 있으면 목록에 없다 → 보존 옵션(2026-08-02 전수 점검).
+                  없으면 이 화면(예약 기본값은 통합 저장 폼)을 저장하는 것만으로 설정이 조용히 비워진다. */""}
+            ${cur && !managers.some((m) => m.name === cur) ? `<option value="${esc(cur)}" selected>${esc(cur)} (목록에 없음)</option>` : ""}
             ${managers.map((m) => `<option value="${esc(m.name)}" ${m.name === cur ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
           </select>
         </div>
