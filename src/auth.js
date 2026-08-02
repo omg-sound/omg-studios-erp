@@ -104,8 +104,8 @@ function syncUserToManager(user) {
   if (!user || !user.id) return;
   const name = String(user.name || "").trim();
   const existing = db().prepare("SELECT * FROM project_managers WHERE user_id = ?").get(user.id);
-  // 대표(owner)는 작업 담당자가 아님 — 이름없음·비활성과 동일하게 작업 담당자에서 제외(비활성).
-  if (!name || !user.active || user.role === "owner") {
+  // 역할은 보지 않는다 — 대표(owner)도 PM·세션·작업에 배정된다(2026-08-02 사용자 결정).
+  if (!name || !user.active) {
     if (existing) db().prepare("UPDATE project_managers SET active = 0 WHERE id = ?").run(existing.id);
     return;
   }
