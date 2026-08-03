@@ -227,3 +227,9 @@ test("제목: 아티스트 없는 외부 일정 — 프로젝트명 · 회사 @�
   assert.equal(eventInputForSession({ ...base, location_label: "잠실실내체육관" }, p).title, "8월 정기 녹음 · 뮤직팜 @잠실실내체육관");
   assert.equal(eventInputForSession({ ...base, status: "취소", location_label: "장충체육관" }, p).title, "(취소) 8월 정기 녹음 · 뮤직팜 @장충체육관");
 });
+
+test("제목: 공백만 든 아티스트·회사는 없는 것으로 본다(눈으로 구분이 안 되는 값)", () => {
+  // " "는 truthy라 방어가 없으면 제목 앞자리를 차지하고, 화면상 '아티스트를 안 적었는데 프로젝트명이 안 붙는다'가 된다.
+  assert.equal(eventInputForSession({ ...base }, { title: "넷플릭스 흑백가수", artist: "   ", production_company: "뮤직팜" }).title, "넷플릭스 흑백가수 · 뮤직팜");
+  assert.equal(eventInputForSession({ ...base }, { title: "넷플릭스 흑백가수", artist: "", production_company: " " }).title, "넷플릭스 흑백가수");
+});

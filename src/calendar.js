@@ -168,11 +168,15 @@ async function updateEvent(eventId, input = {}) {
         return eventId;
       } catch (e2) {
         console.error(`[calendar] updateEvent 실패(update 폴백도) — code=${e2 && e2.code} msg=${e2 && e2.message}`);
-        return eventId;
+        return null;
       }
     }
     console.error(`[calendar] updateEvent 실패 — code=${e && e.code} status=${e && e.status} msg=${e && e.message}`);
-    return eventId; // 기타 오류는 기존 id 유지(fail-safe)
+    // 🔒 **실패는 null로 알린다**(2026-08-03 사용자 요청 '연동 실패를 화면에 보이게'). 예전엔 기존 id를 그대로
+    // 돌려줘서 syncSessionEvent가 성공으로 보고했고, 저장은 됐는데 캘린더만 안 바뀐 걸 사용자가 나중에 알았다
+    // (종일↔시간 400이 그렇게 며칠 숨어 있었다). ⚠️`gcal_event_id`는 지워지지 않는다 — syncSessionEvent가
+    // newId가 있을 때만 setSessionEventId를 부르므로, 여기서 null을 줘도 기존 연결은 그대로다.
+    return null;
   }
 }
 

@@ -73,3 +73,24 @@ test("eventTimes(생성): 지울 기존 값이 없으므로 null을 넣지 않�
   });
   assert.deepEqual(eventTimes("2026-02-05", null, null), { start: { date: "2026-02-05" }, end: { date: "2026-02-06" } });
 });
+
+// ── 동기화 실패는 화면에 보여야 한다(2026-08-03 사용자 요청) ──
+// 예전엔 updateEvent가 실패해도 기존 이벤트 id를 돌려줘서 syncSessionEvent가 성공으로 보고했고,
+// 저장은 됐는데 캘린더만 안 바뀐 걸 사용자가 나중에 알았다(종일↔시간 400이 그렇게 며칠 숨어 있었다).
+const { calFlash } = require("../src/routes/sessions.routes");
+
+test("calFlash: 성공은 그대로, 설정 문제와 API 오류는 다른 안내로 나뉜다", () => {
+  assert.equal(calFlash({ synced: true }, "saved"), "saved");
+  assert.equal(calFlash(null, "saved"), "saved", "동기화 정보가 없으면(취소 등) 평소 안내");
+  assert.equal(calFlash({ synced: false, setup: true }, "saved"), "saved_cal_off", "설정 문제 → 환경설정 안내");
+  assert.equal(calFlash({ synced: false }, "saved"), "saved_cal_err", "API 오류 → 재저장·재동기화 안내");
+  assert.equal(calFlash({ synced: false }, "added"), "added_cal_err", "추가 경로도 같은 규칙");
+});
+
+test("flash 문구: API 오류 키가 등록돼 있고 경고로 뜬다", () => {
+  const views = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "views.js"), "utf8");
+  for (const k of ["added_cal_err", "saved_cal_err"]) {
+    assert.match(views, new RegExp(`${k}:\\s*"`), `${k} 문구 정의`);
+    assert.match(views, new RegExp(`FLASH_WARN[^\\n]*"${k}"`), `${k}는 경고 스타일`);
+  }
+});

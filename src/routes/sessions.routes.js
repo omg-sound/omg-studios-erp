@@ -61,12 +61,14 @@ function sessionTypeLabel(session) {
 }
 
 function eventInputForSession(session, project) {
-  const company = project.production_company || project.artist_company; // 제작사 우선, 없으면 레이블(레이블 자체 제작분)
+  // ⚠️ trim 필수 — 공백만 든 값(" ")은 truthy라 그대로 두면 제목 앞자리를 차지하고, 화면상으로는
+  // "아티스트를 안 적었는데 프로젝트명이 안 붙는다"로 보인다(값이 있는지 없는지 눈으로 구분이 안 된다).
+  const company = String(project.production_company || project.artist_company || "").trim(); // 제작사 우선, 없으면 레이블(레이블 자체 제작분)
   // 앞자리 = **누구의 일인지**. 아티스트가 있으면 아티스트, 없으면 **프로젝트명**으로 대신한다
   // (2026-08-03 사용자 요청 — 아티스트를 안 적으면 제목이 회사 이름 하나뿐이라 그 회사의 여러 일정이
   //  캘린더에서 전부 같은 제목으로 보였다). 아티스트가 있으면 종전대로 프로젝트명은 넣지 않는다 —
   //  제목이 길어지고, 프로젝트명은 이벤트 설명 맨 앞에 이미 있다.
-  const who = project.artist || project.title;
+  const who = String(project.artist || "").trim() || String(project.title || "").trim();
   const baseTitle = [who, company].filter(Boolean).join(" · ") || "스튜디오 세션"; // 아티스트 먼저(2026-07-05 사용자 요청 — 이전엔 회사가 먼저)
   // 취소된 세션은 캘린더에서 삭제하지 않고 제목에 '(취소)' prefix를 붙여 기록으로 남긴다(2026-07-15 사용자 요청).
   const cancelable = session.status === "취소" ? `(취소) ${baseTitle}` : baseTitle;
@@ -109,7 +111,8 @@ async function syncSessionEvent(user, session) {
   // 취소된 세션도 삭제하지 않고 '(취소)' 제목으로 업데이트해 기록으로 남긴다(eventInputForSession이 prefix 처리, 2026-07-15 사용자 요청).
   // 실제 세션 삭제(/delete)는 여전히 캘린더 일정도 삭제한다 — 취소(기록 유지) ≠ 삭제(제거).
   const st = calendar.syncStatus(); // 설정 수준 준비 상태(미연동/캘린더 미선택 등)
-  if (!st.ok) return { synced: false, reason: st.reason };
+  // setup=true → 설정 문제(환경설정에서 캘린더를 고르면 된다). 없으면 API 오류라 안내 문구가 달라야 한다.
+  if (!st.ok) return { synced: false, setup: true, reason: st.reason };
   // 캘린더에 한 번도 올라간 적 없는(gcal_event_id NULL) 세션을 '취소'하면 새로 만들지 않는다.
   // updateEvent(null)이 createEvent로 폴백하므로, 미연동 중 만든 세션을 나중에 연동 후 취소하면
   // 없던 '(취소)' 일정이 새로 생기던 것 차단(전수 점검 2026-07-15). 이미 있는 일정만 '(취소)' 제목 반영.
@@ -123,6 +126,15 @@ async function syncSessionEvent(user, session) {
     console.error("[sessions] 캘린더 동기화 실패 —", (e && e.message) || e);
     return { synced: false, reason: "동기화 중 오류(서버 로그 확인)" };
   }
+}
+
+/**
+ * 캘린더 동기화 결과 → flash 키. 실패는 **원인별로 문구가 달라야** 한다(2026-08-03 사용자 요청):
+ * 설정 문제는 사용자가 환경설정에서 고칠 수 있고, API 오류는 다시 저장하거나 재동기화할 일이다.
+ */
+function calFlash(cal, okKey) {
+  if (!cal || cal.synced !== false) return okKey;
+  return cal.setup ? `${okKey}_cal_off` : `${okKey}_cal_err`;
 }
 
 /** 세션 시간 겹침 안내 페이지(409, 앱 내부 세션끼리 · 같은 룸). */
@@ -340,7 +352,7 @@ router.post("/sessions", requireEditor, asyncHandler(async (req, res) => {
   // → 구글 FreeBusy 하드 차단은 비활성화하고, 룸별 겹침(앱 DB, createSession 내부 검사)을 정식 차단으로 삼는다.
   //   구글 캘린더 일정 자동 생성/수정/삭제 동기화는 그대로 유지.
   const cal = await syncSessionEvent(req.user, s); // 구글 캘린더에 일정 자동 생성 + 결과
-  res.redirect(`/projects/${s.project_id}?tab=sessions&open=${s.id}&flash=${cal && cal.synced === false ? "added_cal_off" : "added"}`);
+  res.redirect(`/projects/${s.project_id}?tab=sessions&open=${s.id}&flash=${calFlash(cal, "added")}`);
 }));
 
 // ── 세션 수정 ──
@@ -357,7 +369,7 @@ router.post("/sessions/:id", requireEditor, asyncHandler(async (req, res) => {
   }
   if (!s) return res.status(404).send("세션을 찾을 수 없습니다.");
   const cal = await syncSessionEvent(req.user, s); // 일정 수정(취소면 삭제, id 없으면 생성) + 결과
-  res.redirect(`/projects/${s.project_id}?tab=sessions&open=${s.id}&flash=${cal && cal.synced === false ? "saved_cal_off" : "saved"}`);
+  res.redirect(`/projects/${s.project_id}?tab=sessions&open=${s.id}&flash=${calFlash(cal, "saved")}`);
 }));
 
 // ── 상태 토글(예정 ↔ 완료 ↔ 취소) ──
@@ -432,3 +444,4 @@ router.post("/sessions/:id/delete", requireEditor, asyncHandler(async (req, res)
 module.exports = router;
 module.exports.eventInputForSession = eventInputForSession; // settings.routes.js 캘린더 재동기화 버튼에서 재사용(제목 포맷 통일)
 module.exports.syncSessionEvent = syncSessionEvent; // 회귀 테스트(취소+무id 유령 일정 가드) 재사용
+module.exports.calFlash = calFlash; // 회귀 테스트(동기화 실패 안내 분기) 재사용

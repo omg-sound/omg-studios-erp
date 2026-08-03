@@ -307,8 +307,11 @@ const FLASH_MESSAGES = {
   drive_unlinked: "구글 Drive 연동이 필요합니다 — 구글 계정 연동 후 다시 시도하세요.",
   added_cal_off: "추가됨 · 구글 캘린더 자동 연동 안 됨 (환경설정 › 일반 › 스튜디오 캘린더 확인)",
   saved_cal_off: "저장됨 · 구글 캘린더 자동 연동 안 됨 (환경설정 › 일반 › 스튜디오 캘린더 확인)",
+  // API 오류(설정은 정상인데 구글이 거부·응답 실패). 설정 안내를 띄우면 엉뚱한 곳을 보게 되므로 문구를 나눈다.
+  added_cal_err: "추가됨 · 구글 캘린더에 반영되지 않았습니다 (다시 저장하거나 환경설정 › 구글 연동에서 재동기화)",
+  saved_cal_err: "저장됨 · 구글 캘린더에 반영되지 않았습니다 (다시 저장하거나 환경설정 › 구글 연동에서 재동기화)",
 };
-const FLASH_WARN = new Set(["last_chief", "drive_partial", "drive_unlinked", "added_cal_off", "saved_cal_off"]);
+const FLASH_WARN = new Set(["last_chief", "drive_partial", "drive_unlinked", "added_cal_off", "saved_cal_off", "added_cal_err", "saved_cal_err"]);
 function flashBanner(query) {
   const key = query && query.flash;
   // notice = 자유 문구(동기화 결과 등 동적 메시지). FLASH_MESSAGES 키가 아니므로 별도 처리 — esc로 이스케이프하고 길이 제한(배너 남용·깨짐 방지).
