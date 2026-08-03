@@ -335,7 +335,7 @@ router.post("/sessions", requireEditor, asyncHandler(async (req, res) => {
   // → 구글 FreeBusy 하드 차단은 비활성화하고, 룸별 겹침(앱 DB, createSession 내부 검사)을 정식 차단으로 삼는다.
   //   구글 캘린더 일정 자동 생성/수정/삭제 동기화는 그대로 유지.
   const cal = await syncSessionEvent(req.user, s); // 구글 캘린더에 일정 자동 생성 + 결과
-  res.redirect(`/projects/${s.project_id}?tab=sessions&flash=${cal && cal.synced === false ? "added_cal_off" : "added"}`);
+  res.redirect(`/projects/${s.project_id}?tab=sessions&open=${s.id}&flash=${cal && cal.synced === false ? "added_cal_off" : "added"}`);
 }));
 
 // ── 세션 수정 ──
@@ -352,7 +352,7 @@ router.post("/sessions/:id", requireEditor, asyncHandler(async (req, res) => {
   }
   if (!s) return res.status(404).send("세션을 찾을 수 없습니다.");
   const cal = await syncSessionEvent(req.user, s); // 일정 수정(취소면 삭제, id 없으면 생성) + 결과
-  res.redirect(`/projects/${s.project_id}?tab=sessions&flash=${cal && cal.synced === false ? "saved_cal_off" : "saved"}`);
+  res.redirect(`/projects/${s.project_id}?tab=sessions&open=${s.id}&flash=${cal && cal.synced === false ? "saved_cal_off" : "saved"}`);
 }));
 
 // ── 상태 토글(예정 ↔ 완료 ↔ 취소) ──

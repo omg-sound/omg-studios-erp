@@ -435,7 +435,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
             <button class="btn-ghost btn-xs text-danger" type="submit">일정 취소</button>
           </form>`;
   return `
-    <details class="group overflow-hidden rounded-lg border border-border bg-surface${s.status === "취소" ? " opacity-60" : ""}">
+    <details id="sess-${s.id}" class="group overflow-hidden rounded-lg border border-border bg-surface${s.status === "취소" ? " opacity-60" : ""}">
       <summary class="row-link flex cursor-pointer list-none items-start justify-between gap-2 p-3">
         ${header}
         <span class="flex shrink-0 items-center gap-2">${cancelToggle}${completeToggle}${statusBadge}${detailsChevron()}</span>

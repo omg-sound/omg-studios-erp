@@ -3070,12 +3070,13 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
   });
 })();
 
-// 프로젝트 청구 탭 펼침 복귀(?open=ID): 입금·상태 처리 후 그 인보이스 행으로 스크롤(서버가 details를 open으로 렌더).
+// 저장·처리 후 그 행으로 복귀(?open=ID): 청구 탭은 인보이스(inv-), 세션 탭은 세션 행(sess-).
+// 세션은 저장하면 서버가 목록을 다시 그려 페이지 맨 위로 튀었다(2026-08-03 사용자 요청 — 저장만 하고 그 자리에).
 (function () {
   "use strict";
   var m = (location.search || "").match(/[?&]open=(\d+)/);
   if (!m) return;
-  var el = document.getElementById("inv-" + m[1]);
+  var el = document.getElementById("inv-" + m[1]) || document.getElementById("sess-" + m[1]);
   if (!el || !el.scrollIntoView) return;
   // 레이아웃 안정(폰트·이미지 로드) 후 중앙 정렬 스크롤.
   setTimeout(function () { el.scrollIntoView({ block: "center" }); }, 60);
