@@ -736,14 +736,21 @@ function sortCellValue(cell) {
     syncTypeScoped();
   }
   // 세션 종류가 data-when-type 목록에 들면 show 요소를 켜고 hide 요소를 끈다(촬영 = 구간 입력 ↔ 시작·종료+소요).
+  // ⚠️`hidden` 속성만으로는 안 숨는다 — 시작·종료 줄이 `class="flex …"`라 [hidden]{display:none}이 Tailwind
+  //   display 유틸에 밀린다(함정 #26). 그래서 인라인 display도 함께 세팅한다. **hidden 속성은 유지**한다 —
+  //   segSpanMin()·applyAllDay 등이 `el.hidden`으로 상태를 읽으므로 지우면 그쪽 판정이 깨진다.
+  function setTypeHidden(el, on) {
+    el.hidden = on;
+    el.style.display = on ? "none" : "";
+  }
   function syncTypeScoped() {
     var cur = sessionTypeSel ? sessionTypeSel.value : "";
     var match = function (el) {
       var raw = el.getAttribute("data-when-type") || "";
       return raw.split(",").indexOf(cur) !== -1;
     };
-    Array.prototype.forEach.call(showWhenType, function (el) { el.hidden = !match(el); });
-    Array.prototype.forEach.call(hideWhenType, function (el) { el.hidden = match(el); });
+    Array.prototype.forEach.call(showWhenType, function (el) { setTypeHidden(el, !match(el)); });
+    Array.prototype.forEach.call(hideWhenType, function (el) { setTypeHidden(el, match(el)); });
   }
   // 1Pro~4Pro 프리셋: 녹음 단가 기준시간이 있으면 그걸, 없으면 스튜디오 기본 블록(proDefault)을 기준으로 항상 활성.
   // positionTicks도 같은 폴백으로 위치를 잡으므로 일관. 세션 종류·룸 예약과 무관하게 프리셋 클릭 가능(사용자 요청).
@@ -894,9 +901,28 @@ function sortCellValue(cell) {
       }
     }
     function closePop() { pop.classList.add("hidden"); }
+    // 칸을 떠날 때 부족한 자리를 채워 확정한다(2026-08-03 사용자 요청 — 네 자리를 다 쳐야 시간이 잡히던 것):
+    //   "9"→09:00 · "12"→12:00 · "123"→12:30 · "1230"→12:30.
+    // 세 자리는 **분을 왼쪽 정렬**한다 — 타이핑 중 표시가 "12:3"(HH:M의 중간 상태)이라 다음 타이가 분의 1의 자리이기 때문.
+    //   12시 3분은 "1203"으로 친다. 시(25 등)·분(75 등)이 범위를 벗어나면 손대지 않는다(서버 검증에 맡김 — 기존 동작).
+    // 타이핑 중(input)이 아니라 떠날 때 하는 이유: 즉시 채우면 "12"가 그 자리에서 12:00이 돼 "1230"을 칠 수 없다.
+    function completeTime() {
+      var digits = inp.value.replace(/[^0-9]/g, "").slice(0, 4);
+      if (!digits.length || digits.length === 4) return; // 빈 칸은 지운 의도 그대로, 네 자리는 이미 완전
+      var h = digits.length <= 2 ? digits : digits.slice(0, 2);
+      var m = digits.length <= 2 ? "00" : digits.slice(2);
+      h = h.length < 2 ? "0" + h : h;
+      m = m.length < 2 ? m + "0" : m; // 분은 왼쪽 정렬("3"→30분)
+      if (parseInt(h, 10) > 23 || parseInt(m, 10) > 59) return;
+      inp.value = h + ":" + m;
+      inp.dispatchEvent(new Event("input", { bubbles: true })); // hidden 동기·소요 역산 파이프라인 재사용(목록 클릭과 동일 경로)
+    }
     inp.addEventListener("focus", function () { inp.select(); openPop(); }); // 전체선택 → 타이핑만으로 교체
     inp.addEventListener("click", openPop);
-    inp.addEventListener("blur", closePop);
+    inp.addEventListener("blur", function () { completeTime(); closePop(); });
+    // 포커스 시 전체선택이라 그대로 끌면 그 텍스트가 드래그돼 다른 칸에 떨어진다(2026-08-03 사용자 리포트).
+    // dragstart만 막으면 '끌어 옮기기'는 사라지고 드래그로 범위를 고르는 것은 그대로 된다.
+    inp.addEventListener("dragstart", function (e) { e.preventDefault(); });
     pop.addEventListener("mousedown", function (e) { e.preventDefault(); }); // 클릭 전 blur 방지
     pop.addEventListener("click", function (e) {
       var b = e.target.closest && e.target.closest("[data-time-opt]");
@@ -909,7 +935,10 @@ function sortCellValue(cell) {
     inp.addEventListener("keydown", function (e) {
       if (e.isComposing || e.keyCode === 229) return; // IME 조합 중 무시(함정 #18)
       if (e.key === "Escape") closePop();
-      else if (e.key === "Enter" && !pop.classList.contains("hidden")) { e.preventDefault(); closePop(); } // 목록 열린 채 Enter=닫기(폼 오제출 방지)
+      else if (e.key === "Enter") {
+        completeTime(); // 목록이 닫힌 채 Enter로 제출되는 경로에서도 부족한 자리를 채워 보낸다
+        if (!pop.classList.contains("hidden")) { e.preventDefault(); closePop(); } // 목록 열린 채 Enter=닫기(폼 오제출 방지)
+      }
     });
   });
   // 촬영 구간 시각도 같은 처리를 붙인다 — **필수**: 보이는 입력은 nameless라 attachTimeFormat의

@@ -217,6 +217,60 @@ test("세션 폼(구글식): 시간 콤보(전체선택·30분 목록)·양방�
   assert.ok(!/opacity-50/.test(durationWrap.className), "해제 시 흐림 해제");
 });
 
+// ── ③a2 시간 부분 입력 확정(칸을 떠날 때 부족한 자리를 채운다 — 2026-08-03 사용자 요청) ──
+test("세션 폼: 시간은 네 자리를 다 안 쳐도 칸을 떠나면 확정된다(12→12:00, 123→12:30)", () => {
+  const rateItems = db().prepare("SELECT * FROM rate_items").all();
+  const html = `<form data-session-form>${sessionBookingFields({}, [], rateItems, [], "")}</form>`;
+  const { win, doc } = mountDom(html);
+  const start = doc.querySelector("[data-start-input]");
+  const hidden = start.closest("[data-time-combo]").querySelector("[data-time-hidden]");
+  const type = (v) => { start.value = v; fire(win, start, "input"); fire(win, start, "blur"); };
+  type("12");
+  assert.equal(start.value, "12:00", "두 자리 = 정시");
+  assert.equal(hidden.value, "12:00", "제출용 hidden도 확정값(보이는 입력은 nameless)");
+  type("9");
+  assert.equal(start.value, "09:00", "한 자리도 정시");
+  type("123");
+  assert.equal(start.value, "12:30", "세 자리는 분을 왼쪽 정렬(12시 3분은 1203)");
+  type("1230");
+  assert.equal(start.value, "12:30", "네 자리는 그대로");
+  type("25");
+  assert.equal(start.value, "25", "범위 밖(25시)은 손대지 않는다 — 서버 검증에 맡김");
+  start.value = ""; fire(win, start, "input"); fire(win, start, "blur");
+  assert.equal(start.value, "", "빈 칸은 지운 의도 그대로(00:00으로 채우지 않는다)");
+});
+
+// 종료 칸은 시작+소요 자동 계산의 대상이라, 치는 도중 덮어쓰이면 부분 입력이 성립하지 않는다.
+// (updatePreview의 `document.activeElement !== endInput` 가드가 그걸 막는다 — 여기서 그 가드까지 함께 잠근다.)
+test("세션 폼: 종료 시간도 부분 입력으로 확정되고 소요가 역산된다(치는 도중 자동계산이 덮지 않는다)", () => {
+  const rateItems = db().prepare("SELECT * FROM rate_items").all();
+  const html = `<form data-session-form>${sessionBookingFields({}, [], rateItems, [], "")}</form>`;
+  const { win, doc } = mountDom(html);
+  const start = doc.querySelector("[data-start-input]");
+  const end = doc.querySelector("[data-end-input]");
+  const hours = doc.querySelector("[data-custom-hours]");
+  start.value = "1400"; fire(win, start, "input"); fire(win, start, "blur");
+  end.focus();                       // 진짜 포커스 — 이게 없으면 자동계산 가드가 풀려 검증이 헛돈다
+  end.value = "18"; fire(win, end, "input");
+  assert.equal(end.value, "18", "치는 도중에는 시작+소요 자동계산이 이 칸을 덮지 않는다");
+  end.blur();                        // 칸을 떠남 = 확정
+  assert.equal(end.value, "18:00", "부분 입력 확정");
+  assert.equal(hours.value, "4", "확정과 함께 소요 역산(14:00→18:00 = 4시간)");
+  assert.equal(doc.querySelector('input[name="end_time"]').value, "18:00", "제출용 hidden도 확정값");
+});
+
+// ── ③a3 시간 칸 텍스트 드래그 금지(포커스 시 전체선택이라 그대로 끌면 다른 칸에 떨어졌다) ──
+test("세션 폼: 시간 칸은 값을 끌어 옮길 수 없다(dragstart 차단)", () => {
+  const rateItems = db().prepare("SELECT * FROM rate_items").all();
+  const html = `<form data-session-form>${sessionBookingFields({ start_time: "14:00" }, [], rateItems, [], "")}</form>`;
+  const { win, doc } = mountDom(html);
+  const times = [doc.querySelector("[data-start-input]"), doc.querySelector("[data-end-input]")];
+  times.forEach((el) => {
+    const ev = fire(win, el, "dragstart");
+    assert.equal(ev.defaultPrevented, true, "시간 칸 dragstart는 막힌다(드래그 선택은 그대로)");
+  });
+});
+
 // ── ③b1 날짜/시간 콤보 팝오버 버튼 = tabindex=-1(날짜 타이핑 후 Tab이 팝오버 버튼 아닌 다음 필드[시간]로) ──
 test("세션 폼: 날짜·시간 콤보 팝오버 버튼은 tabindex=-1(Tab이 다음 필드로 넘어감)", () => {
   const rateItems = db().prepare("SELECT * FROM rate_items").all();
@@ -234,6 +288,12 @@ test("세션 폼: 날짜·시간 콤보 팝오버 버튼은 tabindex=-1(Tab이 �
   const timeBtns = doc.querySelector("[data-start-input]").closest("[data-time-combo]").querySelectorAll("[data-time-opt]");
   assert.equal(timeBtns.length, 48, "시간 옵션 48개");
   assert.ok(Array.prototype.every.call(timeBtns, (b) => b.getAttribute("tabindex") === "-1"), "시간 옵션 전부 tabindex=-1");
+  // 시간 목록 **컨테이너**도 tabindex=-1이어야 한다(함정 #30) — overflow-auto 스크롤 영역인데 옵션이 전부
+  // tabindex=-1이라, 이게 없으면 크롬이 '포커스 가능한 스크롤러'로 보고 시작→종료 Tab을 가로챈다.
+  // jsdom엔 그 동작이 없어(레이아웃 없음) 마크업 계약만 잠근다 — 실브라우저 실측으로 확인(2026-08-03).
+  const timePops = doc.querySelectorAll("[data-time-pop]");
+  assert.ok(timePops.length > 0, "시간 목록 팝오버 존재");
+  assert.ok(Array.prototype.every.call(timePops, (p) => p.getAttribute("tabindex") === "-1"), "시간 목록 컨테이너 전부 tabindex=-1");
 });
 
 // ── ③b2 단가 항목 선택은 소요시간을 바꾸지 않는다(시간 흐름 우선 — 2026-07-05 사용자 요청) ──
@@ -2007,14 +2067,23 @@ test("세션 폼: 촬영 대관을 고르면 구간 입력이 나오고 시작·
   await tick();
   const seg = doc.querySelector("[data-segments]");
   const durWrap = doc.querySelector("[data-duration-wrap]");
+  // 시작–종료 줄은 `class="flex …"`라 hidden 속성만으로는 안 숨는다(함정 #26) → display까지 본다.
+  // jsdom은 CSS를 적용하지 않아 el.hidden만 단언하면 실브라우저에서 안 숨는 것을 통과시킨다(실제로 그랬다).
+  const timeRow = doc.querySelector("[data-start-input]").closest("[data-hide-when-type]");
+  assert.ok(/\bflex\b/.test(timeRow.className), "시작–종료 줄은 display 유틸(flex) 보유 — 이 테스트의 전제");
   assert.equal(seg.hidden, true, "녹음일 때는 구간 없음");
   assert.equal(durWrap.hidden, false);
+  assert.equal(timeRow.style.display, "", "녹음이면 시작–종료 줄 표시");
   setType(win, doc, "촬영 대관");
   assert.equal(seg.hidden, false, "촬영이면 구간 입력");
   assert.equal(durWrap.hidden, true, "같은 시간을 두 번 입력하게 두지 않는다");
+  assert.equal(timeRow.hidden, true, "시작–종료 줄도 숨김(속성 — segSpanMin 등이 읽는다)");
+  assert.equal(timeRow.style.display, "none", "속성만으로는 flex에 밀린다 — display도 함께");
   setType(win, doc, "녹음");
   assert.equal(seg.hidden, true, "되돌리면 다시 숨는다");
   assert.equal(durWrap.hidden, false);
+  assert.equal(timeRow.hidden, false, "되돌리면 시작–종료 줄 복원");
+  assert.equal(timeRow.style.display, "", "인라인 display도 걷어낸다(안 그러면 영영 안 보인다)");
 });
 
 test("세션 폼: 구간 시각은 제출용 hidden에 동기된다(보이는 입력은 nameless)", async () => {

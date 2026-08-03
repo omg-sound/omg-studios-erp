@@ -219,7 +219,9 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
         <input type="hidden" name="${name}" value="${esc(val || "")}" data-time-hidden />
         <input class="input w-[5.5rem] py-1.5 text-center text-sm tabular" type="text" inputmode="numeric" value="${esc(val || "")}" placeholder="${ph}" maxlength="5" autocomplete="off" ${extra} />
         <!-- 30분 단위 시간 목록은 app.js가 초기화 시 생성(48개 × 폼당 2박스가 서버 HTML을 불리던 것 — 2026-07-09 스케일 점검) -->
-        <div class="absolute left-0 z-30 mt-1 hidden max-h-56 w-24 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg" data-time-pop role="listbox"></div>
+        <!-- tabindex="-1" 필수: 이 목록은 스크롤 컨테이너인데 옵션 버튼이 전부 tabindex=-1이라
+             크롬이 '포커스 가능한 스크롤러'로 보고 Tab 대상으로 삼는다(함정 #30). -->
+        <div class="absolute left-0 z-30 mt-1 hidden max-h-56 w-24 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg" tabindex="-1" data-time-pop role="listbox"></div>
       </div>`;
   // ── 촬영 구간(2026-07-26) — 반입·설치 / 촬영 / 철수를 각각 시작·종료 시각으로 ──
   // 노출 조건은 **단가 kind로 파생**한다(화면에 '촬영'을 하드코딩하지 않음 — config가 종류↔kind의 진실원천).
