@@ -356,7 +356,9 @@ function projectForm(p = {}, err = "") {
   const action = "/projects";
   return `
     ${pageHeader({ title: "새 프로젝트" })}
-    <form method="post" action="${action}" class="card space-y-3">
+    <!-- data-artist-confirm: 아티스트를 안 적고 제출하면 app.js가 한 번 더 묻는다(2026-08-03 사용자 요청).
+         막지는 않는다 — 아티스트가 정해지기 전에 프로젝트를 먼저 여는 경우가 실제로 있다. -->
+    <form method="post" action="${action}" class="card space-y-3" data-artist-confirm>
       <input type="hidden" name="project_type" value="session" />
       ${e ? `<p class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">${esc(e)}</p>` : ""}
       <div class="grid gap-3 sm:grid-cols-2">

@@ -1844,6 +1844,20 @@ function comboKbdNav(input, pop) {
 // detail: { kind:'person'|'company'|'group', id, name, isArtist?, realName?, agency?, phone?, email?, company? }
 function announceParty(detail) { if (detail && detail.id && detail.name) document.dispatchEvent(new CustomEvent("party-created", { detail: detail })); }
 
+// 새 프로젝트 폼([data-artist-confirm]): 아티스트를 안 적고 제출하면 한 번 더 확인(2026-08-03 사용자 요청).
+// 판정은 **제출값(hidden)** 으로 한다 — 칸에 타이핑만 하고 칩으로 만들지 않으면 그 이름은 저장되지 않으므로
+// 사용자 눈엔 적은 것 같아도 '입력 안 함'이 맞다(그 경우까지 잡아주는 게 이 확인창의 값어치).
+(function () {
+  "use strict";
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (!form || !form.hasAttribute || !form.hasAttribute("data-artist-confirm")) return;
+    var hid = form.querySelector("[data-artist-hidden]");
+    if (hid && String(hid.value || "").trim()) return; // 아티스트 있음 → 그대로 진행
+    if (!window.confirm("아티스트를 입력하지 않았습니다. 이대로 저장할까요?")) e.preventDefault();
+  });
+})();
+
 // 아티스트 콤보([data-artist-combo]): 타이핑=기존 아티스트·사람 검색, 빈 입력=[검색]/[새 아티스트] 팝업(전체 목록 덤프 방지).
 // 기존 사람 선택 → hidden artist_contact_id 연결(저장 시 중복 사람 방지). '그룹' 체크는 밴드/팀(연락처 미연결).
 (function () {

@@ -62,7 +62,12 @@ function sessionTypeLabel(session) {
 
 function eventInputForSession(session, project) {
   const company = project.production_company || project.artist_company; // 제작사 우선, 없으면 레이블(레이블 자체 제작분)
-  const baseTitle = [project.artist, company].filter(Boolean).join(" · ") || project.title || "스튜디오 세션"; // 아티스트 먼저(2026-07-05 사용자 요청 — 이전엔 회사가 먼저)
+  // 앞자리 = **누구의 일인지**. 아티스트가 있으면 아티스트, 없으면 **프로젝트명**으로 대신한다
+  // (2026-08-03 사용자 요청 — 아티스트를 안 적으면 제목이 회사 이름 하나뿐이라 그 회사의 여러 일정이
+  //  캘린더에서 전부 같은 제목으로 보였다). 아티스트가 있으면 종전대로 프로젝트명은 넣지 않는다 —
+  //  제목이 길어지고, 프로젝트명은 이벤트 설명 맨 앞에 이미 있다.
+  const who = project.artist || project.title;
+  const baseTitle = [who, company].filter(Boolean).join(" · ") || "스튜디오 세션"; // 아티스트 먼저(2026-07-05 사용자 요청 — 이전엔 회사가 먼저)
   // 취소된 세션은 캘린더에서 삭제하지 않고 제목에 '(취소)' prefix를 붙여 기록으로 남긴다(2026-07-15 사용자 요청).
   const cancelable = session.status === "취소" ? `(취소) ${baseTitle}` : baseTitle;
   // 외부 일정은 **제목 맨 뒤에 장소**를 붙인다(2026-08-03 사용자 요청 — 월간뷰·알림에는 제목만 보여서

@@ -2245,3 +2245,42 @@ test("companyCombo(multi): 칩이 줄바꿈하지 않는 마크업 + placeholder
   fire(win, root.querySelector("[data-cc-pop] button[data-idx]"), "click");
   assert.equal(input.placeholder, "＋ 추가", "칩을 담으면 짧은 안내로");
 });
+
+// ── 새 프로젝트: 아티스트를 안 적고 저장하면 한 번 더 확인(2026-08-03 사용자 요청) ──
+// 판정은 제출값(hidden)으로 한다 — 칸에 타이핑만 하고 칩으로 만들지 않으면 그 이름은 저장되지 않으므로,
+// 사용자 눈엔 적은 것 같아도 '입력 안 함'이 맞다(그 경우까지 잡는 게 이 확인창의 값어치).
+test("새 프로젝트 폼: 아티스트 비었으면 확인창, 취소하면 제출 중단", () => {
+  const html = `<form action="/projects" method="post" data-artist-confirm>
+      <input type="hidden" name="artist" value="" data-artist-hidden /></form>`;
+  const cancel = mountDom(html);
+  let asked = 0;
+  cancel.win.confirm = () => { asked++; return false; };
+  const ev1 = fire(cancel.win, cancel.doc.querySelector("form"), "submit");
+  assert.equal(asked, 1, "비었으면 묻는다");
+  assert.equal(ev1.defaultPrevented, true, "취소 → 제출 중단");
+  // ⚠️ 같은 폼에 두 번 쏘면 **이중 제출 가드**가 막아 이 단언이 헛돈다 — 새로 마운트해 확인 경로를 본다.
+  const ok = mountDom(html);
+  ok.win.confirm = () => { asked++; return true; };
+  const ev2 = fire(ok.win, ok.doc.querySelector("form"), "submit");
+  assert.equal(asked, 2, "확인 경로에서도 묻는다");
+  assert.equal(ev2.defaultPrevented, false, "확인 → 그대로 저장(막지 않는다)");
+});
+
+test("새 프로젝트 폼: 아티스트가 있으면 묻지 않는다", () => {
+  const html = `<form action="/projects" method="post" data-artist-confirm>
+      <input type="hidden" name="artist" value="루나" data-artist-hidden /></form>`;
+  const { win, doc } = mountDom(html);
+  let asked = 0;
+  win.confirm = () => { asked++; return true; };
+  const ev = fire(win, doc.querySelector("form"), "submit");
+  assert.equal(asked, 0, "입력했으면 확인창 없음");
+  assert.equal(ev.defaultPrevented, false);
+});
+
+test("다른 폼은 이 가드에 걸리지 않는다(마커 없음)", () => {
+  const { win, doc } = mountDom(`<form action="/x" method="post"><input name="a" /></form>`);
+  let asked = 0;
+  win.confirm = () => { asked++; return true; };
+  fire(win, doc.querySelector("form"), "submit");
+  assert.equal(asked, 0);
+});

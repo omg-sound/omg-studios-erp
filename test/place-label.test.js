@@ -207,3 +207,23 @@ test("저장: 클라이언트가 보낸 라벨은 길이·개행만 정리한다
   const long = mk({ room_id: String(extRoom), location: "어딘가", location_label: "가".repeat(80) });
   assert.ok(long.location_label.length <= 40, "40자 상한");
 });
+
+// ── 제목 앞자리: 아티스트가 없으면 프로젝트명으로 대신한다(2026-08-03 사용자 요청) ──
+// 아티스트를 안 적으면 제목이 회사 이름 하나뿐이라, 그 회사의 여러 일정이 캘린더에서 전부 같은 제목이었다.
+test("제목: 아티스트가 없으면 프로젝트명 · 회사", () => {
+  const noArtist = { title: "8월 정기 녹음", production_company: "뮤직팜" };
+  assert.equal(eventInputForSession({ ...base }, noArtist).title, "8월 정기 녹음 · 뮤직팜");
+  // 아티스트가 있으면 종전대로 프로젝트명은 안 넣는다(길어지고, 설명 맨 앞에 이미 있다).
+  assert.equal(eventInputForSession({ ...base }, { ...noArtist, artist: "루나" }).title, "루나 · 뮤직팜");
+  // 회사도 없으면 프로젝트명만. 둘 다 없으면 폴백 문구.
+  assert.equal(eventInputForSession({ ...base }, { title: "8월 정기 녹음" }).title, "8월 정기 녹음");
+  assert.equal(eventInputForSession({ ...base }, {}).title, "스튜디오 세션");
+  // 소속사만 있는 경우(제작사 없음)도 같은 규칙 — 회사 자리는 제작사 우선, 없으면 레이블.
+  assert.equal(eventInputForSession({ ...base }, { title: "데모", artist_company: "워터멜론" }).title, "데모 · 워터멜론");
+});
+
+test("제목: 아티스트 없는 외부 일정 — 프로젝트명 · 회사 @장소, 취소면 접두까지", () => {
+  const p = { title: "8월 정기 녹음", production_company: "뮤직팜" };
+  assert.equal(eventInputForSession({ ...base, location_label: "잠실실내체육관" }, p).title, "8월 정기 녹음 · 뮤직팜 @잠실실내체육관");
+  assert.equal(eventInputForSession({ ...base, status: "취소", location_label: "장충체육관" }, p).title, "(취소) 8월 정기 녹음 · 뮤직팜 @장충체육관");
+});
