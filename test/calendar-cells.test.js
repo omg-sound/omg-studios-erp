@@ -53,3 +53,31 @@ test("연속·중복 없는 날짜(하루씩 증가)", () => {
     assert.equal(cur - prev, 86400000, `${c[i - 1].ymd} → ${c[i].ymd} 하루 차이`);
   }
 });
+
+// ── 다일 종일 일정은 덮는 칸 전부에 놓인다(2026-08-03 사용자 리포트 '3일짜리가 하루로만 뜬다') ──
+// 시작 칸에만 넣으면 이틀째부터 캘린더가 비어 보여, 서베이 화면의 목적(언제 뭐가 잡혀 있나)이 깨진다.
+const { monthCalendar } = require("../src/views.sessions");
+
+const sess = (extra) => ({
+  id: 7, project_id: 3, session_type: "녹음", status: "예정", project_title: "루나 1집", artist: "루나",
+  session_date: "2026-02-05", start_time: null, end_time: null, all_day: 1, end_date: null, billing: null, ...extra,
+});
+
+test("monthCalendar: 종일 3일(2/5~2/7) → 세 칸에 모두 칩", () => {
+  const html = monthCalendar("2026-02", [sess({ end_date: "2026-02-07" })]);
+  const chips = (html.match(/data-session-card="\/sessions\/7\/card"/g) || []).length;
+  assert.equal(chips, 3, `2/5·2/6·2/7 세 칸(실제 ${chips})`);
+  assert.match(html, /2월 5일~2월 7일/, "칸만 봐선 어디까지인지 모르니 기간을 툴팁에");
+});
+
+test("monthCalendar: 단일 종일·시간 세션은 한 칸만(과잉 확산 방지)", () => {
+  assert.equal((monthCalendar("2026-02", [sess({})]).match(/\/sessions\/7\/card/g) || []).length, 1, "단일 종일");
+  // 야간(자정 넘김)도 하루 일과라 시작일 한 칸 — 이틀에 걸쳐 그리면 오히려 길어 보인다.
+  const night = sess({ all_day: 0, start_time: "22:00", end_time: "02:00", end_date: null });
+  assert.equal((monthCalendar("2026-02", [night]).match(/\/sessions\/7\/card/g) || []).length, 1, "야간 시간 세션");
+});
+
+test("monthCalendar: end_date가 시작보다 앞이면(비정상) 한 칸으로 폴백", () => {
+  const bad = sess({ end_date: "2026-02-01" });
+  assert.equal((monthCalendar("2026-02", [bad]).match(/\/sessions\/7\/card/g) || []).length, 1);
+});

@@ -730,6 +730,10 @@ function sessionsForMonth(_user, ym) {
  * 캘린더 격자에 보이는 **전 범위** 세션(앞뒤 달 넘침 포함, 2026-07-21). sessionsForMonth가 `LIKE 'YYYY-MM-%'`로
  * 그 달만 주는 것과 달리, calendarMonthCells가 정한 첫 셀~끝 셀 사이를 BETWEEN으로 가져와 이웃 달 칸의 세션도 보이게 한다.
  * 뷰(monthCalendar)와 **같은 헬퍼**로 범위를 정하므로 격자와 조회 범위가 항상 일치한다.
+ *
+ * ⚠️ 조건은 **기간 겹침**이다(시작일 BETWEEN이 아니라) — 종일 다일 일정(end_date)은 시작일이 격자 앞에
+ * 있어도 이 달 칸을 덮는다. 시작일만 보면 3일짜리가 첫날에만, 그것도 시작일이 지난달이면 아예 안 보인다
+ * (2026-08-03 사용자 리포트 '3일짜리가 하루로만 뜬다' — 칸 배치는 monthCalendar가 함께 고쳤다).
  */
 function sessionsForCalendar(_user, ym) {
   if (!/^\d{4}-\d{2}$/.test(String(ym || ""))) return [];
@@ -741,10 +745,10 @@ function sessionsForCalendar(_user, ym) {
       .prepare(
         `SELECT s.*, p.title AS project_title, p.artist, p.artist_company, p.production_company FROM sessions s
          JOIN projects p ON p.id = s.project_id
-         WHERE s.session_date BETWEEN ? AND ?
+         WHERE s.session_date <= ? AND COALESCE(NULLIF(s.end_date, ''), s.session_date) >= ?
          ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC`
       )
-      .all(from, to)
+      .all(to, from)
   );
 }
 

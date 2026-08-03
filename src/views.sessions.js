@@ -380,7 +380,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
       ? `<span class="whitespace-nowrap text-success">예상 청구액 ${formatKRW(s.billing.amount)}</span>`
       : `<span class="whitespace-nowrap text-muted">청구액 미정 <span class="text-muted/70">(청구 시 입력)</span></span>`;
   const billLine = s.billing
-    ? `<div class="mt-1 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 break-keep text-xs tabular">
+    ? `<div class="mt-1 flex flex-wrap items-baseline justify-end gap-x-2.5 gap-y-0.5 break-keep text-xs tabular">
          ${amountChunk}
          <span class="break-keep text-muted">${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}</span>
          ${billStatusChunk}
@@ -530,8 +530,23 @@ function monthCalendar(ym, sessions) {
   const prevYm = mo === 1 ? `${y - 1}-12` : `${y}-${pad2(mo - 1)}`;
   const nextYm = mo === 12 ? `${y + 1}-01` : `${y}-${pad2(mo + 1)}`;
   const today = todayYmd();
+  // 종일 다일 일정은 **덮는 날짜 칸 전부**에 놓는다(2026-08-03 사용자 리포트 '3일짜리가 하루로만 뜬다').
+  // 시작 칸에만 넣으면 이틀째부터는 캘린더에서 그 방이 비어 보여, 서베이 화면의 목적(언제 뭐가 잡혀 있나)이 깨진다.
+  // 시간 세션의 야간(자정 넘김)은 종전대로 시작일 한 칸 — 하루 일과로 읽히고, 이틀에 걸쳐 그리면 오히려 길게 보인다.
   const byDate = {};
-  for (const s of sessions) (byDate[s.session_date] = byDate[s.session_date] || []).push(s);
+  const nextYmd = (d) => {
+    const t = new Date(`${d}T00:00:00Z`);
+    t.setUTCDate(t.getUTCDate() + 1);
+    return t.toISOString().slice(0, 10);
+  };
+  for (const s of sessions) {
+    const last = s.all_day && s.end_date && s.end_date > s.session_date ? s.end_date : s.session_date;
+    let d = s.session_date;
+    for (let guard = 0; d <= last && guard < 370; guard++) { // guard = 끝없는 순회 차단(비정상 end_date 대비)
+      (byDate[d] = byDate[d] || []).push(s);
+      d = nextYmd(d);
+    }
+  }
   const dows = ["일", "월", "화", "수", "목", "금", "토"];
 
   // 셀 경계는 개별 라운드 테두리·간격 대신 그리드 라인(border-b/border-r)으로 통합 — 카드·꾸밈 없이 화면 폭을 꽉 채운다(사용자 요청).
@@ -546,9 +561,13 @@ function monthCalendar(ym, sessions) {
           // 칩 라벨 = 아티스트/회사/프로젝트(누구·무엇인지 식별). 시간은 데스크톱에서만(모바일은 좁아 내용이 가려짐 — 사용자 요청).
           const label = esc(String(s.artist || s.production_company || s.artist_company || s.project_title || s.session_type).trim());
           const t = s.start_time ? esc(s.start_time) : "";
+          // 다일 종일은 같은 칩이 여러 칸에 반복되므로 기간을 툴팁에 적는다(어디까지인지 칸만 보면 모른다).
+          const span = s.all_day && s.end_date && s.end_date > s.session_date
+            ? ` · ${esc(formatYmdShort(s.session_date))}~${esc(formatYmdShort(s.end_date))}`
+            : "";
           // 구글 캘린더식 칩(2026-07-21 사용자 요청): 기본은 배경 없이 **색 점 + 글자**, 마우스 올리면 회색 하이라이트(hover:bg-muted/10).
           // data-session-card: app.js가 클릭 가로채 GET .../card 조각을 중앙 모달로(서베이 흐름 유지). 무JS 폴백=프로젝트 세션 탭 링크.
-          return `<a href="/projects/${s.project_id}?tab=sessions" data-session-card="/sessions/${s.id}/card" class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] leading-snug hover:bg-muted/10 sm:text-xs${s.status === "취소" ? " opacity-60" : ""}" title="${esc(s.session_type)} · ${esc(s.project_title || "")}${t ? " · " + t : ""}"><span class="h-1.5 w-1.5 shrink-0 rounded-full ${calendarDotColor(s.status)}"></span><span class="min-w-0 truncate font-medium">${t ? `<span class="hidden font-normal text-muted sm:inline">${t} </span>` : ""}${label}</span></a>`;
+          return `<a href="/projects/${s.project_id}?tab=sessions" data-session-card="/sessions/${s.id}/card" class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] leading-snug hover:bg-muted/10 sm:text-xs${s.status === "취소" ? " opacity-60" : ""}" title="${esc(s.session_type)} · ${esc(s.project_title || "")}${t ? " · " + t : ""}${span}"><span class="h-1.5 w-1.5 shrink-0 rounded-full ${calendarDotColor(s.status)}"></span><span class="min-w-0 truncate font-medium">${t ? `<span class="hidden font-normal text-muted sm:inline">${t} </span>` : ""}${label}</span></a>`;
         })
         .join("");
       // 이웃 달 칸: 흐린 배경 + 흐린 날짜(구글식). 세션은 그대로 보여준다(넘친 일정도 눈에 띄게).
