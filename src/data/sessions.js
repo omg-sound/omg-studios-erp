@@ -14,6 +14,7 @@
 const { db } = require("../db");
 const { todayYmd, isValidYmd, cleanTime, timeToMin, minutesBetween, calendarMonthCells } = require("../lib/date");
 const { parseMoney } = require("../lib/forms");
+const { MAX_LEN: PLACE_LABEL_MAX } = require("../lib/place-label"); // 캘린더 제목 라벨 길이 상한(계산은 라우트가 함)
 const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES, SESSION_SEGMENT_KINDS } = require("../config");
 const { getProjectForUser } = require("./projects"); // 무순환
 const { resolvePersonByName } = require("./parties"); // 무순환 — 디렉터=parties.id(사람)
@@ -104,7 +105,13 @@ function sessionFields(input) {
   const roomId = validRoomId(input.room_id); // 활성 룸 검증 — 없거나 삭제된 id는 null
   const { isExternalRoom } = require("./rooms"); // 무순환(rooms는 sessions를 require하지 않음)
   // 외부 장소(is_external)일 때만 주소(location) 저장 — 스튜디오 룸이면 null(기본 장소 사용).
-  const location = roomId && isExternalRoom(roomId) ? String(input.location || "").trim() || null : null;
+  const external = !!(roomId && isExternalRoom(roomId));
+  const location = external ? String(input.location || "").trim() || null : null;
+  // 캘린더 제목용 짧은 라벨(2026-08-03) — 주소와 **같은 조건**으로 다룬다. 장소를 스튜디오 룸으로 되돌렸는데
+  // 라벨만 남으면 제목에 옛 외부 장소가 계속 붙는다. 클라이언트가 보낸 값이라 길이·개행만 여기서 정리한다.
+  const locationLabel = external
+    ? String(input.location_label || "").replace(/\s+/g, " ").trim().slice(0, PLACE_LABEL_MAX) || null
+    : null;
   // 담당 디렉터·담당 엔지니어는 다대다(session_directors·session_engineers)로 별도 처리 — 여기선 레거시 컬럼 자리만 null(caller가 첫 명으로 채움).
   return {
     session_type: normalizeSessionType(input.session_type),
@@ -119,6 +126,7 @@ function sessionFields(input) {
     rate_item_id: rateItemId,
     room_id: roomId,
     location,
+    location_label: locationLabel,
     director_party_id: null,
     memo: String(input.memo || "").trim() || null,
   };
@@ -541,8 +549,8 @@ function createSession(user, projectId, input = {}) {
   try {
     const info = d
       .prepare(
-        `INSERT INTO sessions (project_id, session_type, session_date, all_day, end_date, start_time, end_time, booker_name, engineer_name, status, rate_item_id, room_id, location, director_party_id, memo)
-         VALUES (@project_id, @session_type, @session_date, @all_day, @end_date, @start_time, @end_time, @booker_name, @engineer_name, @status, @rate_item_id, @room_id, @location, @director_party_id, @memo)`
+        `INSERT INTO sessions (project_id, session_type, session_date, all_day, end_date, start_time, end_time, booker_name, engineer_name, status, rate_item_id, room_id, location, location_label, director_party_id, memo)
+         VALUES (@project_id, @session_type, @session_date, @all_day, @end_date, @start_time, @end_time, @booker_name, @engineer_name, @status, @rate_item_id, @room_id, @location, @location_label, @director_party_id, @memo)`
       )
       .run({ project_id: project.id, ...f });
     newId = info.lastInsertRowid;
@@ -582,7 +590,7 @@ function updateSession(user, sessionId, input = {}) {
       .prepare(
         `UPDATE sessions SET session_type=@session_type, session_date=@session_date, all_day=@all_day, end_date=@end_date, start_time=@start_time,
          end_time=@end_time, booker_name=@booker_name, engineer_name=@engineer_name, status=@status,
-         rate_item_id=@rate_item_id, room_id=@room_id, location=@location, director_party_id=@director_party_id,
+         rate_item_id=@rate_item_id, room_id=@room_id, location=@location, location_label=@location_label, director_party_id=@director_party_id,
          memo=@memo WHERE id=@id`
       )
       .run({ id: s.id, ...f });

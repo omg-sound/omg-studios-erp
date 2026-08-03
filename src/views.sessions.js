@@ -193,6 +193,10 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
          <label class="label-sm">장소 주소 <span class="font-normal text-muted text-xs">(외부 장소 — 구글 지도용 주소${config && config.placesApiKey ? " · 타이핑하면 제안" : ""})</span></label>
          <div class="relative" ${config && config.placesApiKey ? 'data-place-suggest data-place-url="/sessions/place-suggest"' : ""}>
            <input class="input py-1.5 text-sm" name="location" value="${esc(s.location || "")}" placeholder="예: 서울시 강남구 … / 장소명" autocomplete="off" data-place-input />
+           <!-- 캘린더 제목 뒤에 붙일 짧은 장소('잠실실내체육관'·'튀르키예 이스탄불', 2026-08-03).
+                제안에서 고를 때만 app.js가 채우고, 주소를 손으로 고치면 비운다 — 화면의 주소와 제목이 서로
+                다른 곳을 가리키면 안 된다(사람은 제목만 보고 움직인다). -->
+           <input type="hidden" name="location_label" value="${esc(s.location_label || "")}" data-place-label />
            <div class="absolute left-0 right-0 z-30 mt-1 hidden max-h-64 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg" data-place-pop role="listbox"></div>
          </div>
        </div>

@@ -3381,11 +3381,31 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
     function render() {
       if (!items.length) { pop.innerHTML = ""; hide(); return; }
       pop.innerHTML = items.map(function (it) {
-        return '<button type="button" class="flex w-full flex-col gap-0.5 px-3 py-2 text-left hover:bg-elevated active:bg-elevated" data-place-val="' + esc(it.value) + '"><span class="truncate text-sm text-fg">' + esc(it.label) + "</span>" + (it.sub ? '<span class="truncate text-xs text-muted">' + esc(it.sub) + "</span>" : "") + "</button>";
+        return '<button type="button" class="flex w-full flex-col gap-0.5 px-3 py-2 text-left hover:bg-elevated active:bg-elevated" data-place-val="' + esc(it.value) + '" data-place-id="' + esc(it.placeId || "") + '"><span class="truncate text-sm text-fg">' + esc(it.label) + "</span>" + (it.sub ? '<span class="truncate text-xs text-muted">' + esc(it.sub) + "</span>" : "") + "</button>";
       }).join("");
       hi = -1; show();
     }
-    function pick(val) { input.value = val; input.dispatchEvent(new Event("change", { bubbles: true })); hide(); items = []; }
+    // 캘린더 제목에 붙일 짧은 장소(2026-08-03). 🔒 **주소와 라벨은 함께 움직인다** — 고르면 채우고,
+    // 주소를 손으로 고치면 비운다. 안 그러면 '장충체육관'을 골랐다가 주소만 딴 곳으로 바꿔도 제목엔
+    // 장충체육관이 남아, 화면의 주소와 캘린더 제목이 서로 다른 곳을 가리킨다.
+    var labelField = (input.form || document).querySelector("[data-place-label]");
+    function setLabel(v) { if (labelField) labelField.value = v || ""; }
+    function fetchLabel(placeId) {
+      if (!labelField || !placeId) return;
+      fetch("/sessions/place-label?id=" + encodeURIComponent(placeId), { headers: { Accept: "application/json" }, credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { if (d && d.label) setLabel(d.label); }) // 실패·빈 값이면 라벨 없이 간다(제목 무변경)
+        .catch(function () {});
+    }
+    function pick(btn) {
+      var val = typeof btn === "string" ? btn : btn.getAttribute("data-place-val");
+      var pid = typeof btn === "string" ? "" : btn.getAttribute("data-place-id");
+      input.value = val;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      setLabel(""); // 새 장소를 고르는 중 — 옛 라벨을 먼저 지우고(조회 실패 시 옛 값이 남지 않게) 받아서 채운다
+      fetchLabel(pid);
+      hide(); items = [];
+    }
     function fetchSuggest() {
       var q = input.value.trim();
       lastQ = q;
@@ -3397,7 +3417,10 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
         .then(function (d) { if (input.value.trim() !== lastQ) return; items = Array.isArray(d) ? d : []; render(); })
         .catch(function () {});
     }
-    input.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(fetchSuggest, 250); });
+    input.addEventListener("input", function () {
+      setLabel(""); // 손으로 고친 주소 = 고른 장소가 아니다 → 제목에 옛 장소가 남지 않게 라벨을 버린다
+      clearTimeout(timer); timer = setTimeout(fetchSuggest, 250);
+    });
     input.addEventListener("blur", function () { setTimeout(hide, 150); });
     input.addEventListener("keydown", function (e) {
       if (e.isComposing || e.keyCode === 229) return; // 한글 IME 조합 중 키 무시
@@ -3409,14 +3432,14 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
         // 없으면 타이핑한 주소를 그대로 두고 목록만 닫는다(장소칸은 자유 입력 — 타이핑 텍스트 자체가 유효한 장소).
         if (open) {
           e.preventDefault();
-          if (hi >= 0 && pop.children[hi]) pick(pop.children[hi].getAttribute("data-place-val"));
+          if (hi >= 0 && pop.children[hi]) pick(pop.children[hi]); // 요소째 넘긴다 — 라벨 조회에 placeId가 필요
           else hide();
         }
       }
       else if (e.key === "Escape") { hide(); }
     });
     pop.addEventListener("mousedown", function (e) { e.preventDefault(); }); // 클릭 전 blur 방지
-    pop.addEventListener("click", function (e) { var b = e.target.closest("[data-place-val]"); if (b) pick(b.getAttribute("data-place-val")); });
+    pop.addEventListener("click", function (e) { var b = e.target.closest("[data-place-val]"); if (b) pick(b); });
     pop.addEventListener("mousemove", function (e) { var b = e.target.closest("[data-place-val]"); if (!b) return; var rs = pop.children; for (var k = 0; k < rs.length; k++) if (rs[k] === b) { setHi(k); break; } });
   });
 })();

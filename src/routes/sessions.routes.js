@@ -35,6 +35,7 @@ const { safePath } = require("../lib/nav");
 const { todayYmd } = require("../lib/date");
 const { parseMoney } = require("../lib/forms");
 const { asyncHandler } = require("../lib/async");
+const { placeLabel } = require("../lib/place-label"); // Places Details → 캘린더 제목용 짧은 장소 라벨
 const calendar = require("../calendar");
 
 const router = express.Router();
@@ -63,7 +64,12 @@ function eventInputForSession(session, project) {
   const company = project.production_company || project.artist_company; // 제작사 우선, 없으면 레이블(레이블 자체 제작분)
   const baseTitle = [project.artist, company].filter(Boolean).join(" · ") || project.title || "스튜디오 세션"; // 아티스트 먼저(2026-07-05 사용자 요청 — 이전엔 회사가 먼저)
   // 취소된 세션은 캘린더에서 삭제하지 않고 제목에 '(취소)' prefix를 붙여 기록으로 남긴다(2026-07-15 사용자 요청).
-  const title = session.status === "취소" ? `(취소) ${baseTitle}` : baseTitle;
+  const cancelable = session.status === "취소" ? `(취소) ${baseTitle}` : baseTitle;
+  // 외부 일정은 **제목 맨 뒤에 장소**를 붙인다(2026-08-03 사용자 요청 — 월간뷰·알림에는 제목만 보여서
+  // 어디서 하는 일정인지 열어봐야 알았다). 라벨은 자동완성에서 고를 때만 생기고, 스튜디오 룸 세션은
+  // sessionFields가 null로 지우므로 여기 조건 하나로 '외부 일정만'이 성립한다.
+  const placeTag = String(session.location_label || "").trim();
+  const title = placeTag ? `${cancelable} @${placeTag}` : cancelable;
   // 담당 디렉터(다대다) 이름 — 본명 (활동명) 병기(전면 병기 통일, 2026-07-05). 캘린더 설명에 포함.
   const directors = session.id ? listSessionDirectors(session.id).map((d) => personLabel(d.name, d.activity_name)).filter(Boolean) : [];
   // 담당 엔지니어(다대다, 2026-07-05) — 배정된 전원을 콤마로 병기(레거시 engineer_name은 첫 명뿐이라 여러 명일 때 누락됨).
@@ -245,6 +251,7 @@ router.get("/sessions/place-suggest", requireEditor, asyncHandler(async (req, re
         label: (p.structuredFormat && p.structuredFormat.mainText && p.structuredFormat.mainText.text) || (p.text && p.text.text) || "",
         sub: (p.structuredFormat && p.structuredFormat.secondaryText && p.structuredFormat.secondaryText.text) || "",
         value: (p.text && p.text.text) || (p.structuredFormat && p.structuredFormat.mainText && p.structuredFormat.mainText.text) || "",
+        placeId: p.placeId || "", // 캘린더 제목 라벨 조회용(/sessions/place-label) — 고른 항목에서만 쓴다
       }))
       .filter((x) => x.value)
       .slice(0, 6);
@@ -252,6 +259,34 @@ router.get("/sessions/place-suggest", requireEditor, asyncHandler(async (req, re
   } catch (e) {
     if (e.name !== "AbortError") console.error("[places] autocomplete 오류: " + (e && e.message)); // fail-safe
     res.json([]);
+  }
+}));
+
+// ── 캘린더 제목에 붙일 짧은 장소 라벨(JSON, 2026-08-03) ──
+// 자동완성에서 **고른 순간** 한 번 호출한다. 저장 경로에 두지 않는 이유: 라벨을 저장할 때 계산하면
+// 세션 저장이 외부 API 응답에 묶여, 구글이 느린 날 예약 저장까지 함께 느려진다(캘린더 동기화를 fail-safe로
+// 둔 것과 같은 이유). 고르는 순간은 이미 사용자가 네트워크를 기다리는 중이라 한 번 더 붙어도 체감이 없다.
+// 라벨 규칙은 lib/place-label(순수 함수) — 국내=장소명/동네+번지, 해외=국가+도시.
+router.get("/sessions/place-label", requireEditor, asyncHandler(async (req, res) => {
+  const id = String(req.query.id || "").trim();
+  // placeId는 URL 경로에 들어가므로 형태를 검증한다(구글 placeId = 영숫자·_·-).
+  if (!config.placesApiKey || !/^[A-Za-z0-9_-]{5,512}$/.test(id)) return res.json({ label: "" });
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const r = await fetch("https://places.googleapis.com/v1/places/" + encodeURIComponent(id) + "?languageCode=ko", {
+      headers: {
+        "X-Goog-Api-Key": config.placesApiKey,
+        "X-Goog-FieldMask": "id,types,displayName,shortFormattedAddress,addressComponents", // 마스크 필수(없으면 400)
+      },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!r.ok) { console.error("[places] details 실패 HTTP " + r.status); return res.json({ label: "" }); }
+    res.json({ label: placeLabel(await r.json()) });
+  } catch (e) {
+    if (e.name !== "AbortError") console.error("[places] details 오류: " + (e && e.message)); // fail-safe — 라벨만 없이 간다
+    res.json({ label: "" });
   }
 }));
 

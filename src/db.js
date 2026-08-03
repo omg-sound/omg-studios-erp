@@ -522,6 +522,9 @@ function init() {
   addColumn("sessions", "all_day", "INTEGER NOT NULL DEFAULT 0"); // 종일(Google/Apple 개념 = 하루 종일·시간 없음). all_day=1이면 start/end NULL
   addColumn("sessions", "end_date", "TEXT"); // 종일 다일(multi-day) 일정의 종료 날짜(NULL=session_date와 같은 날 = 단일일). 종일에서만 의미.
   addColumn("sessions", "location", "TEXT"); // 외부 장소 주소(구글 주소 등). 스튜디오 룸이면 NULL(기본 장소 사용). 외부 장소(rooms.is_external)일 때만 입력.
+  // 캘린더 제목 뒤에 붙일 짧은 장소 라벨("잠실실내체육관"·"이태원로15길 27-3"·"튀르키예 이스탄불", 2026-08-03).
+  // 자동완성에서 고를 때만 채워진다(Places Details → lib/place-label). NULL이면 제목을 안 건드린다.
+  addColumn("sessions", "location_label", "TEXT");
   addColumn("rooms", "is_external", "INTEGER NOT NULL DEFAULT 0"); // 외부 장소(주소 입력 대상). 세션 폼에서 이 장소 선택 시 주소 필드 노출.
   // ── 예약 대상(2026-07-26 룸 명칭 체계) ── 작업 공간이 아닌 장소(Lounge 등)는 bookable=0(세션 폼 장소 목록에서 제외).
   // parent_id는 **레거시 컬럼**(2026-07-28 계층 폐지 — 읽는 코드 0). 신선 DB에도 그대로 만든다:

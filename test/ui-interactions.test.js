@@ -1600,6 +1600,57 @@ test("장소 콤보: 제안 열림+Enter=폼 제출 차단(하이라이트 선�
   assert.ok(!fire(s.win, s.input, "keydown", { key: "Enter", isComposing: true }).defaultPrevented, "IME 조합 중 Enter 무시");
 });
 
+// ── 캘린더 제목용 장소 라벨: 고르면 채우고, 주소를 손으로 고치면 비운다(2026-08-03) ──
+// 🔒 이 둘이 어긋나면 화면의 주소와 캘린더 제목이 서로 다른 곳을 가리키고, 사람은 제목만 보고 움직인다.
+test("장소 콤보: 제안을 고르면 라벨을 받아 채우고, 주소를 고치면 라벨을 버린다", async () => {
+  const calls = [];
+  const fetchImpl = (url) => {
+    calls.push(String(url));
+    if (String(url).indexOf("/sessions/place-label") === 0) {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ label: "잠실실내체육관" }) });
+    }
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+  };
+  const html = `<form action="/x" method="post"><div data-place-suggest data-place-url="/sessions/place-suggest">`
+    + `<input data-place-input value="" /><input type="hidden" name="location_label" value="" data-place-label />`
+    + `<div data-place-pop class="hidden"></div></div></form>`;
+  const { win, doc } = mountDom(html, { fetchImpl });
+  const input = doc.querySelector("[data-place-input]");
+  const pop = doc.querySelector("[data-place-pop]");
+  const label = doc.querySelector("[data-place-label]");
+  pop.innerHTML = '<button type="button" data-place-val="대한민국 서울특별시 송파구 올림픽로 25 잠실실내체육관" data-place-id="ChIJ_abc-123">잠실실내체육관</button>';
+  pop.classList.remove("hidden");
+
+  fire(win, pop.firstElementChild, "click");
+  assert.equal(input.value, "대한민국 서울특별시 송파구 올림픽로 25 잠실실내체육관", "주소칸은 전체 주소로 채워진다");
+  assert.ok(calls.some((u) => u.indexOf("/sessions/place-label?id=ChIJ_abc-123") === 0), "고른 placeId로 라벨 조회");
+  await tick();
+  assert.equal(label.value, "잠실실내체육관", "받은 라벨을 제출용 hidden에 채운다");
+
+  // 주소를 손으로 고치면 라벨은 더 이상 그 주소를 가리키지 않는다 → 버린다.
+  input.value = "다른 곳 어딘가";
+  fire(win, input, "input");
+  assert.equal(label.value, "", "주소 수정 → 라벨 비움(제목에 옛 장소가 남지 않게)");
+});
+
+test("장소 콤보: 라벨 조회가 실패해도 주소는 정상 입력된다(fail-safe)", async () => {
+  const fetchImpl = (url) =>
+    String(url).indexOf("/sessions/place-label") === 0
+      ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) })
+      : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+  const html = `<form action="/x" method="post"><div data-place-suggest data-place-url="/sessions/place-suggest">`
+    + `<input data-place-input value="" /><input type="hidden" name="location_label" value="옛장소" data-place-label />`
+    + `<div data-place-pop class="hidden"></div></div></form>`;
+  const { win, doc } = mountDom(html, { fetchImpl });
+  const pop = doc.querySelector("[data-place-pop]");
+  pop.innerHTML = '<button type="button" data-place-val="어딘가" data-place-id="ChIJ_zzz">어딘가</button>';
+  pop.classList.remove("hidden");
+  fire(win, pop.firstElementChild, "click");
+  await tick();
+  assert.equal(doc.querySelector("[data-place-input]").value, "어딘가", "주소는 정상 입력");
+  assert.equal(doc.querySelector("[data-place-label]").value, "", "실패 시 옛 라벨이 남지 않는다(제목 무변경으로 간다)");
+});
+
 // ── 목록 실시간 필터: [data-live-filter] 검색 입력 타이핑 → [data-filter-list] 행을 즉시 필터(클라이언트 목록) ──
 test("목록 실시간 필터: 타이핑하면 매칭 행만 남고, 매칭 0이면 '결과 없음'", () => {
   const html = searchBox({ action: "/clients", liveFilter: true, placeholder: "이름" })
