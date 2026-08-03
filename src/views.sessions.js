@@ -391,6 +391,9 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
     ? (!s.rate_item_id ? "청구하려면 단가 항목을 선택하세요" : "청구하려면 시작·소요 시간을 입력하세요")
     : "";
   const reasonLine = billReason ? `<div class="mt-0.5 text-xs text-muted/70">${esc(billReason)}</div>` : "";
+  // 청구 줄(예상액·시간·항목·상태)은 왼쪽 정보 블록이 아니라 **완료 버튼이 있는 오른쪽 영역**에 둔다
+  // (2026-08-03 사용자 요청). 왼쪽에 두면 담당자·메모와 섞여 '이 세션이 얼마인가'가 한눈에 안 들어왔다.
+  // 청구 결핍 사유(reasonLine)는 왼쪽에 남긴다 — 안내 문장이라 오른쪽에서 접히면 읽기 나쁘다.
   const header = `
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2">
@@ -399,7 +402,6 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
             <span class="text-sm text-muted tabular">${timeLabel(s)}${dday}</span>
           </div>
           <div class="mt-0.5 space-y-0.5 text-xs text-muted">${sub}</div>
-          ${billLine}
           ${reasonLine}
         </div>`;
   // 비관리자: 단순 행(접기 없음).
@@ -408,7 +410,10 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
       <div class="row-link rounded-lg border border-border bg-surface p-3${s.status === "취소" ? " opacity-60" : ""}">
         <div class="flex items-start justify-between gap-2">
           ${header}
-          <div class="flex shrink-0 items-center gap-1">${statusBadge}</div>
+          <div class="flex min-w-0 flex-col items-end gap-1">
+            <div class="flex shrink-0 items-center gap-1">${statusBadge}</div>
+            ${billLine}
+          </div>
         </div>
       </div>`;
   }
@@ -438,7 +443,10 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
     <details id="sess-${s.id}" class="group overflow-hidden rounded-lg border border-border bg-surface${s.status === "취소" ? " opacity-60" : ""}">
       <summary class="row-link flex cursor-pointer list-none items-start justify-between gap-2 p-3">
         ${header}
-        <span class="flex shrink-0 items-center gap-2">${cancelToggle}${completeToggle}${statusBadge}${detailsChevron()}</span>
+        <div class="flex min-w-0 flex-col items-end gap-1">
+          <span class="flex shrink-0 items-center gap-2">${cancelToggle}${completeToggle}${statusBadge}${detailsChevron()}</span>
+          ${billLine}
+        </div>
       </summary>
       <div class="border-t border-border p-3">
         <form id="del-sess-${s.id}" method="post" action="/sessions/${s.id}/delete" data-confirm="이 세션을 삭제할까요?" class="hidden"></form>
