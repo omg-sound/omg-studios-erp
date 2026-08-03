@@ -147,3 +147,20 @@ test("sessionProjectCard: 청구 줄은 완료 버튼과 같은 오른쪽 묶음
   assert.ok(right.indexOf("예상 청구액") > -1 && right.indexOf("예상 청구액") < right.indexOf("</summary>"), "청구 줄이 오른쪽 묶음 안");
   assert.match(right, /완료<\/button>[\s\S]*예상 청구액/, "버튼이 위, 청구 줄이 아래");
 });
+
+// ── 저장 후 그 세션은 펼친 채로 둔다(2026-08-03 사용자 요청 '저장만 하고 알아서 닫을게') ──
+// 수정→저장은 서버 재렌더라 details가 기본값(닫힘)으로 돌아갔다. ?open=<id>가 스크롤만 하고 있었는데
+// 펼침까지 맡긴다(청구 탭 인보이스 행과 같은 방식 — 같은 파라미터, 같은 의미).
+const { sessionsSection } = require("../src/views.sessions");
+
+test("sessionsSection: ?open=한 세션만 펼친 채, 나머지는 닫힘", () => {
+  const rows = [row({ id: 11 }), row({ id: 12 })];
+  const html = sessionsSection({ project: { id: 5, title: "루나 1집" }, rows, isAdmin: true, openId: 12 });
+  assert.match(html, /<details id="sess-12" open/, "저장한 세션은 펼침");
+  assert.match(html, /<details id="sess-11"(?! open)/, "나머지는 닫힘");
+});
+
+test("sessionsSection: openId 없으면 전부 닫힘(평소 진입)", () => {
+  const html = sessionsSection({ project: { id: 5, title: "루나 1집" }, rows: [row({ id: 11 })], isAdmin: true });
+  assert.doesNotMatch(html, /<details id="sess-11" open/, "그냥 들어오면 접힌 목록");
+});

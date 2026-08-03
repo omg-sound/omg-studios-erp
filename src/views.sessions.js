@@ -329,7 +329,7 @@ function sessionCreateForm(project, managers, rateItems = [], rooms, defaultBook
 }
 
 /** 세션 한 행. showProject=true면 프로젝트명 링크 표시(전역 일정). tracks 전달 시 청구 작업 생성 폼 노출. */
-function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, showProject = false, projectTitle = "", pmName = "", optionsRef = "" } = {}) {
+function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, showProject = false, projectTitle = "", pmName = "", optionsRef = "", openId = null } = {}) {
   const typeBadge = `<span class="badge bg-bg text-muted">${esc(s.session_type)}</span>`;
   // 상태 배지: 예정·완료는 배지 없음(완료 버튼 토글이 상태를 나타냄 — 라벨 불필요). 취소 등만 배지 표시.
   const statusBadge = s.status === "예정" || s.status === "완료"
@@ -449,7 +449,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
             <button class="btn-ghost btn-xs text-danger" type="submit">일정 취소</button>
           </form>`;
   return `
-    <details id="sess-${s.id}" class="group overflow-hidden rounded-lg border border-border bg-surface${s.status === "취소" ? " opacity-60" : ""}">
+    <details id="sess-${s.id}"${openId != null && Number(openId) === Number(s.id) ? " open" : ""} class="group overflow-hidden rounded-lg border border-border bg-surface${s.status === "취소" ? " opacity-60" : ""}">
       <summary class="row-link flex cursor-pointer list-none items-start justify-between gap-2 p-3">
         ${header}
         <div class="flex min-w-0 flex-col items-end gap-1">
@@ -493,7 +493,7 @@ function sessionProjectCard(sessions, { isAdmin = false, managers = [], rateItem
 }
 
 /** 프로젝트 상세용 세션 섹션. 유형 구분 없이 항상 펼친 <section>으로 렌더(목록 + '새 세션 추가' 폼). */
-function sessionsSection({ project, rows, isAdmin, managers = [], rateItems = [], rooms, defaultBooker = "" }) {
+function sessionsSection({ project, rows, isAdmin, managers = [], rateItems = [], rooms, defaultBooker = "", openId = null }) {
   // PM(프로젝트 담당 엔지니어) — 세션 폼 우측 사이드에 읽기 전용 표기(구글 캘린더식 레이아웃, 수정은 프로젝트 탭에서).
   // managers는 **활성만**이라 퇴사·비활성 담당자가 PM이면 여기서 못 찾는다 → 그때만 비활성 포함으로 되짚는다.
   // 안 그러면 정보 탭은 'OOO (목록에 없음)'으로 기록을 보여주는데 세션 탭만 빈칸이 되는 비대칭이 생긴다
@@ -507,7 +507,7 @@ function sessionsSection({ project, rows, isAdmin, managers = [], rateItems = []
   const optionsRef = isAdmin ? "pc-shared-contacts" : "";
   const sharedOpts = isAdmin ? personComboOptionsScript(optionsRef, contactOptions()) + personComboCompanyScript("pc-company-shared", partyOptions({ role: "company" })) : "";
   const list = rows.length
-    ? rows.map((s) => sessionRow(s, { isAdmin, managers, rateItems, rooms: roomList, projectTitle: project.title, pmName, optionsRef })).join("")
+    ? rows.map((s) => sessionRow(s, { isAdmin, managers, rateItems, rooms: roomList, projectTitle: project.title, pmName, optionsRef, openId })).join("")
     : emptyState("등록된 세션이 없습니다.");
   const badge = rows.length ? `<span class="text-sm font-normal text-muted">${upcoming ? "예정 " + upcoming : rows.length}</span>` : "";
   return `
