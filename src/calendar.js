@@ -73,24 +73,35 @@ function rfc3339Kst(date, time, addDay = 0) {
 }
 
 
-/** 일정 시간 본문: 시작·종료 있으면 시간 일정(KST·야간 익일), 없으면 종일(다일이면 endDate까지). */
-function eventTimes(date, start, end, endDate) {
+/**
+ * 일정 시간 본문: 시작·종료 있으면 시간 일정(KST·야간 익일), 없으면 종일(다일이면 endDate까지).
+ *
+ * 🔒 `clearOpposite`(갱신 경로 전용) — **반대 필드를 명시적으로 null로 지운다.**
+ * `events.patch`는 중첩 객체까지 **병합**해서, 종일이던 일정을 시간으로 바꾸며 `start:{dateTime}`만
+ * 보내면 구글에 남아 있던 `start.date`와 합쳐져 date·dateTime이 공존하고 **400 Invalid start time**이
+ * 난다(2026-08-03 사용자 리포트 — 종일 3일→변경, 종일 1일→시간 둘 다 이 경로였고 fail-safe라
+ * 조용히 실패했다). 시간→종일 전환도 같은 이유로 막힌다.
+ * 생성(insert)에는 넣지 않는다 — 지울 기존 값이 없고, 불필요한 null은 거부될 여지만 만든다.
+ */
+function eventTimes(date, start, end, endDate, clearOpposite = false) {
   if (RE_TIME.test(start) && RE_TIME.test(end)) {
     const overnight = end <= start;
+    const clear = clearOpposite ? { date: null } : {};
     return {
-      start: { dateTime: rfc3339Kst(date, start), timeZone: "Asia/Seoul" },
-      end: { dateTime: rfc3339Kst(date, end, overnight ? 1 : 0), timeZone: "Asia/Seoul" },
+      start: { dateTime: rfc3339Kst(date, start), timeZone: "Asia/Seoul", ...clear },
+      end: { dateTime: rfc3339Kst(date, end, overnight ? 1 : 0), timeZone: "Asia/Seoul", ...clear },
     };
   }
   // 종일: Google end.date는 배타적(마지막 날 다음날). 다일(endDate>date)이면 endDate+1, 단일이면 date+1.
   const last = endDate && String(endDate) > String(date) ? String(endDate) : date;
   const dt = new Date(`${last}T00:00:00Z`);
   dt.setUTCDate(dt.getUTCDate() + 1);
-  return { start: { date }, end: { date: dt.toISOString().slice(0, 10) } };
+  const clear = clearOpposite ? { dateTime: null, timeZone: null } : {};
+  return { start: { date, ...clear }, end: { date: dt.toISOString().slice(0, 10), ...clear } };
 }
 
-function eventBody({ title, location, description, date, start, end, endDate, attendees }) {
-  const body = Object.assign({ summary: title || "스튜디오 세션" }, eventTimes(date, start, end, endDate));
+function eventBody({ title, location, description, date, start, end, endDate, attendees }, clearOpposite = false) {
+  const body = Object.assign({ summary: title || "스튜디오 세션" }, eventTimes(date, start, end, endDate, clearOpposite));
   if (location) body.location = location;
   if (description) body.description = description;
   // 참석자(프로젝트 매니저·예약담당자·담당엔지니어 이메일). 초대 메일은 안 보냄(캘린더 이벤트에만 표시) — sendUpdates 미지정(기본 none).
@@ -142,10 +153,24 @@ async function updateEvent(eventId, input = {}) {
   }
   if (!eventId) return createEvent(input); // 연동 후 처음 수정되는 옛 세션 → 새로 생성
   try {
-    await cal.events.patch({ calendarId: calId, eventId, requestBody: eventBody(input) });
+    // clearOpposite=true — patch 병합으로 date/dateTime이 공존하지 않게(종일↔시간 전환, 위 eventTimes 참조).
+    await cal.events.patch({ calendarId: calId, eventId, requestBody: eventBody(input, true) });
     return eventId;
   } catch (e) {
     if (e && e.code === 404) return createEvent(input); // 외부에서 지워졌으면 재생성
+    // 400이면 시간 형태 충돌일 가능성이 크다(종일↔시간 전환). null로 지우는 방식은 **구글 문서에 명시가 없어**
+    // 확증할 수 없으므로, 병합 자체가 없는 update(전체 교체)로 한 번 더 시도한다. 우리는 제목·장소·설명·
+    // 참석자·시간을 매번 전부 보내므로 교체해도 잃는 것이 없다(앱→구글 단방향이라 캘린더는 DB의 복제다).
+    if (e && e.code === 400) {
+      try {
+        await cal.events.update({ calendarId: calId, eventId, requestBody: eventBody(input) });
+        console.warn(`[calendar] updateEvent patch 400 → update로 복구 — msg=${e && e.message}`);
+        return eventId;
+      } catch (e2) {
+        console.error(`[calendar] updateEvent 실패(update 폴백도) — code=${e2 && e2.code} msg=${e2 && e2.message}`);
+        return eventId;
+      }
+    }
     console.error(`[calendar] updateEvent 실패 — code=${e && e.code} status=${e && e.status} msg=${e && e.message}`);
     return eventId; // 기타 오류는 기존 id 유지(fail-safe)
   }

@@ -44,3 +44,32 @@ test("eventTimes: 종료<시작 문자열 순서가 아닌 다일 종일은 endD
   const r = eventTimes("2026-02-05", null, null, "2026-02-01");
   assert.deepEqual(r, { start: { date: "2026-02-05" }, end: { date: "2026-02-06" } });
 });
+
+// ── 종일 ↔ 시간 전환(2026-08-03 사용자 리포트 '종일 3일 일정을 바꾸니 캘린더 연동이 안 된다') ──
+// events.patch는 **중첩 객체까지 병합**한다. 그래서 갱신 경로에서 반대 필드를 명시적으로 null로 지우지
+// 않으면 구글에 남아 있던 date와 새 dateTime이 공존해 400 "Invalid start time"이 난다(실제 로그로 확인).
+// fail-safe라 저장은 성공하고 캘린더만 조용히 옛 상태로 남았다.
+test("eventTimes(갱신): 시간 일정은 date를 null로 지운다 — 종일이던 일정을 시간으로 바꿀 수 있게", () => {
+  const r = eventTimes("2026-02-05", "14:00", "17:00", null, true);
+  assert.deepEqual(r, {
+    start: { dateTime: "2026-02-05T14:00:00+09:00", timeZone: "Asia/Seoul", date: null },
+    end: { dateTime: "2026-02-05T17:00:00+09:00", timeZone: "Asia/Seoul", date: null },
+  });
+});
+
+test("eventTimes(갱신): 종일은 dateTime·timeZone을 null로 지운다 — 시간이던 일정을 종일로 바꿀 수 있게", () => {
+  const r = eventTimes("2026-02-05", null, null, "2026-02-09", true);
+  assert.deepEqual(r, {
+    start: { date: "2026-02-05", dateTime: null, timeZone: null },
+    end: { date: "2026-02-10", dateTime: null, timeZone: null },
+  });
+});
+
+test("eventTimes(생성): 지울 기존 값이 없으므로 null을 넣지 않는다", () => {
+  // 기본값(clearOpposite=false) = 위 생성 경로 테스트들과 동일한 형태 — null 키가 섞이면 insert가 거부될 여지만 생긴다.
+  assert.deepEqual(eventTimes("2026-02-05", "14:00", "17:00"), {
+    start: { dateTime: "2026-02-05T14:00:00+09:00", timeZone: "Asia/Seoul" },
+    end: { dateTime: "2026-02-05T17:00:00+09:00", timeZone: "Asia/Seoul" },
+  });
+  assert.deepEqual(eventTimes("2026-02-05", null, null), { start: { date: "2026-02-05" }, end: { date: "2026-02-06" } });
+});
