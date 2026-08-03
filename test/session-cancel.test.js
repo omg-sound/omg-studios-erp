@@ -118,3 +118,32 @@ test("sessionCardModal: data-modal을 붙이지 않는다(스크롤 잠금이 �
   assert.ok(!/\sdata-modal[\s=>]/.test(html), "공용 스크롤 잠금 옵저버 대상에서 빠져야 배경이 살아 있다");
   assert.match(html, /data-modal-close/, "✕ 버튼은 남고 app.js가 직접 배선한다");
 });
+
+// ── 세션 행: 외부 일정이면 장소, 청구 줄은 완료 버튼 쪽(2026-08-03 사용자 요청) ──
+// 밖에서 하는 일은 '어디로 가나'가 그 행에서 먼저 필요한 정보고, 금액은 버튼 옆에 모아 한눈에 본다.
+const row = (extra) => ({
+  id: 1, project_id: 5, status: "예정", session_date: "2026-08-01", session_type: "녹음",
+  start_time: "14:00", end_time: "18:00", artist: "루나", production_company: "뮤직팜",
+  billing: { amount: 400000, minutes: 210, allDay: 0, fixed: 0, item: { name: "드럼·합주 녹음" } }, ...extra,
+});
+
+test("sessionProjectCard: 외부 일정만 장소 줄 — 라벨 우선, 전체 주소는 title로", () => {
+  const ext = sessionProjectCard([row({ location: "대한민국 서울특별시 송파구 올림픽로 25", location_label: "잠실실내체육관" })], { isAdmin: true });
+  assert.match(ext, /장소 <span class="text-fg">잠실실내체육관<\/span>/, "짧은 라벨을 보여준다");
+  assert.match(ext, /title="대한민국 서울특별시 송파구 올림픽로 25"/, "잘릴 수 있으니 전체 주소는 title에");
+  // 스튜디오 룸 세션은 location이 없다(sessionFields가 외부일 때만 저장) → 장소 줄도 없다.
+  assert.doesNotMatch(sessionProjectCard([row({})], { isAdmin: true }), /장소 <span/, "내부 세션: 장소 줄 없음");
+});
+
+test("sessionProjectCard: 라벨이 없으면(직접 친 주소) 그 주소를 그대로 쓴다", () => {
+  const html = sessionProjectCard([row({ location: "서울 어딘가 5층" })], { isAdmin: true });
+  assert.match(html, /장소 <span class="text-fg">서울 어딘가 5층<\/span>/);
+});
+
+test("sessionProjectCard: 청구 줄은 완료 버튼과 같은 오른쪽 묶음 안에 있다", () => {
+  const html = sessionProjectCard([row({})], { isAdmin: true });
+  // 오른쪽 묶음 = 버튼 줄 + 청구 줄을 세로로 쌓은 컨테이너. 청구 줄이 왼쪽 정보 블록에 남아 있으면 회귀.
+  const right = html.slice(html.indexOf("flex min-w-0 flex-col items-end"));
+  assert.ok(right.indexOf("예상 청구액") > -1 && right.indexOf("예상 청구액") < right.indexOf("</summary>"), "청구 줄이 오른쪽 묶음 안");
+  assert.match(right, /완료<\/button>[\s\S]*예상 청구액/, "버튼이 위, 청구 줄이 아래");
+});

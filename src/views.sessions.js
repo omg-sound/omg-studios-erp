@@ -391,6 +391,14 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
     ? (!s.rate_item_id ? "청구하려면 단가 항목을 선택하세요" : "청구하려면 시작·소요 시간을 입력하세요")
     : "";
   const reasonLine = billReason ? `<div class="mt-0.5 text-xs text-muted/70">${esc(billReason)}</div>` : "";
+  // 외부 일정이면 청구 줄이 비운 자리에 **장소**를 넣는다(2026-08-03 사용자 요청) — 밖에서 하는 일은
+  // 어디로 가야 하는지가 그 행에서 먼저 필요한 정보다. 표시는 짧은 라벨(자동완성으로 고른 이름) 우선,
+  // 없으면 입력한 주소. 잘릴 수 있으므로 전체 주소는 title로 남긴다.
+  // 판정 = location 보유 — sessionFields가 **외부 장소일 때만** 저장하므로 그 자체가 '외부 일정'이다.
+  const placeText = String(s.location_label || s.location || "").trim();
+  const placeLine = placeText
+    ? `<div class="mt-0.5 truncate text-xs text-muted" title="${esc(String(s.location || placeText))}">장소 <span class="text-fg">${esc(placeText)}</span></div>`
+    : "";
   // 청구 줄(예상액·시간·항목·상태)은 왼쪽 정보 블록이 아니라 **완료 버튼이 있는 오른쪽 영역**에 둔다
   // (2026-08-03 사용자 요청). 왼쪽에 두면 담당자·메모와 섞여 '이 세션이 얼마인가'가 한눈에 안 들어왔다.
   // 청구 결핍 사유(reasonLine)는 왼쪽에 남긴다 — 안내 문장이라 오른쪽에서 접히면 읽기 나쁘다.
@@ -402,6 +410,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
             <span class="text-sm text-muted tabular">${timeLabel(s)}${dday}</span>
           </div>
           <div class="mt-0.5 space-y-0.5 text-xs text-muted">${sub}</div>
+          ${placeLine}
           ${reasonLine}
         </div>`;
   // 비관리자: 단순 행(접기 없음).
