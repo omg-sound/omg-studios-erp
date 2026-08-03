@@ -6,6 +6,7 @@ const { requireBilling, requireInvoice, canBill, canInvoice } = require("../auth
 const { normalizeTaxStatus, normalizeDocType, DOC_TYPES, docNumberWithType } = require("../config");
 const {
   listInvoices,
+  invoiceCsv,
   getInvoiceForUser,
   listInvoiceItemsForInvoice,
   balanceOf,
@@ -49,6 +50,73 @@ function returnTo(req, fallback, flash, extra) {
 //  임의(커스텀) 청구가 필요해지면 그때 다시 빌드하기로 사용자 결정.)
 
 // ── 목록(URL = 필터) ──
+
+// ── 기간 필터(2026-08-03 사용자 요청 — 부가세는 분기 단위라 연/월로는 세 번 받아 붙여야 했다) ──
+const pad2 = (n) => String(n).padStart(2, "0");
+const lastDayOf = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate(); // m=1~12
+const monthRange = (y, from, to) => ({ from: `${y}-${pad2(from)}-01`, to: `${y}-${pad2(to)}-${pad2(lastDayOf(y, to))}` });
+
+/** 기간 프리셋 — 이름 → {from,to}. '전체'는 null(조건 없음). */
+function periodPresets() {
+  const today = todayYmd();
+  const y = Number(today.slice(0, 4));
+  const q = Math.floor((Number(today.slice(5, 7)) - 1) / 3) + 1; // 1~4
+  const prevQ = q === 1 ? { y: y - 1, q: 4 } : { y, q: q - 1 };
+  const qr = (yy, qq) => monthRange(yy, (qq - 1) * 3 + 1, (qq - 1) * 3 + 3);
+  return [
+    { key: "", label: "전체", range: null },
+    { key: "q", label: `${q}분기`, range: qr(y, q) },
+    { key: "pq", label: `${prevQ.q}분기${prevQ.y !== y ? ` (${prevQ.y})` : ""}`, range: qr(prevQ.y, prevQ.q) },
+    { key: "y", label: `${y}년`, range: monthRange(y, 1, 12) },
+    { key: "py", label: `${y - 1}년`, range: monthRange(y - 1, 1, 12) },
+  ];
+}
+
+/**
+ * 🔒 목록 화면과 CSV가 **이 함수 하나로** 걸러진다. 갈리면 "화면엔 12건인데 파일엔 30건"이 되고,
+ * 그 순간 파일을 신고 자료로 못 쓴다(무엇이 빠졌는지 사람이 알 수 없다).
+ * 기간은 **발행일** 기준 — 세무 신고가 발행일로 이뤄지고 청구 목록 정렬 기준도 발행일이다.
+ */
+function filteredInvoices(user, { filter = "all", q = "", from = "", to = "" } = {}) {
+  let rows = listInvoices(user, {});
+  if (filter !== "all") rows = rows.filter((i) => invoiceTaxTab(i) === filter);
+  if (from || to) {
+    rows = rows.filter((i) => {
+      const d = String(i.issued_date || "");
+      if (!d) return false; // 발행일이 없으면 어느 기간에도 못 넣는다(기간을 고른 순간 판단 불가는 제외가 맞다)
+      return (!from || d >= from) && (!to || d <= to);
+    });
+  }
+  if (q) {
+    const ql = q.toLowerCase();
+    rows = rows.filter((i) =>
+      (i.title || "").toLowerCase().includes(ql) ||
+      (i.invoice_number || "").toLowerCase().includes(ql) ||
+      (i.client_name || "").toLowerCase().includes(ql));
+  }
+  return rows;
+}
+
+/** 유효한 YYYY-MM-DD만 통과(직접 입력·북마크 방어). */
+const cleanYmd = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : "");
+
+// ── 청구 내역 CSV(세무사·홈택스 제출용, 2026-08-03) ──
+// 🔒 **화면에서 보고 있는 그대로** 내려준다 — 같은 filteredInvoices를 쓰므로 목록 건수와 파일 줄 수가 같다.
+// 권한은 requireInvoice(대표·치프) — 사업자번호·발행 이메일이 들어가므로 목록(requireBilling)보다 좁힌다.
+router.get("/export.csv", requireInvoice, (req, res) => {
+  const filter = ["todo", "done", "paid"].includes(req.query.filter) ? req.query.filter : "all";
+  const from = cleanYmd(req.query.from);
+  const to = cleanYmd(req.query.to);
+  const rows = filteredInvoices(req.user, { filter, q: (req.query.q || "").toString().trim(), from, to });
+  const label = { all: "전체", todo: "발행필요", done: "발행완료", paid: "입금완료" }[filter];
+  const period = from || to ? `_${from || "처음"}~${to || "끝"}` : "";
+  const fname = `청구내역_${label}${period}.csv`;
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(fname)}`);
+  res.setHeader("Cache-Control", "no-store"); // 거래처 사업자번호·금액 = 민감
+  res.send(invoiceCsv(rows));
+});
+
 router.get("/", requireBilling, (req, res) => {
   const user = req.user;
   const admin = canBill(user);
@@ -57,21 +125,14 @@ router.get("/", requireBilling, (req, res) => {
   // 상태 필터(2026-07-16 사용자 요청 — 탭 → 상태 컬럼 + 필터칩): 전체(기본) / 발행 필요(계산서 미발행) /
   // 발행 완료(계산서만 발행, 입금 전) / 입금완료. invoiceTaxTab이 각 인보이스의 상태 그룹(todo/done/paid)을 반환.
   const filter = ["todo", "done", "paid"].includes(req.query.filter) ? req.query.filter : "all";
+  const from = cleanYmd(req.query.from);
+  const to = cleanYmd(req.query.to);
   const allRows = listInvoices(user, {});
-  const counts = { all: allRows.length, todo: 0, done: 0, paid: 0 };
-  for (const i of allRows) counts[invoiceTaxTab(i)]++;
-  let rows = filter === "all" ? allRows : allRows.filter((i) => invoiceTaxTab(i) === filter);
-
-  // 라우트 레벨 q 필터(제목·채번·클라이언트명 부분일치, 소문자 비교). data.js 수정 없음.
-  if (q) {
-    const ql = q.toLowerCase();
-    rows = rows.filter(
-      (i) =>
-        (i.title || "").toLowerCase().includes(ql) ||
-        (i.invoice_number || "").toLowerCase().includes(ql) ||
-        (i.client_name || "").toLowerCase().includes(ql)
-    );
-  }
+  // 상태 칩 건수는 **기간 안에서** 센다 — 기간을 걸어 두고 칩 숫자만 전체면 눌렀을 때 수가 안 맞는다.
+  const inPeriod = filteredInvoices(user, { filter: "all", q, from, to });
+  const counts = { all: inPeriod.length, todo: 0, done: 0, paid: 0 };
+  for (const i of inPeriod) counts[invoiceTaxTab(i)]++;
+  const rows = filteredInvoices(user, { filter, q, from, to });
 
   const totalDue = allRows.reduce((s, i) => s + (i.status === "발행" ? balanceOf(i) : 0), 0); // 미수금 합계=전체 기준(필터 무관)
   // 이번 달 발행액(VAT 포함) — status<>'미발행' & 발행일 YYYY-MM=이번 달(invoiceStats.thisMonthIssued와 동일 로직, 2026-07-18 사용자 요청).
@@ -81,6 +142,9 @@ router.get("/", requireBilling, (req, res) => {
   const thisMonthIssued = issuedInPeriod(7, thisMonth);
   const thisYearIssued = issuedInPeriod(4, thisYear); // 올해 발행액(VAT 포함, 2026-07-18 사용자 요청)
 
+  // 🔒 기간은 상태 칩·검색·더보기·행 복귀 **전부**에 실어야 한다 — 한 곳만 빠져도 거기서 기간이 풀린다.
+  const periodQ = (from ? `&from=${from}` : "") + (to ? `&to=${to}` : "");
+  const qQ = q ? "&q=" + encodeURIComponent(q) : "";
   const chips = filterChips({
     chips: [
       { key: "all", label: `전체 ${counts.all}` },
@@ -89,8 +153,28 @@ router.get("/", requireBilling, (req, res) => {
       { key: "paid", label: `입금완료 ${counts.paid}` },
     ],
     activeKey: filter,
-    hrefFn: (k) => `/invoices?filter=${k}${q ? "&q=" + encodeURIComponent(q) : ""}`,
+    hrefFn: (k) => `/invoices?filter=${k}${qQ}${periodQ}`,
   });
+  // 기간 줄 = 프리셋(분기·연도) + 직접 입력. 부가세 신고 단위가 분기라 한 번에 잡히게 둔다.
+  const presets = periodPresets()
+    .map((p) => {
+      const active = (p.range ? p.range.from : "") === from && (p.range ? p.range.to : "") === to;
+      const href = `/invoices?filter=${filter}${qQ}` + (p.range ? `&from=${p.range.from}&to=${p.range.to}` : "");
+      return `<a href="${href}" class="rounded-md px-2.5 py-1 text-sm ${active ? "bg-primary text-primary-fg" : "text-muted hover:text-fg"}">${esc(p.label)}</a>`;
+    })
+    .join("");
+  const periodBar = `<div class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+      <span class="text-sm text-muted">기간</span>
+      <div class="flex flex-wrap items-center gap-0.5 rounded-lg border border-border p-0.5">${presets}</div>
+      <form method="get" action="/invoices" class="flex items-center gap-1.5">
+        <input type="hidden" name="filter" value="${esc(filter)}" />
+        ${q ? `<input type="hidden" name="q" value="${esc(q)}" />` : ""}
+        <input type="date" name="from" value="${esc(from)}" class="input w-[9.5rem] py-1 text-sm" aria-label="시작 발행일" />
+        <span class="text-muted">~</span>
+        <input type="date" name="to" value="${esc(to)}" class="input w-[9.5rem] py-1 text-sm" aria-label="종료 발행일" />
+        <button class="btn-ghost btn-sm" type="submit">적용</button>
+      </form>
+    </div>`;
 
   const searchBar = searchBox({
     action: "/invoices",
@@ -98,13 +182,15 @@ router.get("/", requireBilling, (req, res) => {
     placeholder: "제목 · 청구번호 · 청구처 검색",
     label: "청구 검색",
     liveFilter: true, // 타이핑 시 로드된 표 행 즉시 필터(2026-07-16 사용자 요청). 검색 버튼=캡 넘는 서버 전체 검색.
-    hidden: `<input type="hidden" name="filter" value="${esc(filter)}" />`,
+    hidden: `<input type="hidden" name="filter" value="${esc(filter)}" />`
+      + (from ? `<input type="hidden" name="from" value="${esc(from)}" />` : "")
+      + (to ? `<input type="hidden" name="to" value="${esc(to)}" />` : ""),
   });
   const resultNote = q
-    ? `<div class="mb-3 text-sm text-muted">"${esc(q)}" 결과 ${rows.length}건 · <a href="/invoices?filter=${filter}" class="text-primary hover:underline">검색 초기화</a></div>`
+    ? `<div class="mb-3 text-sm text-muted">"${esc(q)}" 결과 ${rows.length}건 · <a href="/invoices?filter=${filter}${periodQ}" class="text-primary hover:underline">검색 초기화</a></div>`
     : "";
 
-  const retPath = `/invoices?filter=${filter}${q ? "&q=" + encodeURIComponent(q) : ""}`;
+  const retPath = `/invoices?filter=${filter}${qQ}${periodQ}`;
   // 목록 상한(2026-07-09 스케일 점검) — 입금완료가 해가 갈수록 누적되므로 기본 100건 + 더 보기.
   const cap = capList(rows, req.query, (n) => `${retPath}&limit=${n}`);
   const shown = cap.shown;
@@ -135,8 +221,13 @@ router.get("/", requireBilling, (req, res) => {
 
   const body = `
     ${flashBanner(req.query)}
-    ${pageHeader({ title: "청구", desc: admin ? "발행·입금" : "내 청구 내역" })}
+    ${pageHeader({
+      title: "청구",
+      desc: admin ? "발행·입금" : "내 청구 내역",
+      action: invoicer ? `<a href="/invoices/export.csv?filter=${filter}${qQ}${periodQ}" class="btn-ghost btn-sm">청구 CSV</a>` : "",
+    })}
     ${overview}
+    ${periodBar}
     ${chips}
     ${searchBar}
     ${resultNote}
@@ -383,4 +474,7 @@ router.post("/:id/delete", requireBilling, (req, res) => {
 });
 
 module.exports = router;
+// 회귀 테스트 재사용 — 화면과 CSV가 같은 필터를 쓰는지 검증한다(둘이 갈리면 파일을 신고 자료로 못 쓴다).
+module.exports.filteredInvoices = filteredInvoices;
+module.exports.periodPresets = periodPresets;
 module.exports.applyTaxStatusTx = applyTaxStatusTx; // 단건·일괄 공용 상태전환(테스트용 노출)

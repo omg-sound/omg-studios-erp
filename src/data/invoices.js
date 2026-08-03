@@ -60,6 +60,65 @@ function snapshotPayer(payerId) {
  * 의미 필드만 골라 비교(JSON 문자열 비교 금지 — 옛 스냅샷은 이후 추가된 키가 없어 내용이 같아도 오탐).
  * 스냅샷 없는 레거시(실시간 표시)·청구처 삭제·미지정은 false(새로고침 개념 없음).
  */
+/**
+ * 청구 내역 CSV — **세무사·홈택스 제출용**(2026-08-03 사용자 요청). 매출 CSV(공급가·발생 기준 분석)와
+ * 달리 이쪽은 **계산서 발행·입금 현황**이 축이다: 누구에게(사업자번호까지) 얼마를 청구했고, 계산서가
+ * 나갔는지, 얼마가 들어왔고 얼마가 남았는지.
+ *
+ * 🔒 거래처 정보는 **발행 시점 스냅샷**을 먼저 본다 — 그 뒤 거래처 상호·사업자번호가 바뀌어도 발행 당시
+ * 값이 신고 근거다(스냅샷 없는 레거시 건만 현재 값으로 폴백).
+ * ⚠️ 사업자번호와 현금영수증번호는 **칸을 나눈다**. 한 칸에 섞으면 세무사가 계산서 건과 현금영수증 건을
+ * 구분하려고 다시 되짚어야 한다(발행 경로가 아예 다르다).
+ */
+const INVOICE_CSV_HEADERS = [
+  "발행일", "청구번호", "거래처", "구분", "사업자번호", "현금영수증번호", "대표자",
+  "프로젝트", "아티스트", "공급가", "VAT", "할인", "합계", "계산서상태", "입금액", "미수금", "발행이메일",
+];
+
+function invoiceCsv(rows) {
+  const { toCsv } = require("../lib/csv");
+  // 스냅샷이 없는 건(2026-07 이전 발행분·레거시)은 **현재 거래처 값**으로 폴백한다 — 안 그러면 사업자번호 칸이
+  // 통째로 비어 세무사가 상호로 되짚어야 하고, 상호가 비슷한 곳이 있으면 틀린다. 행마다 조회하지 않고 한 번에.
+  const ids = [...new Set((rows || []).map((i) => i.payer_id).filter(Boolean))];
+  const partyById = new Map();
+  if (ids.length) {
+    const ph = ids.map(() => "?").join(",");
+    for (const p of db().prepare(`SELECT id, name, kind, biz_no, owner_name, cash_receipt_no, email FROM parties WHERE id IN (${ph})`).all(...ids)) {
+      partyById.set(p.id, p);
+    }
+  }
+  const body = (rows || []).map((i) => {
+    let snap = {};
+    try { snap = JSON.parse(i.payer_snapshot || "{}") || {}; } catch (_e) { snap = {}; }
+    const cur = partyById.get(i.payer_id) || {};
+    const pick = (k, fallback = "") => String(snap[k] || cur[k] || fallback || "").trim();
+    const bizNo = pick("biz_no");
+    const cash = pick("cash_receipt_no");
+    // 구분 = 발행 경로. 사업자번호가 있으면 개인이라도 계산서를 끊으므로 '사업자'로 본다(payerDocMissing과 같은 규칙).
+    const kind = bizNo ? "사업자" : cash ? "개인" : i.payer_kind === "person" ? "개인" : "사업자";
+    return [
+      i.issued_date || "",
+      i.invoice_number || "",
+      pick("name", i.client_name),
+      kind,
+      bizNo,
+      cash,
+      pick("owner_name"),
+      i.project_title || "",
+      i.project_artist || "",
+      (i.amount || 0) - (i.tax_amount || 0), // 공급가(VAT 제외)
+      i.tax_amount || 0,
+      i.discount_amount || 0,
+      i.amount || 0, // 합계(VAT 포함 발행액)
+      i.tax_status || "",
+      i.paid_amount || 0,
+      balanceOf(i),
+      pick("email"),
+    ];
+  });
+  return toCsv(INVOICE_CSV_HEADERS, body);
+}
+
 function payerSnapshotChanged(inv) {
   if (!inv || !inv.payer_id || !inv.payer_snapshot) return false;
   const cur = snapshotPayer(inv.payer_id);
@@ -661,6 +720,8 @@ function listInvoicesForProject(user, projectId) {
 }
 
 module.exports = {
+  invoiceCsv,
+  INVOICE_CSV_HEADERS,
   invoiceItemsByInvoiceIds,
   balanceOf,
   invoiceTaxTab,
