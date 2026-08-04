@@ -157,6 +157,23 @@ function rateOptionsHtml(rateItems, currentId) {
 }
 
 /**
+ * 세션 종류 select 표시 순서 — 요금표 분류(환경설정) 배치 순서를 따라간다(2026-08-05 사용자 요청,
+ * 환경설정에서 분류 순서를 바꾸면 이 목록도 자동으로 따라감). 분류로 표현되지 않는 종류(믹싱·마스터링·기타)는
+ * SESSION_TYPES 원래 순서 그대로 뒤에 붙는다 — 값(session_type) 자체는 무변경, 표시 순서만 이 함수가 정한다.
+ */
+function orderedSessionTypes() {
+  const kindToType = {};
+  for (const [t, k] of Object.entries(SESSION_TYPE_RATE_KIND)) kindToType[k] = t;
+  const seen = new Set();
+  const fromRates = [];
+  for (const c of listRateCategories()) {
+    const t = kindToType[c.kind];
+    if (t && !seen.has(t)) { seen.add(t); fromRates.push(t); }
+  }
+  return [...fromRates, ...SESSION_TYPES.filter((t) => !seen.has(t))];
+}
+
+/**
  * 예약(생성)용 폼 필드 — 시작 버튼 그리드 + 소요시간 버튼. 종료는 서버가 계산.
  * 녹음 프로젝트: '녹음 종류'(단가표 항목을 분류로 묶음) 한 필드 + session_type='녹음' 고정.
  * 그 외(믹스 등): '세션 종류'(session_type) + '녹음 종류'(단가표 항목) 두 필드. 라벨은 편집 폼과 통일.
@@ -182,7 +199,7 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
   const rateKindsAttr = Object.entries(SESSION_TYPE_RATE_KIND).map(([k, v]) => `${k}:${v}`).join(","); // "녹음:recording,촬영:filming,공연:performance"
   const typeRateRow = `<div class="grid gap-2 sm:grid-cols-3">
          <div><label class="label-sm">세션 종류</label>
-          <select class="input py-1.5 text-sm" name="session_type" data-rec-types="${esc(RENTAL_SESSION_TYPES.join(","))}" data-rate-kinds="${esc(rateKindsAttr)}">${SESSION_TYPES.map((t) => `<option value="${esc(t)}" ${t === s.session_type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+          <select class="input py-1.5 text-sm" name="session_type" data-rec-types="${esc(RENTAL_SESSION_TYPES.join(","))}" data-rate-kinds="${esc(rateKindsAttr)}">${orderedSessionTypes().map((t) => `<option value="${esc(t)}" ${t === s.session_type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
          <div data-show-when="rec"><label class="label-sm">단가 항목</label>
           <select class="input py-1.5 text-sm" name="rate_item_id" data-rate-select>${rateOptionsHtml(curItems, s.rate_item_id)}</select>
           ${rateKinds.map((k) => `<template data-rate-opts-${k}>${rateOptionsHtml(itemsByKind[k], s.rate_item_id)}</template>`).join("")}</div>
