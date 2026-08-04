@@ -208,6 +208,8 @@ router.post("/", (req, res) => {
       // 기존 값은 덮지 않고 **빈 칸만 채운다**(사용자가 새로 적어 온 정보는 살리되, 기존 정보는 보존).
       const fill = {};
       if (!existing.biz_no && bizNo) fill.biz_no = bizNo;
+      if (!existing.biz_type && b.biz_type) fill.biz_type = b.biz_type;
+      if (!existing.biz_item && b.biz_item) fill.biz_item = b.biz_item;
       const addr = b.biz_address != null ? b.biz_address : b.address;
       if (!existing.address && addr) fill.address = addr;
       if (!existing.phone && b.phone) fill.phone = b.phone;
@@ -232,7 +234,7 @@ router.post("/", (req, res) => {
     }
     id = createCompany({
       name, phone: b.phone, email: b.email, memo: b.memo,
-      biz_no: bizNo,
+      biz_no: bizNo, biz_type: b.biz_type, biz_item: b.biz_item,
       address: b.biz_address != null ? b.biz_address : b.address, roles: companyRolesFrom(b),
     });
     setCompanyOwners(id, ownerIds); // 호칭 '대표님'·소속(직함 '대표')·레거시 owner_party_id/owner_name 동기화
@@ -307,6 +309,7 @@ router.post("/:id", (req, res) => {
     name, phone: b.phone, email: b.email, memo: b.memo,
     // company 필드
     biz_no: formatBizNo(b.biz_no), // owner_name/owner_party_id는 미전송(보존) — 아래 setCompanyOwners가 조인 테이블 기준으로 동기화
+    biz_type: b.biz_type, biz_item: b.biz_item,
     address: b.biz_address != null ? b.biz_address : b.address, roles: c.kind === "company" ? companyRolesFrom(b) : null,
     // 정체성 단일화(2026-07-16): **그룹은 항상**, **솔로 아티스트도 편집 전 이름==활동명이었으면**(본명 따로 없는 흔한 경우)
     // activity_name을 새 name과 동기화 → 옛 activity_name이 남아 '옛이름 (새이름)'으로 병기되던 버그 방지.

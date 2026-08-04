@@ -99,11 +99,12 @@ function createCompany(b = {}) {
   const name = String(b.name || "").trim();
   if (!name) throw new Error("PARTY_NAME_REQUIRED");
   const info = db().prepare(
-    `INSERT INTO parties (kind, name, phone, email, memo, biz_no, owner_name, owner_party_id, address, roles)
-     VALUES ('company', @name, @phone, @email, @memo, @biz_no, @owner_name, @owner_party_id, @address, @roles)`
+    `INSERT INTO parties (kind, name, phone, email, memo, biz_no, biz_type, biz_item, owner_name, owner_party_id, address, roles)
+     VALUES ('company', @name, @phone, @email, @memo, @biz_no, @biz_type, @biz_item, @owner_name, @owner_party_id, @address, @roles)`
   ).run({
     name, phone: formatPhone(b.phone), email: blankToNull(b.email), memo: blankToNull(b.memo),
-    biz_no: formatBizNo(b.biz_no), owner_name: blankToNull(b.owner_name),
+    biz_no: formatBizNo(b.biz_no), biz_type: blankToNull(b.biz_type), biz_item: blankToNull(b.biz_item),
+    owner_name: blankToNull(b.owner_name),
     owner_party_id: b.owner_party_id ? Number(b.owner_party_id) : null,
     address: blankToNull(b.address), roles: blankToNull(b.roles),
   });
@@ -144,10 +145,10 @@ function updateParty(id, b = {}) {
     const name = String(b.name || "").trim() || cur.name;
     const ownerPartyId = b.owner_party_id !== undefined ? (b.owner_party_id ? Number(b.owner_party_id) : null) : (cur.owner_party_id || null);
     db().prepare(
-      `UPDATE parties SET name=?, phone=?, email=?, memo=?, biz_no=?, owner_name=?, owner_party_id=?, address=?, roles=? WHERE id=?`
+      `UPDATE parties SET name=?, phone=?, email=?, memo=?, biz_no=?, biz_type=?, biz_item=?, owner_name=?, owner_party_id=?, address=?, roles=? WHERE id=?`
     ).run(
       name, pick("phone", formatPhone), pick("email"), pick("memo"),
-      pick("biz_no", formatBizNo), pick("owner_name"), ownerPartyId,
+      pick("biz_no", formatBizNo), pick("biz_type"), pick("biz_item"), pick("owner_name"), ownerPartyId,
       pick("address"), pick("roles"), Number(id)
     );
     return;

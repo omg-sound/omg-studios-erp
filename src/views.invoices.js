@@ -17,7 +17,7 @@ function payerInfoCard(client, contacts = [], hasBizFile = false, { compact = fa
   const cell = (label, value) =>
     `<div class="flex items-start justify-between gap-3 py-0.5"><span class="text-xs text-muted">${esc(label)}</span><span class="text-right text-sm font-medium">${value}</span></div>`;
   // 행 순서 = 홈택스 세금계산서 '공급받는자' 입력 순서(2026-07-08 사용자 요청 — 대표가 발행 시 그대로 옮겨 적게, 배치만 동일):
-  // 등록번호 → 상호·성명(대표자) → 사업장 주소 → 이메일(세금계산서 발행) → 이메일(담당자). 개인은 등록번호 자리에 현금영수증 번호.
+  // 등록번호 → 상호·성명(대표자) → 사업장 주소 → 업태·종목(2026-08-04 추가) → 이메일(세금계산서 발행) → 이메일(담당자). 개인은 등록번호 자리에 현금영수증 번호.
   const rows = [];
   if (client.biz_no) {
     // 번호 클릭 = 클립보드 복사. 등록증 보기 링크는 번호 앞(2026-07-08 사용자 요청).
@@ -33,6 +33,8 @@ function payerInfoCard(client, contacts = [], hasBizFile = false, { compact = fa
   rows.push(cell(client.kind === "person" ? "성명" : "상호", copyable(client.name, { cls: "font-semibold", display: personLabel(client.name, client.activity_name) }))); // 표시=본명 (활동명)(현금영수증 명의 오해 방지), 복사=순수 본명(홈택스 붙여넣기용, 2026-07-08)
   if (client.owner_name) rows.push(cell("성명(대표자)", copyable(client.owner_name, { cls: "font-medium" }))); // 클릭 복사(2026-07-08)
   if (client.address) rows.push(cell("사업장 주소", copyable(client.address, { cls: "font-medium" })));
+  if (client.biz_type) rows.push(cell("업태", copyable(client.biz_type, { cls: "font-medium" })));
+  if (client.biz_item) rows.push(cell("종목", copyable(client.biz_item, { cls: "font-medium" })));
   // 담당자 이메일 행은 삭제(2026-07-08 사용자 요청 — 아래 '담당자' 행의 이메일과 중복). 발행 이메일만 단독 행.
   if (client.email) rows.push(cell("세금계산서 발행 이메일", copyable(client.email)));
   if (contacts && contacts.length) {

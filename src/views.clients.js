@@ -189,6 +189,10 @@ function clientForm(c = {}, isEdit = false, files = [], fileErr = "", canFiles =
             ${(() => { const owners = isEdit && c.id ? listCompanyOwners(c.id) : []; return personCombo({ idField: "owner_id", nameField: "owner_name", selected: owners, options: contactOptions(), entityLabel: "대표자", placeholder: owners.length ? "" : "대표자 — 검색 또는 새로 등록", simpleModal: true, multi: true }); })()}
           </div>
         </div>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div><label class="label">업태</label><input class="input" name="biz_type" value="${esc(c.biz_type || "")}" /></div>
+          <div><label class="label">종목</label><input class="input" name="biz_item" value="${esc(c.biz_item || "")}" /></div>
+        </div>
         <div><label class="label">사업장 주소</label><input class="input" name="biz_address" value="${esc(c.address || "")}" autocomplete="off" /></div>
       </div>` : ""}
       ${type === "group" ? `
@@ -267,6 +271,8 @@ function clientReadView(c, { owners = [], contacts = [], artists = [], members =
     const ownerLinks = owners.length ? owners.map(personLink).join(" · ") : dash;
     infoCard = `<div class="card p-0">
         ${clientReadRow("사업자등록번호", (c.biz_no ? copyable(c.biz_no) : dash) + (bizLicenseOk ? "" : CERT_MISSING_ICON))}
+        ${clientReadRow("업태", c.biz_type ? esc(c.biz_type) : dash)}
+        ${clientReadRow("종목", c.biz_item ? esc(c.biz_item) : dash)}
         ${clientReadRow("대표", ownerLinks)}
         ${clientReadRow("사업장 주소", c.address ? copyable(c.address) : dash)}
         ${clientReadRow("계산서 발행 이메일", c.email ? copyable(c.email) : dash)}

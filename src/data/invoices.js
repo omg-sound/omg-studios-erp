@@ -48,6 +48,8 @@ function snapshotPayer(payerId) {
     kind: p.kind || null,
     owner_name: p.owner_name || null,
     biz_no: p.biz_no || null,
+    biz_type: p.biz_type || null,
+    biz_item: p.biz_item || null,
     address: p.address || null,
     email: p.email || null,
     cash_receipt_no: p.cash_receipt_no || null,
@@ -126,7 +128,7 @@ function payerSnapshotChanged(inv) {
   let a, b;
   try { a = JSON.parse(inv.payer_snapshot); b = JSON.parse(cur); } catch (_e) { return false; }
   const norm = (v) => (v == null ? "" : String(v).trim());
-  const fields = ["name", "activity_name", "owner_name", "biz_no", "address", "email", "cash_receipt_no"]
+  const fields = ["name", "activity_name", "owner_name", "biz_no", "biz_type", "biz_item", "address", "email", "cash_receipt_no"]
     .filter((f) => !(f === "email" && a.email_overridden)); // 건별 임의 이메일(2026-07-27) — party와 다른 게 정상이라 비교 제외
   if (fields.some((f) => norm(a[f]) !== norm(b[f]))) return true;
   const ca = (a.contacts && a.contacts[0]) || {};

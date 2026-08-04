@@ -310,6 +310,8 @@ function init() {
       cash_receipt_no TEXT,                            -- 개인/솔로 아티스트 현금영수증(사업자 없는 경우)
       -- company 속성
       biz_no         TEXT,                             -- 사업자등록번호
+      biz_type       TEXT,                             -- 업태
+      biz_item       TEXT,                             -- 종목
       owner_name     TEXT,                             -- 대표자명
       owner_party_id INTEGER,                          -- 대표자를 사람 party와 연동(양방향)
       address        TEXT,
@@ -546,6 +548,8 @@ function init() {
   addColumn("parties", "group_id", "INTEGER"); // 아티스트(사람)의 소속 그룹(parties.id, kind='group'). 그룹↔멤버 연결
   addColumn("parties", "contact_party_id", "INTEGER"); // 그룹의 담당자(parties.id, 사람 — 멤버 또는 관계자)
   addColumn("parties", "activity_form", "TEXT"); // 아티스트 활동 형태(2026-07-16 사용자 요청) — solo|group|both, person 아티스트 수동 필드
+  addColumn("parties", "biz_type", "TEXT"); // 업태(2026-08-04 사용자 요청) — 세금계산서 발행용, company만
+  addColumn("parties", "biz_item", "TEXT"); // 종목(2026-08-04 사용자 요청) — 세금계산서 발행용, company만
   addColumn("track_tasks", "waived", "INTEGER NOT NULL DEFAULT 0"); // 청구 안 함(무료 처리, 2026-07-06) — 청구 후보에서 되돌리기 가능하게 표시만, 예산·미청구 집계 제외
   addColumn("sessions", "waived", "INTEGER NOT NULL DEFAULT 0"); // 청구 안 함(무료 처리, 2026-07-06) — 위와 동일
   addColumn("sessions", "billing_amount", "INTEGER"); // 확정 청구액(2026-07-14) — NULL이면 단가표 자동 산정, 값이 있으면 그 금액을 쓴다(청구 폼에서 고치면 즉시 저장 = 작업 total_price와 대칭)
