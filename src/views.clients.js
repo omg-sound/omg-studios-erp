@@ -189,11 +189,11 @@ function clientForm(c = {}, isEdit = false, files = [], fileErr = "", canFiles =
             ${(() => { const owners = isEdit && c.id ? listCompanyOwners(c.id) : []; return personCombo({ idField: "owner_id", nameField: "owner_name", selected: owners, options: contactOptions(), entityLabel: "대표자", placeholder: owners.length ? "" : "대표자 — 검색 또는 새로 등록", simpleModal: true, multi: true }); })()}
           </div>
         </div>
+        <div><label class="label">사업장 주소</label><input class="input" name="biz_address" value="${esc(c.address || "")}" autocomplete="off" /></div>
         <div class="grid gap-3 sm:grid-cols-2">
           <div><label class="label">업태</label><input class="input" name="biz_type" value="${esc(c.biz_type || "")}" /></div>
           <div><label class="label">종목</label><input class="input" name="biz_item" value="${esc(c.biz_item || "")}" /></div>
         </div>
-        <div><label class="label">사업장 주소</label><input class="input" name="biz_address" value="${esc(c.address || "")}" autocomplete="off" /></div>
       </div>` : ""}
       ${type === "group" ? `
       <div>
@@ -206,10 +206,7 @@ function clientForm(c = {}, isEdit = false, files = [], fileErr = "", canFiles =
         ${personCombo({ idField: "contact_party_id", nameField: "contact_name", selectedId: c.contact_party_id || null, options: contactOptions(), companyOptions: companies })}
       </div>` : ""}
       ${type === "group" && isEdit ? `<p class="text-xs text-muted">멤버는 아래 <span class="text-fg">멤버</span> 섹션에서 연결·관리합니다.</p>` : ""}
-      <div class="grid gap-3 sm:grid-cols-2">
-        <div><label class="label">${type === "company" ? "세금계산서 발행 이메일" : "이메일"}</label><input class="input" type="email" name="email" value="${esc(c.email || "")}" placeholder="${type === "company" ? "계산서 받을 이메일" : ""}" /></div>
-        <div><label class="label">전화</label><input class="input" name="phone" autocomplete="off" value="${esc(c.phone || "")}" /></div>
-      </div>
+      <div><label class="label">${type === "company" ? "세금계산서 발행 이메일" : "이메일"}</label><input class="input" type="email" name="email" value="${esc(c.email || "")}" placeholder="${type === "company" ? "계산서 받을 이메일" : ""}" /></div>
       ${type === "company" ? clientContactCombo(c, isEdit) : ""}
       <div><label class="label">메모</label><textarea class="input" name="memo" rows="2">${esc(c.memo || "")}</textarea></div>
       ${isEdit
@@ -271,12 +268,11 @@ function clientReadView(c, { owners = [], contacts = [], artists = [], members =
     const ownerLinks = owners.length ? owners.map(personLink).join(" · ") : dash;
     infoCard = `<div class="card p-0">
         ${clientReadRow("사업자등록번호", (c.biz_no ? copyable(c.biz_no) : dash) + (bizLicenseOk ? "" : CERT_MISSING_ICON))}
-        ${clientReadRow("업태", c.biz_type ? esc(c.biz_type) : dash)}
-        ${clientReadRow("종목", c.biz_item ? esc(c.biz_item) : dash)}
         ${clientReadRow("대표", ownerLinks)}
         ${clientReadRow("사업장 주소", c.address ? copyable(c.address) : dash)}
+        ${clientReadRow("업태", c.biz_type ? esc(c.biz_type) : dash)}
+        ${clientReadRow("종목", c.biz_item ? esc(c.biz_item) : dash)}
         ${clientReadRow("계산서 발행 이메일", c.email ? copyable(c.email) : dash)}
-        ${clientReadRow("전화", c.phone ? copyable(c.phone) : dash)}
       </div>`;
     const contactsSec = contacts.length
       ? `<h2 class="mb-2 mt-6 font-display text-lg font-semibold text-fg">담당자 ${contacts.length}</h2><div class="card p-0">${contacts.map((p) => clientReadRow("", personLink(p))).join("")}</div>`

@@ -694,6 +694,11 @@ function init() {
     d.exec("UPDATE invoices SET due_date = NULL WHERE due_date IS NOT NULL");
     setState("invoice_due_date_drop_v1", "done");
   }
+  // 업체 전화번호 폐기(2026-08-04 사용자 결정) — 편집 화면에서 입력칸을 없앤 데 이어 기존 값도 정리.
+  if (!getState("company_phone_discard_v1")) {
+    d.exec("UPDATE parties SET phone = NULL WHERE kind = 'company' AND phone IS NOT NULL");
+    setState("company_phone_discard_v1", "done");
+  }
   // 기존 단일 담당 엔지니어(sessions.engineer_name)를 다대다 테이블(session_engineers)로 1회 복사(2026-07-05).
   // 이름이 담당자 마스터(project_managers)와 유일하게 일치할 때만(동명이인 오연결 방지). 멱등(중복 무시).
   if (!getState("session_engineers_backfill_v1")) {
