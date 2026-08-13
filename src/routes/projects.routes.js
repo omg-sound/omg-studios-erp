@@ -69,6 +69,7 @@ const {
   tracksSection,
   unbilledInvoiceForm,
   sessionInvoicedModal,
+  invoicePreviewErrorPage,
 } = require("../views.projects");
 const { isValidYmd, kstHms, utcStampFromKst } = require("../lib/date");
 const { parseMoney, formatBizNo } = require("../lib/forms");
@@ -739,7 +740,7 @@ router.get("/:id/invoices/preview/:type/:name", requireBilling, asyncHandler(asy
   } catch (e) {
     const known = { PAYER_REQUIRED: "청구처를 선택하세요. 문서에 들어갈 공급받는자입니다.", TASK_IDS_REQUIRED: "문서로 만들 작업·세션을 선택하세요.", TASK_NOT_BILLABLE: "청구 가능한 작업·세션만 선택할 수 있습니다.", CLIENT_NOT_FOUND: "선택한 청구처를 찾을 수 없습니다." };
     if (!known[e.message]) throw e;
-    return res.status(400).send(errorPage({ code: 400, title: "문서 오류", message: known[e.message], user: req.user }));
+    return res.status(400).send(invoicePreviewErrorPage(req.user, { message: known[e.message], projectId: req.params.id }));
   }
   if (!draft) return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
   const docType = normalizeDocType(req.params.type);

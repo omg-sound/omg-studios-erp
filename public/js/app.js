@@ -21,6 +21,16 @@
   }, true);
 })();
 
+// "이 창 닫기" 버튼(2026-08-13, 견적서 미리보기 오류 화면) — formtarget=_blank로 연 팝업 탭을 닫는다.
+// 그 탭은 세션 히스토리가 1개뿐이라 스펙상 window.close()가 동작한다(스크립트로 연 탭과 동일 취급).
+(function () {
+  "use strict";
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-close-tab]");
+    if (b) window.close();
+  });
+})();
+
 // 이중 제출 방지(전 폼 공통, 2026-07-14 — 같은 업체('뮤직팜')가 3개로 늘어난 사고).
 // 저장 버튼을 두 번 누르거나 응답이 느려 다시 누르면 그대로 두 번 POST돼 **같은 레코드가 하나 더 생긴다**
 // (id가 연속으로 붙은 중복 3건이 그 흔적). 첫 제출만 통과시키고 이후 제출은 막는다.

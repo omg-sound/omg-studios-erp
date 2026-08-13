@@ -16,6 +16,7 @@ const {
   companyCombo,
   dateCombo,
   pageHeader,
+  layout,
 } = require("./views");
 const { formatYmdShort, todayYmd, kstYmd } = require("./lib/date");
 const {
@@ -1013,6 +1014,27 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
     </form>`;
 }
 
+/**
+ * 견적서/내역서/거래명세서 미리보기 라우트 전용 오류 화면(2026-08-13) — 항목 미선택은 클라이언트에서
+ * 이미 막지만(app.js), 동시편집 경합(TASK_NOT_BILLABLE·CLIENT_NOT_FOUND 등)은 새 탭이 그대로 열려
+ * 여기 도달한다. 공용 errorPage()는 큰 코드 숫자 + "홈으로"뿐이라 팝업 탭에서 404처럼 보였다 — 이 화면은
+ * 그 대신 원인 메시지 + [이 창 닫기]/[청구 탭으로 이동]을 보여준다. 프로젝트 자체가 없는 404는 여전히
+ * 공용 errorPage()를 쓴다(진짜 "이 문서가 없다"는 상황이라 기존 화면이 맞다).
+ */
+function invoicePreviewErrorPage(user, { message, projectId }) {
+  const body = `
+    <div class="mx-auto max-w-md py-16 text-center">
+      <svg class="mx-auto h-10 w-10 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>
+      <p class="mt-4 text-base font-medium">${esc(message)}</p>
+      <p class="mt-1 text-sm text-muted">이 창을 닫고 원래 화면에서 다시 시도하세요.</p>
+      <div class="mt-6 flex justify-center gap-2">
+        <button type="button" class="btn-primary" data-close-tab>이 창 닫기</button>
+        <a href="/projects/${projectId}?tab=invoice" class="btn-ghost">청구 탭으로 이동</a>
+      </div>
+    </div>`;
+  return layout({ title: "문서를 만들 수 없습니다", user, body });
+}
+
 module.exports = { artistCombo,
   newProjectMenu,
   projectListRow,
@@ -1029,4 +1051,5 @@ module.exports = { artistCombo,
   tracksSection,
   unbilledInvoiceForm,
   sessionInvoicedModal,
+  invoicePreviewErrorPage,
 };

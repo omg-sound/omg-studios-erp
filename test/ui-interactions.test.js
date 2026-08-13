@@ -14,7 +14,7 @@ init();
 const { createCompany } = require("../src/data");
 const { personCombo, companyCombo, searchBox, listGroup } = require("../src/views");
 const { sessionBookingFields } = require("../src/views.sessions");
-const { unbilledInvoiceForm } = require("../src/views.projects");
+const { unbilledInvoiceForm, invoicePreviewErrorPage } = require("../src/views.projects");
 
 /**
  * UI 상호작용 테스트(jsdom) — 실제 views 렌더 + 실제 app.js 실행.
@@ -2322,4 +2322,23 @@ test("청구 생성 폼: 항목을 하나 체크하면 제출이 막히지 않�
   Object.defineProperty(ev, "submitter", { value: doc.querySelector("[data-invoice-submit]") });
   form.dispatchEvent(ev);
   assert.equal(ev.defaultPrevented, false, "항목이 있으면 이 가드는 막지 않는다");
+});
+
+// ── 견적서 미리보기 오류 화면: 큰 "400" 숫자 없이, 닫기/돌아가기 버튼(2026-08-13) ──
+test("invoicePreviewErrorPage: 코드 숫자 없이 메시지 + 닫기/청구 탭 이동 버튼을 렌더한다", () => {
+  const html = invoicePreviewErrorPage({ id: 1, email: "a@t.t", role: "chief" }, { message: "선택한 청구처를 찾을 수 없습니다.", projectId: 42 });
+  assert.match(html, /선택한 청구처를 찾을 수 없습니다\./, "메시지 포함");
+  assert.doesNotMatch(html, />400</, "큰 400 숫자 마크업 없음");
+  assert.match(html, /data-close-tab/, "닫기 버튼 마커 포함");
+  assert.match(html, /\/projects\/42\?tab=invoice/, "청구 탭 링크에 projectId 반영");
+});
+
+// ── "이 창 닫기" 버튼 클릭 시 window.close() 호출(2026-08-13) ──
+test("data-close-tab 버튼 클릭 시 window.close()가 호출된다", () => {
+  const html = invoicePreviewErrorPage({ id: 1, email: "a@t.t", role: "chief" }, { message: "테스트", projectId: 1 });
+  const { win, doc } = mountDom(html);
+  let closed = false;
+  win.close = function () { closed = true; };
+  fire(win, doc.querySelector("[data-close-tab]"), "click");
+  assert.equal(closed, true, "닫기 버튼이 window.close()를 호출한다");
 });
