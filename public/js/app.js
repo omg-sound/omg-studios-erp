@@ -2924,15 +2924,16 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
       // 먼저 해서 둘 다 비어 있을 때 토스트 두 개가 같은 자리에 겹쳐 뜨는 것을 막는다.
       function flashHighlight(el) {
         if (!el) return;
+        if (el.__flashTimer) clearTimeout(el.__flashTimer);
         el.style.transition = "box-shadow .2s";
         el.style.boxShadow = "0 0 0 3px rgb(var(--color-danger))";
-        setTimeout(function () { el.style.boxShadow = ""; }, 1600);
+        el.__flashTimer = setTimeout(function () { el.style.boxShadow = ""; el.__flashTimer = null; }, 1600);
       }
       // 청구처 미선택 제출 차단(서버도 PAYER_REQUIRED로 막지만, 여기서 바로 알려 준다).
       form.addEventListener("submit", function (e) {
         if (e.submitter && e.submitter.hasAttribute && e.submitter.hasAttribute("data-waive-btn")) return; // 청구 안 함 토글
         var itemsBox = form.querySelector("[data-invoice-items-box]");
-        if (itemsBox && !itemsBox.querySelector('input[type="checkbox"][data-line-amount]:checked')) {
+        if (itemsBox && !form.querySelector('input[type="checkbox"][data-line-amount]:checked')) {
           e.preventDefault();
           if (window.__toast) window.__toast("청구할 항목을 하나 이상 선택하세요.");
           flashHighlight(itemsBox);

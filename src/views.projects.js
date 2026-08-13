@@ -1025,7 +1025,7 @@ function invoicePreviewErrorPage(user, { message, projectId }) {
   const body = `
     <div class="mx-auto max-w-md py-16 text-center">
       <svg class="mx-auto h-10 w-10 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>
-      <p class="mt-4 text-base font-medium">${esc(message)}</p>
+      <h1 class="mt-4 text-base font-medium">${esc(message)}</h1>
       <p class="mt-1 text-sm text-muted">이 창을 닫고 원래 화면에서 다시 시도하세요.</p>
       <div class="mt-6 flex justify-center gap-2">
         <button type="button" class="btn-primary" data-close-tab>이 창 닫기</button>
