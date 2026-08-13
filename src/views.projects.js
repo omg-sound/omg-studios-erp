@@ -1029,7 +1029,7 @@ function invoicePreviewErrorPage(user, { message, projectId }) {
       <p class="mt-1 text-sm text-muted">이 창을 닫고 원래 화면에서 다시 시도하세요.</p>
       <div class="mt-6 flex justify-center gap-2">
         <button type="button" class="btn-primary" data-close-tab>이 창 닫기</button>
-        <a href="/projects/${projectId}?tab=invoice" class="btn-ghost">청구 탭으로 이동</a>
+        <a href="/projects/${esc(projectId)}?tab=invoice" class="btn-ghost">청구 탭으로 이동</a>
       </div>
     </div>`;
   return layout({ title: "문서를 만들 수 없습니다", user, body });
