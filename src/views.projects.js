@@ -958,7 +958,7 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
         </div>
       </div>
       <div class="label mb-1 text-xs">청구 항목</div>
-      <div class="rounded-lg border border-border bg-surface px-3">${sessionList}${taskList}</div>
+      <div class="rounded-lg border border-border bg-surface px-3" data-invoice-items-box>${sessionList}${taskList}</div>
       ${hasPending ? explain(`미완료 항목(대기 작업·예정 세션)은 기본 선택에서 제외됩니다. 체크하면 완료로 바꿀지 확인 후 청구·완료 처리됩니다.`) : ""}
       <div class="mt-3 space-y-2">
         <div>

@@ -2284,3 +2284,42 @@ test("다른 폼은 이 가드에 걸리지 않는다(마커 없음)", () => {
   fire(win, doc.querySelector("form"), "submit");
   assert.equal(asked, 0);
 });
+
+// ── 청구 항목 미선택 제출 차단(2026-08-13 사용자 리포트: 견적서 버튼이 빈 새 탭에 404 같은 오류를 띄움) ──
+test("청구 생성 폼: 항목을 하나도 체크 안 하면 제출이 막히고 항목 박스가 하이라이트된다", async () => {
+  const project = { id: 7, title: "테스트 프로젝트" };
+  // status가 'Completed'가 아니면 체크박스가 기본 미체크로 렌더된다(대기 작업 흐리게 규칙).
+  const tasks = [{ id: 1, task_type: "vocal_tune", track_title: "곡A", status: "Pending", total_price: 0, waived: 0 }];
+  const html = unbilledInvoiceForm(project, tasks, []);
+  const { win, doc } = mountDom(html);
+  doc.querySelector("[data-picker-combo]").__pkSet({ cid: "999", label: "테스트 청구처" }); // 청구처는 채워 둠(항목 검사만 단독으로 확인)
+
+  const itemsBox = doc.querySelector("[data-invoice-items-box]");
+  assert.ok(itemsBox, "항목 박스 마커 존재");
+  assert.equal(doc.querySelectorAll('input[type="checkbox"][data-line-amount]:checked').length, 0, "대기 작업은 기본 미체크");
+
+  const form = doc.querySelector("[data-discount-form]");
+  const ev = new win.Event("submit", { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, "submitter", { value: doc.querySelector("[data-invoice-submit]") });
+  form.dispatchEvent(ev);
+
+  assert.equal(ev.defaultPrevented, true, "항목 미선택이면 제출이 막힌다");
+  assert.match(itemsBox.style.boxShadow, /rgb\(var\(--color-danger\)\)/, "항목 박스가 하이라이트된다");
+  await tick(1700);
+  assert.equal(itemsBox.style.boxShadow, "", "하이라이트는 시간이 지나면 사라진다");
+});
+
+test("청구 생성 폼: 항목을 하나 체크하면 제출이 막히지 않는다(회귀 방지)", () => {
+  const project = { id: 7, title: "테스트 프로젝트" };
+  const tasks = [{ id: 1, task_type: "vocal_tune", track_title: "곡A", status: "Completed", total_price: 100000, waived: 0 }];
+  const html = unbilledInvoiceForm(project, tasks, []);
+  const { win, doc } = mountDom(html);
+  doc.querySelector("[data-picker-combo]").__pkSet({ cid: "999", label: "테스트 청구처" });
+
+  assert.equal(doc.querySelectorAll('input[type="checkbox"][data-line-amount]:checked').length, 1, "완료 작업은 기본 체크");
+  const form = doc.querySelector("[data-discount-form]");
+  const ev = new win.Event("submit", { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, "submitter", { value: doc.querySelector("[data-invoice-submit]") });
+  form.dispatchEvent(ev);
+  assert.equal(ev.defaultPrevented, false, "항목이 있으면 이 가드는 막지 않는다");
+});

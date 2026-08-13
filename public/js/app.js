@@ -2909,9 +2909,26 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
           }
         });
       });
+      // 청구 항목 미선택 제출 차단(2026-08-13) — 견적서 등 미리보기 버튼(formtarget=_blank)이 그대로 열려
+      // 빈 새 탭에 서버 오류 화면만 뜨던 문제(사용자 리포트 "404 페이지 같다"). 항목 검사를 청구처 검사보다
+      // 먼저 해서 둘 다 비어 있을 때 토스트 두 개가 같은 자리에 겹쳐 뜨는 것을 막는다.
+      function flashHighlight(el) {
+        if (!el) return;
+        el.style.transition = "box-shadow .2s";
+        el.style.boxShadow = "0 0 0 3px rgb(var(--color-danger))";
+        setTimeout(function () { el.style.boxShadow = ""; }, 1600);
+      }
       // 청구처 미선택 제출 차단(서버도 PAYER_REQUIRED로 막지만, 여기서 바로 알려 준다).
       form.addEventListener("submit", function (e) {
         if (e.submitter && e.submitter.hasAttribute && e.submitter.hasAttribute("data-waive-btn")) return; // 청구 안 함 토글
+        var itemsBox = form.querySelector("[data-invoice-items-box]");
+        if (itemsBox && !itemsBox.querySelector('input[type="checkbox"][data-line-amount]:checked')) {
+          e.preventDefault();
+          if (window.__toast) window.__toast("청구할 항목을 하나 이상 선택하세요.");
+          flashHighlight(itemsBox);
+          itemsBox.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
         if (!cid.value && !pid.value) {
           e.preventDefault(); // 서버도 PAYER_REQUIRED로 막지만, 여기서 즉시 알려 준다(제출 자체를 안 보냄)
           if (window.__toast) window.__toast("청구처를 선택하세요 — 실제 결제하는 곳·사람을 고릅니다.");
