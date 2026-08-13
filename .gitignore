@@ -38,3 +38,6 @@ tmp/
 
 # superpowers 진행 대장(스크래치)
 .superpowers/
+
+# superpowers 격리 워크트리(스크래치)
+.worktrees/
