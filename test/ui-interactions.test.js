@@ -217,6 +217,23 @@ test("세션 폼(구글식): 시간 콤보(전체선택·30분 목록)·양방�
   assert.ok(!/opacity-50/.test(durationWrap.className), "해제 시 흐림 해제");
 });
 
+// ── ③a3 1~4Pro 프리셋 클릭이 dirty-form 감시를 통지한다(2026-08-11 사용자 리포트: 프리셋으로 시간을
+// 바꿔도 세션 저장 버튼이 안 켜짐) — setDuration이 custom_hours(hidden)를 직접 대입할 뿐 input/change를
+// 안 쏘므로, 합성 change로 통지하지 않으면 dirty 감시가 못 본다(엔지니어 행 제거와 같은 함정 #23 클래스).
+test("세션 폼: 2Pro 프리셋 클릭 시 세션 저장 버튼이 활성화된다(dirty-form 통지)", async () => {
+  const rateItems = db().prepare("SELECT * FROM rate_items").all();
+  const html = `<form data-session-form data-session-id="1" data-dirty-form>${sessionBookingFields({}, [], rateItems, [], "")}<button type="submit" data-dirty-save disabled>저장</button></form>`;
+  const { win, doc } = mountDom(html);
+  await tick(); // dirty-form 감시가 초기화 후(setTimeout 0) 기준 스냅샷을 다시 잡을 때까지 대기
+  const saveBtn = doc.querySelector("[data-dirty-save]");
+  assert.equal(saveBtn.disabled, true, "변경 전에는 비활성");
+  // 새 폼의 기본 소요시간이 이미 1Pro라 pro1 클릭은 값이 안 바뀐다 — 실제로 값이 바뀌는 pro2로 검증.
+  const preset = doc.querySelector('[data-duration-preset="pro2"]');
+  assert.ok(preset && !preset.disabled, "기준시간이 있으면 2Pro 프리셋이 활성 상태여야 한다");
+  fire(win, preset, "click");
+  assert.equal(saveBtn.disabled, false, "프리셋 클릭으로 소요시간이 바뀌면 저장 버튼도 활성화돼야 한다");
+});
+
 // ── ③a2 시간 부분 입력 확정(칸을 떠날 때 부족한 자리를 채운다 — 2026-08-03 사용자 요청) ──
 test("세션 폼: 시간은 네 자리를 다 안 쳐도 칸을 떠나면 확정된다(12→12:00, 123→12:30)", () => {
   const rateItems = db().prepare("SELECT * FROM rate_items").all();

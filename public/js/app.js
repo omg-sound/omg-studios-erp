@@ -859,12 +859,16 @@ function sortCellValue(cell) {
   // 슬라이더 드래그(30분 단위) → curDur.
   if (slider) slider.addEventListener("input", function () { setDuration(parseInt(slider.value, 10) || 0); });
   // 1~4Pro 프리셋 → 기준시간(1Pro)×N으로 슬라이더·직접입력 채움("pro3"→base×3).
+  // 버튼 클릭이 custom_hours(hidden)를 직접 대입할 뿐 input/change를 안 쏘므로, dirty-form 감시(문서 위임
+  // input/change, recOf가 e.target.form으로 매칭)가 못 보고 세션 저장 버튼이 안 켜진다 — customInput에
+  // change를 쏴 동기화(<form> 자체엔 .form 프로퍼티가 없어 recOf가 못 찾으므로 폼이 아니라 필드에 쏜다).
   Array.prototype.forEach.call(presets, function (b) {
     b.addEventListener("click", function () {
       var base = baseMinutes() || proDefaultMinutes(); // 단가 없으면 스튜디오 기본 블록 기준(녹음이면 단가 기준시간)
       if (base <= 0) return;
       var mult = parseInt(String(b.getAttribute("data-duration-preset") || "pro1").replace("pro", ""), 10) || 1;
       setDuration(base * mult);
+      if (customInput) customInput.dispatchEvent(new Event("change", { bubbles: true }));
     });
   });
   window.addEventListener("resize", positionTicks); // 모바일↔데스크톱 전환 시 Pro 눈금 재배치(모바일=흐름·데스크톱=위치정렬)
