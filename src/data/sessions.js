@@ -119,7 +119,10 @@ function sessionFields(input) {
     all_day: allDay ? 1 : 0,
     end_date: endDate,
     start_time: start,
-    end_time: allDay ? null : span ? span.end : resolveEndTime(input, start),
+    // 시작 없이 종료만 오면(2026-08-22 감사) end_time도 함께 null로 떨군다 — 종일이 아닌데 시작이 없는
+    // 세션이 저장되면 겹침 검사(busySessionRanges는 start·end 둘 다 있어야 점유로 본다)에서 통째로
+    // 빠져 그 룸이 실제로는 예약돼 있는데도 이중 예약 경고가 안 뜬다.
+    end_time: allDay ? null : span ? span.end : (start ? resolveEndTime(input, start) : null),
     booker_name: String(input.booker_name || "").trim() || null,
     engineer_name: null,
     status: normalizeSessionStatus(input.status),
@@ -695,6 +698,25 @@ function upcomingSessions(_user, { limit = 50 } = {}) {
   );
 }
 
+/** 세션 검색(전역 검색 suggest 전용, 2026-08-22 감사) — 예전엔 upcomingSessions(100)+pastSessions(100)를
+ * 합쳐 attachBilling(단가 계산, suggest엔 불필요)까지 태운 뒤 JS로 걸러 5건만 썼다. 검색창은 키 입력마다
+ * 호출되므로 SQL LIKE + LIMIT로 직접 거른다(billing 계산 생략). */
+function searchSessions(q, limit = 5) {
+  const term = String(q || "").trim();
+  if (!term) return [];
+  const like = `%${term}%`;
+  return db()
+    .prepare(
+      `SELECT s.*, p.title AS project_title, p.artist, p.artist_company, p.production_company FROM sessions s
+       JOIN projects p ON p.id = s.project_id
+       WHERE p.title LIKE @like OR p.artist LIKE @like OR p.artist_company LIKE @like OR p.production_company LIKE @like
+          OR s.booker_name LIKE @like OR s.engineer_name LIKE @like OR s.session_type LIKE @like OR s.memo LIKE @like
+       ORDER BY s.session_date DESC, s.start_time DESC, s.id DESC
+       LIMIT @limit`
+    )
+    .all({ like, limit });
+}
+
 /** 지난 세션(오늘 이전) — 전역 일정. */
 function pastSessions(_user, { limit = 30 } = {}) {
   return attachBilling(
@@ -787,6 +809,7 @@ module.exports = {
   setSessionAmount,
   deleteSession,
   upcomingSessions,
+  searchSessions,
   pastSessions,
   sessionsForMonth,
   sessionsForCalendar,

@@ -1,3 +1,13 @@
+// HTML 이스케이프(공용, 2026-08-22 감사) — 아래 여러 IIFE가 각자 복제해 쓰던 것을 파일 상단 공용
+// 스코프로 통합(번들러가 없어 각 IIFE는 클로저로 이 선언을 그대로 본다). 서버 esc(src/views.js)와
+// 같은 5문자(& < > " ')를 이스케이프한다 — 이전엔 작은따옴표가 빠져 있었는데, 지금 app.js가 만드는
+// 마크업은 전부 큰따옴표 속성이라 무해했지만 작은따옴표 속성을 쓰는 순간 조용히 뚫릴 수 있었다.
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
 // 스크롤 위치 보존 — 폼 제출 후 같은 페이지로 돌아올 때 맨 위로 튀지 않고 원래 보던 위치 유지.
 // 2026-07-05 사용자 리포트 2건: ①프로젝트 목록에서 작성일 인라인 수정 시 목록이 재정렬되며 페이지 전체가
 // 새로고침돼 맨 위로 튐 ②청구 목록의 계산서·입금 처리 토글도 동일 — 발행필요→발행완료로 카드가 탭을 옮기며
@@ -1435,7 +1445,6 @@ function sortCellValue(cell) {
 // 소속사 companyCombo를 자동 채운다(그룹 소속사가 있을 때만 — 이전 <select> 동작과 동일, 이후 개별 변경 가능).
 (function () {
   "use strict";
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   Array.prototype.forEach.call(document.querySelectorAll("[data-group-combo]"), function (root) {
     var input = root.querySelector("[data-gc-input]");
     var hid = root.querySelector("[data-gc-hidden]");
@@ -1876,7 +1885,6 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
 // 기존 사람 선택 → hidden artist_contact_id 연결(저장 시 중복 사람 방지). '그룹' 체크는 밴드/팀(연락처 미연결).
 (function () {
   "use strict";
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   Array.prototype.forEach.call(document.querySelectorAll("[data-artist-combo]"), function (root) {
     var input = root.querySelector("[data-artist-input]");
     var cid = root.querySelector("[data-artist-cid]");
@@ -2210,7 +2218,6 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
 // 값은 업체명 TEXT(저장 시 ensureCompanyParty가 찾/생성). '새 등록'=간이 모달(fetch 생성 → 이름 채움).
 (function () {
   "use strict";
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   Array.prototype.forEach.call(document.querySelectorAll("[data-company-combo]"), function (root) {
     var input = root.querySelector("[data-cc-input]");
     var hidCC = root.querySelector("[data-cc-hidden]"); // 제출용 업체명(보이는 칸은 name 없음 — Chrome 자동완성 회피)
@@ -2502,7 +2509,6 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
 // window.__initPersonCombos(container)로 정적/동적 행 모두 초기화(디렉터 '+추가' clone도).
 (function () {
   "use strict";
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function initOne(root) {
     if (root.__pcInit) return; // 중복 초기화 방지(동적 행 재스캔 대비)
     root.__pcInit = true;
@@ -2772,7 +2778,6 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
 // 다른 콤보와 동일 UX지만 '새로 등록'은 없음(청구처는 기존에서 고름). 정확 일치 없으면 둘 다 비움(서버 자동 매칭).
 (function () {
   "use strict";
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   Array.prototype.forEach.call(document.querySelectorAll("[data-picker-combo]"), function (root) {
     var input = root.querySelector("[data-pk-input]");
     var cid = root.querySelector("[data-pk-cid]");
@@ -3188,7 +3193,6 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
 // 매칭 결과를 받아 드롭다운으로 제안 → 클릭/엔터로 해당 상세로 이동. 하이라이트 없이 엔터면 폼 제출(전체 검색).
 (function () {
   "use strict";
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   Array.prototype.forEach.call(document.querySelectorAll("[data-search-suggest]"), function (root) {
     var input = root.querySelector('input[name="q"]');
     var pop = root.querySelector("[data-suggest-pop]");
@@ -3231,7 +3235,10 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
     function fetchSuggest() {
       var q = input.value.trim();
       lastQ = q;
-      if (q.length < 1) { items = isGlobal ? recentItems() : []; render(); return; } // 전역 검색은 빈 입력=최근 방문
+      // 전역 검색(searchAll)은 5개 엔티티를 한 번에 훑는 무거운 집계라(2026-08-22 감사 — 데이터가 늘수록
+      // 키 입력마다 누적 비용), 최소 2글자부터 호출한다. 다른 지역 suggest(업체·연락처 등)는 원래대로 1글자.
+      var minLen = isGlobal ? 2 : 1;
+      if (q.length < minLen) { items = isGlobal ? recentItems() : []; render(); return; } // 전역 검색은 빈 입력=최근 방문
       if (ctrl && ctrl.abort) { try { ctrl.abort(); } catch (_e) {} }
       ctrl = window.AbortController ? new AbortController() : null;
       fetch(url + (url.indexOf("?") >= 0 ? "&" : "?") + "q=" + encodeURIComponent(q), { headers: { Accept: "application/json" }, credentials: "same-origin", signal: ctrl ? ctrl.signal : undefined })
@@ -3409,7 +3416,6 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
 // 검색 typeahead와 달리 '이동'이 아니라 선택 시 입력칸을 채운다(fill 모드). 미설정(키 없음)이면 서버가 []라 조용히 무동작.
 (function () {
   "use strict";
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   Array.prototype.forEach.call(document.querySelectorAll("[data-place-suggest]"), function (root) {
     var input = root.querySelector("[data-place-input]");
     var pop = root.querySelector("[data-place-pop]");

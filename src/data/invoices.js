@@ -690,13 +690,25 @@ function listInvoices(_user, { status, clientId } = {}) {
   return db().prepare(sql).all(params);
 }
 
-/** 전역 검색용 — 청구번호·청구처명·제목·아티스트 매칭(발행일 최신순). 93건 규모라 JS 필터로 충분(clients/suggest와 동일 패턴). */
+/** 전역 검색용 — 청구번호·청구처명·제목·아티스트 매칭(발행일 최신순).
+ * SQL LIKE + LIMIT로 직접 거른다(2026-08-22 감사 — 예전엔 listInvoices(전량)를 불러 JS로 훑었는데,
+ * 검색창은 키 입력마다 호출돼 청구가 늘수록 매 타이핑이 그만큼 느려졌다). SQLite LIKE는 ASCII만
+ * 대소문자 무시라 JS의 toLowerCase() 비교와 실질적으로 동일하게 동작(한글은 대소문자 개념이 없음). */
 function searchInvoices(_user, q, limit = 5) {
-  const ql = String(q || "").trim().toLowerCase();
+  const ql = String(q || "").trim();
   if (!ql) return [];
-  return listInvoices(_user, {})
-    .filter((i) => [i.invoice_number, i.client_name, i.title, i.project_artist].filter(Boolean).join(" ").toLowerCase().includes(ql))
-    .slice(0, limit);
+  const like = `%${ql}%`;
+  const sql = `
+    SELECT i.*, p.title AS project_title, p.production_company AS project_production, p.artist AS project_artist,
+           ${PAYER_DISPLAY_SQL} AS client_name, c.kind AS payer_kind, c.is_artist AS payer_is_artist
+    FROM invoices i
+    LEFT JOIN projects p ON p.id = i.project_id
+    LEFT JOIN parties c ON c.id = i.payer_id
+    WHERE i.invoice_number LIKE @like OR i.title LIKE @like OR p.artist LIKE @like
+       OR c.name LIKE @like OR c.activity_name LIKE @like
+    ORDER BY COALESCE(i.issued_date, '') DESC, i.created_at DESC
+    LIMIT @limit`;
+  return db().prepare(sql).all({ like, limit });
 }
 
 /** 단건 인보이스(치프 전용 라우트에서 사용). */

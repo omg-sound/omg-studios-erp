@@ -60,6 +60,19 @@ test("입금완료 멱등: 이미 완납이면 중복 입금 안 만든다(일�
   assert.equal(reget(inv.id).tax_status, "입금완료");
 });
 
+// ── 2026-08-22 감사: 자동 완납 입금 식별이 메모 문자열('입금완료 처리') 매칭이라, 사용자가 직접 입금
+// 메모에 우연히 같은 문구를 쓰면 입금완료 되돌리기 시 그 사용자 입금까지 삭제됐다 — auto 플래그로 교정 ──
+test("입금완료 되돌리기: 사용자가 직접 입금 메모에 '입금완료 처리'와 같은 문구를 써도 삭제되지 않는다(auto 플래그 식별)", () => {
+  const inv = mkInvoice(300000, "계산서 발행");
+  // 사용자가 직접 입금 이력을 추가하면서 우연히 자동 처리와 같은 메모를 남긴 경우(addPayment 경로 = auto 기본값 0).
+  db().prepare("INSERT INTO payments (invoice_id, amount, paid_on, memo) VALUES (?, 300000, '2026-07-16', '입금완료 처리')").run(inv.id);
+  db().prepare("UPDATE invoices SET paid_amount = 300000, tax_status = '입금완료' WHERE id = ?").run(inv.id);
+  applyTaxStatusTx(db(), reget(inv.id), "계산서 발행"); // 되돌리기 — 메모가 같아도 auto=0이라 지워지면 안 된다.
+  const pays = listPayments(inv.id);
+  assert.equal(pays.length, 1, "메모가 같아도 사용자 직접 입금(auto=0)은 보존");
+  assert.equal(pays[0].amount, 300000);
+});
+
 test("계산서 발행: 채번 보장(발행되면 청구번호 채움)", () => {
   const inv = mkInvoice(100000, "계산서 미발행");
   assert.ok(!inv.invoice_number, "발행 전 번호 없음");

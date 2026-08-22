@@ -139,3 +139,21 @@ test("updateSession: 자기 자신과는 충돌하지 않는다(excludeId)", () 
   assert.ok(updated && updated.id === s.id, "자기 세션 수정은 충돌 없이 성공해야 한다");
   assert.strictEqual(updated.start_time, "14:30");
 });
+
+// ── 2026-08-22 감사: 시작 없이 종료만 오면 그 세션이 겹침 검사에서 통째로 빠졌다 ──
+// (busySessionRanges가 start_time·end_time 둘 다 있어야 점유로 센다 — end만 저장되면 그 룸이
+// 실제로는 예약돼 있는데도 다른 예약이 경고 없이 겹쳐 들어갈 수 있었다.)
+test("종일이 아닌데 시작 없이 종료만 오면 종료도 저장하지 않는다(겹침 검사 공백 방지)", () => {
+  const s = create({ room: roomA, start: undefined, end: "18:00", date: "2026-06-12" });
+  assert.strictEqual(s.start_time, null, "시작 없음 그대로");
+  assert.strictEqual(s.end_time, null, "시작이 없으면 종료도 저장하지 않는다");
+
+  // 이제 그 시간대에 다른 세션을 겹쳐 만들면 여전히 충돌 검사 대상이 아니다(둘 다 시간이 없으므로) —
+  // 회귀 확인용으로 시작·종료를 모두 준 세션은 정상적으로 겹침이 감지돼야 한다는 것만 대조 확인.
+  create({ room: roomA, start: "17:00", end: "19:00", date: "2026-06-12" });
+  assert.throws(
+    () => create({ room: roomA, start: "17:30", end: "18:30", date: "2026-06-12" }),
+    /SESSION_TIME_CONFLICT/,
+    "정상적으로 시작·종료가 있는 세션끼리는 여전히 겹침이 감지된다"
+  );
+});

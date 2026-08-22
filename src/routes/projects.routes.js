@@ -71,16 +71,11 @@ const {
   sessionInvoicedModal,
   invoicePreviewErrorPage,
 } = require("../views.projects");
-const { isValidYmd, kstHms, utcStampFromKst } = require("../lib/date");
-const { parseMoney, formatBizNo } = require("../lib/forms");
+const { kstHms, utcStampFromKst } = require("../lib/date");
+const { parseMoney, formatBizNo, cleanYmd } = require("../lib/forms");
 const { notifyInvoiceIssued } = require("../notify");
 
 const router = express.Router();
-
-function cleanYmd(v) {
-  const s = String(v || "").trim();
-  return isValidYmd(s) ? s : null;
-}
 
 /**
  * 지급 완료(이미 이체)된 외주 정산 기록이 걸린 삭제 시도(PAYOUT_LOCKED).
@@ -372,6 +367,8 @@ router.post("/:id/created-at", requireChief, (req, res) => {
     // 폼이 보여준 값은 **KST 날짜**(kstYmd)이고 DB는 UTC다 — 그대로 이어붙이면 저장할 때마다 하루씩 밀린다
     // (2026-07-20 메인터넌스 실측: 아무것도 안 고치고 [저장]만 눌러도 20→21→22일). KST 시각을 보존한 채 UTC로 되돌린다.
     db().prepare("UPDATE projects SET created_at = ? WHERE id = ?").run(utcStampFromKst(date, kstHms(p.created_at) || "00:00:00"), id);
+    // 작성일은 프로젝트 목록 정렬 기준이라 바뀌면 화면 순서가 달라진다 — 파괴적은 아니지만 변경 추적 필요(2026-08-22 감사).
+    logAudit(req.user, "project.created-at", `#${id} → ${date}`);
   }
   const back = safePath(req.body.return);
   if (back) return res.redirect(back);
@@ -490,8 +487,11 @@ router.post("/payer-info", requireBilling, (req, res) => {
   const p = id ? getParty(id) : null;
   if (!p) return res.status(404).json({ ok: false, error: "청구처를 찾을 수 없습니다." });
   if (!value) return res.status(400).json({ ok: false, error: "값을 입력하세요." });
+  // 세무 식별정보 변경 기록(2026-08-22 감사 — 이 라우트만 유일하게 감사 로그가 없어, 잘못 눌러 다른
+  // 업체의 사업자번호를 덮어써도 사후 추적 수단이 없었다). 값 자체는 넣지 않는다(lib/audit '민감정보 금지').
   if (p.kind === "company") {
     db().prepare("UPDATE parties SET biz_no = ? WHERE id = ?").run(formatBizNo(value), id); // 세금계산서 정보
+    logAudit(req.user, "party.tax-info", `#${id} ${p.name} biz_no`);
     return res.json({ ok: true, field: "biz_no" });
   }
   // 개인·그룹 등
@@ -499,9 +499,11 @@ router.post("/payer-info", requireBilling, (req, res) => {
   // 프론트에서 넘어오는 key가 biz_no인지 cash_receipt_no인지 판별 (없으면 기존 taxType 로직이나 필드 유추)
   if (taxType === "biz" || req.body.field === "biz_no") {
     db().prepare("UPDATE parties SET biz_no = ? WHERE id = ?").run(formatBizNo(value), id);
+    logAudit(req.user, "party.tax-info", `#${id} ${p.name} biz_no`);
     return res.json({ ok: true, field: "biz_no" });
   } else {
     db().prepare("UPDATE parties SET cash_receipt_no = ? WHERE id = ?").run(value, id); // 현금영수증(휴대폰/카드번호)
+    logAudit(req.user, "party.tax-info", `#${id} ${p.name} cash_receipt_no`);
     return res.json({ ok: true, field: "cash_receipt_no" });
   }
 });
@@ -562,11 +564,24 @@ router.post("/:id/tracks", requireEditor, (req, res) => {
     return res.status(400).send(errorPage({ code: 400, title: "이름 필요", message: "곡·콘텐츠 이름을 입력하세요.", user: req.user }));
   }
   const artist = String(req.body.artist || "").trim();
+  // 여러 줄을 한 트랜잭션으로(2026-08-22 감사) — 예전엔 줄마다 독립 INSERT라, 중간에 실패하면
+  // 앞부분만 생성된 채 사용자에겐 500만 보였다(어디까지 만들어졌는지 알 수 없었다).
+  const d = db();
   let lastTrack = null;
-  for (const title of titles) {
-    const track = createTrack(req.user, projectId, { title, artist });
-    if (!track) return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-    lastTrack = track;
+  d.exec("BEGIN IMMEDIATE");
+  try {
+    for (const title of titles) {
+      const track = createTrack(req.user, projectId, { title, artist });
+      if (!track) {
+        d.exec("ROLLBACK");
+        return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
+      }
+      lastTrack = track;
+    }
+    d.exec("COMMIT");
+  } catch (e) {
+    try { d.exec("ROLLBACK"); } catch (_) { /* ignore */ }
+    throw e;
   }
   res.redirect(`/projects/${lastTrack.project_id}?tab=tracks&flash=added`);
 });

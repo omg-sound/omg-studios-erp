@@ -4,6 +4,7 @@ const express = require("express");
 const { db } = require("../db");
 const { requireBilling, requireInvoice, canBill, canInvoice } = require("../auth");
 const { normalizeTaxStatus, normalizeDocType, DOC_TYPES, docNumberWithType } = require("../config");
+const { cleanYmd } = require("../lib/forms");
 const {
   listInvoices,
   invoiceCsv,
@@ -97,8 +98,9 @@ function filteredInvoices(user, { filter = "all", q = "", from = "", to = "" } =
   return rows;
 }
 
-/** 유효한 YYYY-MM-DD만 통과(직접 입력·북마크 방어). */
-const cleanYmd = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : "");
+// 기간 필터의 유효 날짜 검증은 lib/forms.cleanYmd(달력상 실재하는 날짜인지까지 확인) 공용 사용
+// — 2026-08-22 감사: 이 파일만 정규식 형식 검사뿐이라 2026-13-45 같은 존재하지 않는 날짜가
+// 조용히 통과했다(세무사 제출용 CSV라 조용한 오차가 특히 나쁘다).
 
 // ── 청구 내역 CSV(세무사·홈택스 제출용, 2026-08-03) ──
 // 🔒 **화면에서 보고 있는 그대로** 내려준다 — 같은 filteredInvoices를 쓰므로 목록 건수와 파일 줄 수가 같다.
@@ -386,17 +388,19 @@ router.post("/:id/refresh-payer", requireBilling, (req, res) => {
 });
 
 // 한 인보이스의 계산서·입금 상태 전환을 **호출부의 트랜잭션 안에서** 적용(단건·일괄 공용, 2026-07-16 추출).
-// 입금완료 선택=완납(잔금만큼 자동 입금 1건), 입금완료 되돌리기=자동 완납 입금('입금완료 처리')만 제거해 잔금 복원
-// (사용자 직접 입금 이력은 memo가 달라 보존). addPayment/deletePayment는 자체 BEGIN이라 중첩 불가 → 같은 로직 인라인.
+// 입금완료 선택=완납(잔금만큼 자동 입금 1건), 입금완료 되돌리기=자동 완납 입금만 제거해 잔금 복원
+// (사용자 직접 입금 이력은 auto=0이라 보존). addPayment/deletePayment는 자체 BEGIN이라 중첩 불가 → 같은 로직 인라인.
+// 🔒 자동 입금 식별은 `auto` 플래그로 한다(2026-08-22 감사) — 예전엔 memo='입금완료 처리' 문자열로
+// 식별해, 사용자가 직접 입금 메모에 우연히 같은 문구를 쓰면 입금완료 해제 시 그 행까지 삭제될 수 있었다.
 function applyTaxStatusTx(d, inv, tax) {
   if (tax === "입금완료") {
     const bal = balanceOf(inv);
     if (bal > 0) {
-      d.prepare("INSERT INTO payments (invoice_id, amount, paid_on, memo) VALUES (?, ?, ?, ?)").run(inv.id, bal, todayYmd(), "입금완료 처리");
+      d.prepare("INSERT INTO payments (invoice_id, amount, paid_on, memo, auto) VALUES (?, ?, ?, ?, 1)").run(inv.id, bal, todayYmd(), "입금완료 처리");
       recomputePaid(inv.id);
     }
   } else if (inv.tax_status === "입금완료") {
-    d.prepare("DELETE FROM payments WHERE invoice_id = ? AND memo = '입금완료 처리'").run(inv.id);
+    d.prepare("DELETE FROM payments WHERE invoice_id = ? AND auto = 1").run(inv.id);
     recomputePaid(inv.id);
   }
   d.prepare("UPDATE invoices SET tax_status=? WHERE id=?").run(tax, inv.id);

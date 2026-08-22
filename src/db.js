@@ -560,6 +560,11 @@ function init() {
   addColumn("session_engineers", "worker_rate", "INTEGER NOT NULL DEFAULT 0"); // 세션 외주 정산(2026-07-06 사용자 상담) — track_tasks와 동일 구조, 엔지니어별 지급단가
   addColumn("session_engineers", "worker_paid", "INTEGER NOT NULL DEFAULT 0"); // 지급 처리 여부
   addColumn("session_engineers", "worker_paid_date", "TEXT"); // 지급 처리일(YYYY-MM-DD)
+  // 자동 완납 입금 판정(2026-08-22 감사) — 메모 문자열('입금완료 처리') 매칭으로 자동/수동 입금을 가르면
+  // 사용자가 입금 메모에 우연히 같은 문구를 쓸 때 입금완료 해제 시 그 행까지 함께 삭제될 수 있었다.
+  addColumn("payments", "auto", "INTEGER NOT NULL DEFAULT 0");
+  // 기존 자동 완납 입금(메모 일치)만 1회성으로 플래그 백필 — addColumn처럼 매 기동 실행해도 무해(멱등, WHERE로 이미 표시된 행 제외).
+  d.prepare("UPDATE payments SET auto = 1 WHERE memo = '입금완료 처리' AND auto = 0").run();
   d.exec("CREATE INDEX IF NOT EXISTS idx_parties_group ON parties(group_id);");
   d.exec("CREATE INDEX IF NOT EXISTS idx_parties_kind ON parties(kind, is_artist, name);");
   d.exec("CREATE INDEX IF NOT EXISTS idx_parties_user ON parties(user_id);");

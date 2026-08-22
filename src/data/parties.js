@@ -183,12 +183,10 @@ function deleteParty(id) {
   const pid = Number(id);
   const d = db();
   // 첨부 실파일(사업자등록증 등)도 함께 회수 — 행만 CASCADE 삭제하면 Drive/로컬에 스캔본이 고아로 남음(2026-07-09 PII 수명주기 점검).
-  // DB 삭제 전에 목록 확보 → 삭제 후 best-effort 제거(storage.remove는 fail-safe라 삭제 흐름 비차단, 지연 require=순환 방지).
+  // DB 삭제 전에 목록만 확보하고, 실제 제거는 트랜잭션 COMMIT 성공 뒤로 미룬다(2026-08-22 감사 — 예전엔
+  // setImmediate를 트랜잭션 시작 전에 예약해 뒤에서 ROLLBACK이 나도 파일이 이미 지워져 있었다. party는
+  // DB에 그대로 남는데 첨부만 사라지는, 되돌릴 수 없는 상태가 됐었다).
   const orphanFiles = d.prepare("SELECT storage_backend, file_id FROM client_files WHERE client_id = ?").all(pid);
-  if (orphanFiles.length) setImmediate(() => {
-    const storage = require("../storage");
-    for (const f of orphanFiles) Promise.resolve(storage.remove(f.storage_backend, f.file_id)).catch((e) => console.warn("[deleteParty] 첨부 삭제 실패(고아 파일 잔존):", f.storage_backend, f.file_id, e && e.message));
-  });
   // 역할 참조 정리 + 삭제를 한 트랜잭션으로 — 중간 실패 시 참조가 반쪽만 SET NULL/삭제된 채 남지 않게(감사 L3).
   d.exec("BEGIN IMMEDIATE;");
   try {
@@ -215,6 +213,11 @@ function deleteParty(id) {
     d.exec("ROLLBACK;");
     throw e;
   }
+  // 삭제가 확정된 뒤에만 실파일 제거(best-effort, 지연 require=순환 방지).
+  if (orphanFiles.length) setImmediate(() => {
+    const storage = require("../storage");
+    for (const f of orphanFiles) Promise.resolve(storage.remove(f.storage_backend, f.file_id)).catch((e) => console.warn("[deleteParty] 첨부 삭제 실패(고아 파일 잔존):", f.storage_backend, f.file_id, e && e.message));
+  });
 }
 
 // ── Google People 동기화 참조 ──
@@ -856,6 +859,22 @@ function listClients({ kind } = {}) {
   return db().prepare("SELECT * FROM parties WHERE kind IN ('company','group') OR is_artist = 1 ORDER BY " + hangulFirstOrder("name")).all().map(withLegacy);
 }
 
+/** 업체·그룹·아티스트 검색(전역 검색 suggest 전용, 2026-08-22 감사) — listClients() 전량 로드 후 JS 필터 대신
+ * SQL LIKE + LIMIT로 직접 거른다(검색창은 키 입력마다 호출돼 업체가 늘수록 매 타이핑이 그만큼 느려졌다). */
+function searchClients(q, limit = 5) {
+  const term = String(q || "").trim();
+  if (!term) return [];
+  const like = `%${term}%`;
+  return db()
+    .prepare(
+      `SELECT * FROM parties WHERE (kind IN ('company','group') OR is_artist = 1)
+         AND (name LIKE @like OR activity_name LIKE @like)
+       ORDER BY ${hangulFirstOrder("name")} LIMIT @limit`
+    )
+    .all({ like, limit })
+    .map(withLegacy);
+}
+
 /** 콤보 옵션: 담당자(사람) — {id, name, phone, email, current_client(현재 소속)}. */
 function contactOptions() {
   return db()
@@ -1105,6 +1124,7 @@ module.exports = {
   listContacts,
   listAssociates,
   listClients,
+  searchClients,
   contactOptions,
   clientOptions,
   listArtistsForAgency,

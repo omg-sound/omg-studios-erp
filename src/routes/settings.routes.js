@@ -4,6 +4,7 @@ const express = require("express");
 const { db } = require("../db");
 const { requireChief, requireStaff, isChief, syncUserToManager, findUserById } = require("../auth");
 const { normalizeRole } = require("../config");
+const { detectMimeFromBuffer } = require("../lib/attachments");
 const {
   createRoom,
   updateRoom,
@@ -115,21 +116,14 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
   res.send(layout({ title: "환경설정", user: req.user, current: "/settings", body, wide: true }));
 }));
 
-/** 파일 버퍼 매직바이트 검증(Content-Type 스푸핑 방어). */
-function checkMagicBytes(buf, mime) {
-  if (!buf || buf.length < 4) return false;
-  if (/png/.test(mime)) return buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
-  if (/jpe?g/.test(mime)) return buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
-  return false;
-}
-
 // ── 거래명세서 로고 업로드/삭제(base64 data URI, admin_state) ──
+// 매직바이트 검증은 lib/attachments.detectMimeFromBuffer 공용(2026-08-22 감사 — 이 라우트만 별도
+// 구현을 두고 있었고, 판정도 클라이언트가 보낸 mimetype으로 먼저 분기하는 반대 방향이었다).
 router.post("/studio-logo", requireStaff, logoUpload.single("logo"), (req, res) => {
   const f = req.file;
   if (f && f.buffer && f.buffer.length) {
-    const mime = f.mimetype || "";
-    if (!/^image\/(png|jpe?g)$/.test(mime)) return res.status(400).send("PNG 또는 JPG 이미지만 업로드할 수 있습니다.");
-    if (!checkMagicBytes(f.buffer, mime)) return res.status(400).send("PNG 또는 JPG 이미지만 업로드할 수 있습니다.");
+    const mime = detectMimeFromBuffer(f.buffer);
+    if (mime !== "image/png" && mime !== "image/jpeg") return res.status(400).send("PNG 또는 JPG 이미지만 업로드할 수 있습니다.");
     setStudioLogo(`data:${mime};base64,${f.buffer.toString("base64")}`);
   }
   res.redirect("/settings?s=studio&flash=saved");

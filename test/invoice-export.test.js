@@ -99,6 +99,19 @@ test("filteredInvoices: 기간을 걸면 발행일 없는 건은 빠진다(어�
   db().prepare("DELETE FROM invoices WHERE id = ?").run(noDate);
 });
 
+// ── 2026-08-22 감사: 기간 필터가 정규식 형식 검사뿐이라 2026-13-45 같은 존재하지 않는 날짜가
+// 조용히 통과했다(세무사 제출용 CSV라 조용한 오차가 특히 나쁘다) — lib/forms.cleanYmd(달력 검증 포함)로 통일 ──
+test("청구 라우트: 기간 필터는 lib/forms.cleanYmd(달력 검증)를 쓴다 — 정규식만 통과하는 존재하지 않는 날짜는 거부", () => {
+  const { cleanYmd } = require("../src/lib/forms");
+  assert.equal(cleanYmd("2026-13-45"), null, "형식은 맞지만 존재하지 않는 날짜(13월 45일)는 거부");
+  assert.equal(cleanYmd("2026-02-30"), null, "2월 30일도 존재하지 않는 날짜");
+  assert.equal(cleanYmd("2026-08-05"), "2026-08-05", "유효한 날짜는 그대로 통과");
+
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "routes", "invoices.routes.js"), "utf8");
+  assert.match(src, /require\("\.\.\/lib\/forms"\)/, "lib/forms에서 가져다 쓴다");
+  assert.ok(!src.includes("/^\\d{4}-\\d{2}-\\d{2}$/"), "형식만 검사하는 자체 정규식 cleanYmd가 되살아나지 않는다");
+});
+
 test("periodPresets: 전체 + 이번/지난 분기 + 올해/작년, 분기는 3개월 경계로 잡힌다", () => {
   const ps = periodPresets();
   assert.equal(ps[0].range, null, "첫 항목은 '전체'(조건 없음)");

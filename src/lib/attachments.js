@@ -35,10 +35,19 @@ function decodeName(name) {
 }
 
 /**
- * 파일 첫 4바이트 매직바이트로 실제 형식 검증(Content-Type 스푸핑 방어, 함정 #12).
+ * 첫 4바이트 매직바이트로 실제 형식 검증(Content-Type 스푸핑 방어, 함정 #12).
  * PNG(89 50 4E 47)·JPEG(FF D8 FF)·PDF(25 50 44 46)만 허용 — SVG 등 스크립트 가능 형식 차단(stored-XSS 방지).
  * 반환: 검증된 MIME 타입 문자열, 또는 null(불허).
  */
+function detectMimeFromBuffer(buf) {
+  if (!buf || buf.length < 4) return null;
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return "application/pdf";
+  return null;
+}
+
+/** 디스크에 저장된 파일 경로 버전(첫 4바이트만 읽음) — 위 detectMimeFromBuffer에 위임. */
 function detectMimeFromFile(filePath) {
   const buf = Buffer.alloc(4);
   let fd;
@@ -46,10 +55,7 @@ function detectMimeFromFile(filePath) {
     fd = fs.openSync(filePath, "r");
     fs.readSync(fd, buf, 0, 4, 0);
   } catch { return null; } finally { if (fd !== undefined) { try { fs.closeSync(fd); } catch {} } }
-  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
-  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
-  if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return "application/pdf";
-  return null;
+  return detectMimeFromBuffer(buf);
 }
 
-module.exports = { buildUpload, decodeName, detectMimeFromFile, ATTACHMENT_MAX_MB };
+module.exports = { buildUpload, decodeName, detectMimeFromFile, detectMimeFromBuffer, ATTACHMENT_MAX_MB };
