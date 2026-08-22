@@ -355,7 +355,9 @@ function orgsWithOwnerParty(personId) {
  * 레거시 단일 컬럼(sessions.director_party_id)과 다대다(session_directors) 둘 다 매칭.
  */
 function listProjectsForParty(partyId) {
-  const id = Number(partyId);
+  // party 객체를 실수로 넘기면 NaN(매칭 0)이어야 하는데, node:sqlite row는 프로토타입이 없어
+  // Number(obj)가 NaN 대신 TypeError를 던진다(better-sqlite3는 조용히 NaN) — 객체는 미리 NaN 처리.
+  const id = typeof partyId === "object" && partyId !== null ? NaN : Number(partyId);
   return db().prepare(
     `SELECT DISTINCT p.* FROM projects p
       WHERE p.artist_id = @id OR p.agency_id = @id OR p.production_id = @id OR p.contact_party_id = @id
