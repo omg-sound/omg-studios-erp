@@ -78,8 +78,10 @@ function periodPresets() {
  * 그 순간 파일을 신고 자료로 못 쓴다(무엇이 빠졌는지 사람이 알 수 없다).
  * 기간은 **발행일** 기준 — 세무 신고가 발행일로 이뤄지고 청구 목록 정렬 기준도 발행일이다.
  */
-function filteredInvoices(user, { filter = "all", q = "", from = "", to = "" } = {}) {
-  let rows = listInvoices(user, {});
+// preloadedRows(선택, 2026-08-22 감사): 이미 listInvoices(user,{})를 불러온 호출부가 그 배열을 넘기면
+// 다시 조회하지 않는다 — 청구 목록 라우트가 같은 전체 목록을 요청당 3번(allRows + 이 함수 2회 호출) 읽던 것.
+function filteredInvoices(user, { filter = "all", q = "", from = "", to = "" } = {}, preloadedRows = null) {
+  let rows = preloadedRows || listInvoices(user, {});
   if (filter !== "all") rows = rows.filter((i) => invoiceTaxTab(i) === filter);
   if (from || to) {
     rows = rows.filter((i) => {
@@ -131,10 +133,10 @@ router.get("/", requireBilling, (req, res) => {
   const to = cleanYmd(req.query.to);
   const allRows = listInvoices(user, {});
   // 상태 칩 건수는 **기간 안에서** 센다 — 기간을 걸어 두고 칩 숫자만 전체면 눌렀을 때 수가 안 맞는다.
-  const inPeriod = filteredInvoices(user, { filter: "all", q, from, to });
+  const inPeriod = filteredInvoices(user, { filter: "all", q, from, to }, allRows);
   const counts = { all: inPeriod.length, todo: 0, done: 0, paid: 0 };
   for (const i of inPeriod) counts[invoiceTaxTab(i)]++;
-  const rows = filteredInvoices(user, { filter, q, from, to });
+  const rows = filteredInvoices(user, { filter, q, from, to }, allRows);
 
   const totalDue = allRows.reduce((s, i) => s + (i.status === "발행" ? balanceOf(i) : 0), 0); // 미수금 합계=전체 기준(필터 무관)
   // 이번 달 발행액(VAT 포함) — status<>'미발행' & 발행일 YYYY-MM=이번 달(invoiceStats.thisMonthIssued와 동일 로직, 2026-07-18 사용자 요청).

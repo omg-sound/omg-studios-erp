@@ -161,3 +161,20 @@ test("청구 요약 카드: 3열은 lg부터(sm~md 구간은 세로) + 금액은
   assert.match(src, /class="tabular shrink-0 text-lg font-bold/, "금액은 shrink-0 — 좁아져도 안 줄인다");
   assert.match(src, /class="min-w-0 text-sm text-muted"/, "라벨이 대신 줄어든다");
 });
+
+// ── 2026-08-22 감사: 청구 목록 라우트가 같은 전체 목록(listInvoices)을 요청당 3번 읽었다 ──
+// (allRows + filteredInvoices 2회 호출, 각각 내부에서 다시 조회) — 이미 로드한 allRows를 넘겨 재사용한다.
+test("filteredInvoices: preloadedRows를 넘기면 listInvoices를 다시 조회하지 않는다", () => {
+  const { filteredInvoices } = require("../src/routes/invoices.routes");
+  const CHIEF = { id: 1, role: "chief" };
+  // 프리로드 배열에 없는 값(sentinel)을 심어 filteredInvoices가 이 배열을 실제로 쓰는지(재조회 안 하는지) 확인.
+  const preloaded = [{ id: 999999, status: "발행", issued_date: "2026-01-01", title: "센티널", invoice_number: "SENTINEL", client_name: "", tax_status: "계산서 미발행" }];
+  const rows = filteredInvoices(CHIEF, {}, preloaded);
+  assert.deepEqual(rows.map((r) => r.id), [999999], "DB 재조회가 아니라 전달받은 배열만 필터링한다");
+});
+
+test("청구 목록 라우트: allRows를 filteredInvoices 두 호출에 재사용한다(소스 계약)", () => {
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "routes", "invoices.routes.js"), "utf8");
+  assert.match(src, /filteredInvoices\(user, \{ filter: "all", q, from, to \}, allRows\)/, "칩 건수 집계도 allRows 재사용");
+  assert.match(src, /filteredInvoices\(user, \{ filter, q, from, to \}, allRows\)/, "표시 행도 allRows 재사용");
+});
