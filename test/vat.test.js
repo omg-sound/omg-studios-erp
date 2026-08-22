@@ -200,10 +200,12 @@ test("0원 항목: confirmZero:true면 0원 그대로 청구 생성(공급가·�
   assert.strictEqual(inv.tax_amount, 0);
 });
 
-// ── 청구 항목 정렬(2026-07-05 사용자 리포트 '청구 생성 후에도 날짜순이 아니다') ──
-// 세션=session_date, 작업=생성일(created_at)을 item_date로 스냅샷 → listInvoiceItemsForInvoice가 항상 날짜순 반환.
-// 작업이 코드상 먼저 처리되어도(computeInvoiceDraft가 tasks를 먼저 push) 날짜가 더 이르면 세션이 앞에 와야 한다.
-test("청구 항목 정렬: 세션(이전 날짜)+작업(이후 생성일) 혼합 시 item_date 기준 날짜순", () => {
+// ── 청구 항목 정렬(2026-07-05 사용자 리포트 '청구 생성 후에도 날짜순이 아니다',
+//    2026-08-22 사용자 리포트 '녹음·믹싱이 산발적으로 섞여 있다'로 유형 우선순위 도입) ──
+// 세션은 session_date로 날짜순 정렬, 작업은 유형 그룹으로 세션 뒤에 묶이고 그 안에서는 등록 순서(id) 유지.
+// 작업의 item_date(등록일=created_at)는 더 이상 전체 정렬 기준으로 쓰이지 않는다 — 실제 작업 순서와 무관한
+// 값이라 날짜 하나로만 정렬하면 등록 시점에 따라 세션 사이사이에 무작위로 끼어들었기 때문(ITEM_ORDER_SQL 참조).
+test("청구 항목 정렬: 세션은 날짜순으로 먼저, 작업은 뒤에 묶인다(세션 날짜가 작업 등록일보다 늦어도)", () => {
   const { listInvoiceItemsForInvoice } = require("../src/data");
   const pj = db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('정렬테스트', 'task', 0)").run();
   const pid = Number(pj.lastInsertRowid);
@@ -223,22 +225,78 @@ test("청구 항목 정렬: 세션(이전 날짜)+작업(이후 생성일) 혼�
     )
     .run();
   const rateId = Number(rate.lastInsertRowid);
+  // 세션 날짜(8/10)가 작업 등록일(8/1)보다 **늦다** — 옛 순수 날짜순이면 작업이 먼저 와야 하지만,
+  // 유형 우선순위(세션 먼저)가 날짜 순서를 뒤집는다는 것을 이 케이스로 증명한다.
   const sess = db()
     .prepare(
       `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)
-       VALUES (?, '녹음', '2026-07-01', '10:00', '13:30', '완료', ?)`
+       VALUES (?, '녹음', '2026-08-10', '10:00', '13:30', '완료', ?)`
     )
     .run(pid, rateId);
   const sessionId = Number(sess.lastInsertRowid);
 
-  const inv = createInvoiceFromTasks(CHIEF, { projectId: pid, taskIds: [taskId], sessionIds: [sessionId], clientId: PAYER, issueDate: "2026-08-05" });
+  const inv = createInvoiceFromTasks(CHIEF, { projectId: pid, taskIds: [taskId], sessionIds: [sessionId], clientId: PAYER, issueDate: "2026-08-15" });
   assert.ok(inv);
   const bundle = listInvoiceItemsForInvoice(CHIEF, inv.id);
   assert.strictEqual(bundle.rows.length, 2);
-  assert.strictEqual(bundle.rows[0].session_id, sessionId, "이전 날짜(세션 7/1)가 먼저");
-  assert.strictEqual(bundle.rows[0].item_date, "2026-07-01");
-  assert.strictEqual(bundle.rows[1].task_id, taskId, "나중 날짜(작업 생성일 8/1)가 나중에");
+  assert.strictEqual(bundle.rows[0].session_id, sessionId, "세션이 날짜(8/10 > 작업 등록일 8/1)와 무관하게 먼저");
+  assert.strictEqual(bundle.rows[0].item_date, "2026-08-10");
+  assert.strictEqual(bundle.rows[1].task_id, taskId, "작업은 세션보다 이른 등록일이어도 세션 뒤로 밀린다");
   assert.strictEqual(bundle.rows[1].item_date, "2026-08-01");
+});
+
+// ── 청구 항목 유형 우선순위: task_id·session_id 둘 다 없는 수동/레거시 라인은 옛 순수 날짜순을 유지한다 ──
+// (2026-08-22 추가 — invoiceItemsByInvoiceIds가 이 케이스를 이미 검증하지만, 생성 경로가 아니라 읽기 경로만
+//  건드리므로 여기서도 직접 원본 SQL 순서를 짚어 회귀를 잠근다.)
+test("청구 항목 정렬: task_id·session_id 둘 다 없는 수동 라인은 item_date 순수 날짜순", () => {
+  const { listInvoiceItemsForInvoice } = require("../src/data");
+  const inv = db().prepare("INSERT INTO invoices (title, amount, status, payer_id) VALUES ('수동청구서', 100, '발행', ?)").run(PAYER);
+  const invoiceId = Number(inv.lastInsertRowid);
+  const ins = db().prepare(
+    "INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, amount, item_date) VALUES (?,?,1,?,?,?)"
+  );
+  ins.run(invoiceId, "나중", 50, 50, "2026-08-01");
+  ins.run(invoiceId, "먼저", 50, 50, "2026-07-01");
+  const bundle = listInvoiceItemsForInvoice(CHIEF, invoiceId);
+  assert.strictEqual(bundle.rows.length, 2);
+  assert.strictEqual(bundle.rows[0].description, "먼저", "수동 라인은 유형 그룹 없이 날짜순 그대로");
+  assert.strictEqual(bundle.rows[1].description, "나중");
+});
+
+// ── 같은 날짜에 세션이 둘이면 시작 시간으로 구분한다(2026-08-22 사용자 리포트 '8/16 항목이 두 번 나와
+//    중복처럼 보인다' — 설명 문구가 완전히 같아 클라이언트가 오류로 오해하기 쉬웠다) ──
+test("청구 항목: 같은 날짜에 세션이 둘이면 설명에 시작 시간을 덧붙여 구분한다", () => {
+  const pj = db().prepare("INSERT INTO projects (title, project_type, artist, rate) VALUES ('동일날짜테스트', 'task', '테스트아티스트', 0)").run();
+  const pid = Number(pj.lastInsertRowid);
+  const rate = db()
+    .prepare(
+      `INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active)
+       VALUES ('동일날짜 단가', '스튜디오 녹음', 210, 300000, 60, 100000, 1)`
+    )
+    .run();
+  const rateId = Number(rate.lastInsertRowid);
+  const s1 = db()
+    .prepare(
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)
+       VALUES (?, '녹음', '2026-08-16', '10:00', '13:30', '완료', ?)`
+    )
+    .run(pid, rateId);
+  const s2 = db()
+    .prepare(
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)
+       VALUES (?, '녹음', '2026-08-16', '15:00', '18:30', '완료', ?)`
+    )
+    .run(pid, rateId);
+  const s1Id = Number(s1.lastInsertRowid), s2Id = Number(s2.lastInsertRowid);
+  const inv = createInvoiceFromTasks(CHIEF, { projectId: pid, sessionIds: [s1Id, s2Id], clientId: PAYER, issueDate: "2026-08-20" });
+  assert.ok(inv);
+  const { listInvoiceItemsForInvoice } = require("../src/data");
+  const bundle = listInvoiceItemsForInvoice(CHIEF, inv.id);
+  const desc1 = bundle.rows.find((r) => r.session_id === s1Id).description;
+  const desc2 = bundle.rows.find((r) => r.session_id === s2Id).description;
+  assert.ok(desc1.includes("10:00"), `10시 세션 라인에 시작 시간 표기: ${desc1}`);
+  assert.ok(desc2.includes("15:00"), `15시 세션 라인에 시작 시간 표기: ${desc2}`);
+  assert.notStrictEqual(desc1, desc2, "두 세션의 라인 설명이 서로 달라야 한다(중복처럼 보이지 않게)");
 });
 
 // ── 프로젝트 목록·상세 금액의 청구서 할인 차감(2026-07-05 사용자 리포트: 할인 적용 전 금액이 표시되던 버그) ──

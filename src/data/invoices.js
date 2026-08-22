@@ -31,6 +31,13 @@ function payerDisplayName(p) {
   return a && a !== n ? `${n} (${a})` : n;
 }
 
+// 청구 항목 표시 순서(2026-08-22 사용자 리포트 '녹음·믹싱이 산발적으로 섞여 있다'): 작업(task) 라인의
+// item_date는 실제 작업일이 아니라 ERP에 그 작업을 등록한 날짜라, 날짜 하나로만 정렬하면 등록 시점에 따라
+// 세션과 작업이 무작위로 뒤섞인다. → 날짜가 실제로 의미 있는 라인(세션·task_id 없는 수동 라인)은 날짜순으로
+// 먼저, 작업 라인은 뒤에 원래 등록 순서(id, 트랙 등록 순서와 일치)를 그대로 유지한다.
+const ITEM_ORDER_SQL =
+  "(task_id IS NOT NULL), CASE WHEN task_id IS NULL THEN (item_date IS NULL) END, CASE WHEN task_id IS NULL THEN item_date END, id";
+
 /**
  * 발행 시점 청구처(payer) 정보 스냅샷(JSON 문자열). 이후 클라이언트 정보가 바뀌어도 과거 청구서 표시/PDF가
  * 발행 당시 정보로 고정된다(회계·법적 기록 정확성). 표시·PDF는 스냅샷 우선, 없으면(레거시) 실시간 폴백.
@@ -317,9 +324,8 @@ function isSessionInvoiced(sessionId) {
 function listInvoiceItemsForInvoice(user, invoiceId) {
   const inv = getInvoiceForUser(user, invoiceId);
   if (!inv) return null;
-  // 날짜순(item_date) — 없으면(레거시·원본 삭제로 복원 불가) 맨 뒤로 밀고 id순 폴백.
   const rows = db()
-    .prepare("SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY (item_date IS NULL), item_date ASC, id ASC")
+    .prepare(`SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY ${ITEM_ORDER_SQL}`)
     .all(inv.id);
   return { invoice: inv, rows };
 }
@@ -436,7 +442,9 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
   // 라인아이템(청구서·PDF 공용). 작업=곡명 - 종류, 세션=녹음 세션 라인.
   // item_date = 정렬용 날짜 스냅샷(2026-07-05 사용자 요청 — 청구 항목도 세션 탭처럼 항상 날짜순).
   // 세션=session_date(실제 일정), 작업=생성일(작업 자체엔 일정 개념이 없어 created_at으로 근사).
-  const items = [];
+  // 🔒 배열은 세션(taskItems 아님)을 먼저 두고 나중에 작업을 붙인다(ITEM_ORDER_SQL과 동일한 유형 우선순위 —
+  // 아래 최종 정렬 참조).
+  const taskItems = [];
   for (const t of tasks) {
     // item_date: created_at은 UTC라 kstYmd로 KST 달력 날짜를 쓴다 — 세션 라인(session_date)과 같은 기준이라야
     // 한 청구서 안에서 작업·세션 라인이 하루 어긋나지 않는다(2026-07-20 메인터넌스).
@@ -444,11 +452,20 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
     const memoIn = taskMemos[t.id] != null ? taskMemos[t.id] : taskMemos[String(t.id)];
     const reason = String(memoIn != null ? memoIn : t.billing_memo || "").trim();
     const desc = [`${t.track_title} - ${taskTypeLabel(t.task_type)}`, reason].filter(Boolean).join(" · ");
-    items.push({ task_id: t.id, session_id: null, track_title: t.track_title, task_type: t.task_type, description: desc, quantity: t.quantity, unit_price: t.unit_price, amount: t.total_price, item_date: kstYmd(t.created_at) || null });
+    taskItems.push({ task_id: t.id, session_id: null, track_title: t.track_title, task_type: t.task_type, description: desc, quantity: t.quantity, unit_price: t.unit_price, amount: t.total_price, item_date: kstYmd(t.created_at) || null });
   }
+  // 같은 날짜에 세션이 여럿이면(예: 하루 두 타임) 설명 문구가 완전히 같아져 청구서에서 중복처럼 보인다
+  // (2026-08-22 사용자 리포트) — 그럴 때만 시작 시간을 덧붙여 구분한다(단일 세션인 날짜는 기존 형식 유지).
+  const sessionDateCounts = {};
+  for (const { session } of billSessions) {
+    if (session.session_date) sessionDateCounts[session.session_date] = (sessionDateCounts[session.session_date] || 0) + 1;
+  }
+  const sessionItems = [];
   for (const { session, calc, amount } of billSessions) {
     // 형식 = "7월 8일 아티스트명 보컬녹음"(2026-07-08 사용자 요청 — '녹음 세션' 접두·소요시간 제거, 날짜·아티스트·단가 항목명만).
-    const desc = [formatYmdShort(session.session_date), project.artist, calc.item.name].filter(Boolean).join(" · ");
+    const dup = session.session_date && sessionDateCounts[session.session_date] > 1;
+    const dateLabel = formatYmdShort(session.session_date) + (dup && session.start_time ? ` ${session.start_time}` : "");
+    const desc = [dateLabel, project.artist, calc.item.name].filter(Boolean).join(" · ");
     const base = { task_id: null, session_id: session.id, track_title: null, task_type: null, item_date: session.session_date || null };
     // 근거를 항목별로 분리 표시(2026-07-26 사용자 지시): 기본가 / 초과 N시간 / 할증을 각각 한 라인으로.
     // 폼에서 금액을 조정했으면(입력값 ≠ 산정치) 쪼개지 않는다 — 조정된 총액을 되쪼개면 거짓 근거가 된다.
@@ -465,17 +482,22 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
       const description = i === 0
         ? [desc, ln.detail].filter(Boolean).join(" · ")
         : [ln.label, ln.detail].filter(Boolean).join(" · ");
-      items.push({ ...base, description, quantity: ln.quantity != null ? ln.quantity : 1, unit_price: ln.unit_price != null ? ln.unit_price : ln.amount, amount: ln.amount });
+      sessionItems.push({ ...base, description, quantity: ln.quantity != null ? ln.quantity : 1, unit_price: ln.unit_price != null ? ln.unit_price : ln.amount, amount: ln.amount });
     });
   }
-  // 날짜순 — 값 없는 라인은 뒤로(조회 listInvoiceItemsForInvoice의 'item_date IS NULL' 뒤 정렬과 통일, 감사 L4). 동일 날짜는 원래 순서 유지(Array#sort 안정 정렬).
-  items.sort((a, b) => {
+  // 유형별 섹션(세션 → 작업) + 세션 내부는 날짜순(2026-08-22 사용자 리포트 '녹음·믹싱이 산발적으로 섞여 있다').
+  // 작업의 item_date는 실제 작업 순서와 무관한 'ERP 등록일'일 뿐이라, 항목 전체를 날짜 하나로만 정렬하면
+  // 등록 시점에 따라 세션 사이사이에 무작위로 끼어든다. 세션은 날짜순으로 정렬하고, 작업은 원래 순서
+  // (트랙·작업 등록 순서, taskItems를 만든 쿼리의 ORDER BY)를 그대로 보존한다 — DB 읽기 경로의
+  // ITEM_ORDER_SQL과 동일한 유형 우선순위·정렬 기준(값 없는 세션 날짜는 뒤로, 동일 날짜는 안정 정렬 유지).
+  sessionItems.sort((a, b) => {
     const ad = a.item_date || "", bd = b.item_date || "";
     if (!ad && !bd) return 0;
     if (!ad) return 1;
     if (!bd) return -1;
     return ad.localeCompare(bd);
   });
+  const items = [...sessionItems, ...taskItems];
   return { project, tasks, billSessions, items, subtotal, discountAmt, tax, total, issued, dueDate: dueDate || null, invoiceTitle, resolvedPayerId };
 }
 
@@ -630,14 +652,14 @@ function deleteInvoice(user, id) {
 /**
  * 여러 청구서의 항목을 **한 쿼리**로(청구 목록 페이지 — 표시 행마다 listInvoiceItemsForInvoice를 부르면
  * 행당 2쿼리[내부 getInvoiceForUser 결과는 버려짐], 100행=200쿼리. 2026-07-15 점검). { [invoice_id]: rows[] }.
- * 정렬은 listInvoiceItemsForInvoice와 동일(날짜순·값 없는 라인 뒤).
+ * 정렬은 listInvoiceItemsForInvoice와 동일(ITEM_ORDER_SQL).
  */
 function invoiceItemsByInvoiceIds(ids) {
   const list = (ids || []).map(Number).filter(Boolean);
   if (!list.length) return {};
   const ph = list.map(() => "?").join(",");
   const rows = db()
-    .prepare(`SELECT * FROM invoice_items WHERE invoice_id IN (${ph}) ORDER BY invoice_id, (item_date IS NULL), item_date ASC, id ASC`)
+    .prepare(`SELECT * FROM invoice_items WHERE invoice_id IN (${ph}) ORDER BY invoice_id, ${ITEM_ORDER_SQL}`)
     .all(...list);
   const by = {};
   for (const r of rows) (by[r.invoice_id] = by[r.invoice_id] || []).push(r);
