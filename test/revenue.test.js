@@ -66,6 +66,40 @@ test("revenueSummary: 세션 청구 라인의 session_engineers.worker_rate도 �
   assert.equal(s.periodProfit, 80000, "11월 순이익 = 120000-40000(세션 외주 지급단가)");
 });
 
+// ── 2026-08-22 감사 발견(Critical) 회귀: 근거 라인이 여러 개인 세션(기본가+초과)의 외주 지급이
+// 라인 수만큼 중복 합산되지 않는다 — invoice_items를 sessions/session_engineers에 직접 조인하면
+// 세션이 라인 개수만큼 중복 등장해 worker_rate가 그만큼 곱해졌다(SESSION_LINES_SQL로 수정). ──
+test("revenueSummary/revenueTax/revenueByStaff/revenueForStaff: 한 세션이 청구 라인 2개(기본가+초과)로 쪼개져도 외주 지급은 1회만 합산된다", () => {
+  const payer = db().prepare("INSERT INTO parties (kind, name) VALUES ('company', ?)").run("다라인세션컴퍼니").lastInsertRowid;
+  const proj = db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('MP', 'task', 0)").run().lastInsertRowid;
+  const mgr = db().prepare("INSERT INTO project_managers (name) VALUES ('다라인엔지')").run().lastInsertRowid;
+  const sess = db()
+    .prepare("INSERT INTO sessions (project_id, session_type, session_date, engineer_name, status) VALUES (?, '녹음', '2026-12-05', '다라인엔지', '완료')")
+    .run(proj).lastInsertRowid;
+  db().prepare("INSERT INTO session_engineers (session_id, manager_id, worker_rate) VALUES (?, ?, ?)").run(sess, mgr, 200000);
+  const inv = db()
+    .prepare("INSERT INTO invoices (project_id, payer_id, title, amount, tax_amount, status, issued_date) VALUES (?, ?, 'MT', 550000, 50000, '발행', '2026-12-05')")
+    .run(proj, payer).lastInsertRowid;
+  // 같은 세션의 근거 라인 2개(기본가 300000 + 초과 200000) — 2026-07-26 근거 라인 분리 이후의 실제 모양.
+  db().prepare("INSERT INTO invoice_items (invoice_id, session_id, description, quantity, unit_price, amount) VALUES (?, ?, '녹음 기본', 1, 300000, 300000)").run(inv, sess);
+  db().prepare("INSERT INTO invoice_items (invoice_id, session_id, description, quantity, unit_price, amount) VALUES (?, ?, '녹음 초과', 2, 100000, 200000)").run(inv, sess);
+
+  const period = { year: 2026, month: 12 };
+  assert.equal(D.revenueSummary(period).periodProfit, 300000, "revenueSummary: 500000(공급가) - 200000(지급, 라인 2개여도 1회만)");
+  assert.equal(D.revenueTax(period).payoutTotal, 200000, "revenueTax: 지급 총액은 worker_rate 그대로");
+
+  const staffRow = D.revenueByStaff(period).find((r) => r.id === mgr);
+  assert.equal(staffRow.supply, 500000, "revenueByStaff: 공급가는 라인 합(500000)");
+  assert.equal(staffRow.profit, 300000, "revenueByStaff: 순이익 = 500000-200000");
+  assert.equal(staffRow.session_cnt, 1, "revenueByStaff: 건수는 라인 수(2)가 아니라 세션 수(1)");
+
+  const detail = D.revenueForStaff(mgr, period);
+  assert.equal(detail.sessions.length, 1, "revenueForStaff: 상세 목록에 같은 세션이 라인 수만큼 중복되지 않는다");
+  assert.equal(detail.sessions[0].amount, 500000, "revenueForStaff: 세션 1행의 amount = 라인 합");
+  assert.equal(detail.sessions[0].payout, 200000, "revenueForStaff: 세션 1행의 payout = worker_rate 그대로(중복 없음)");
+  assert.equal(detail.payout, 200000, "revenueForStaff: 합계 payout도 200000");
+});
+
 test("revenueYears: 발행 청구서가 있는 년 내림차순", () => {
   const ys = D.revenueYears();
   assert.ok(ys.includes(2026), "2026 포함");

@@ -35,6 +35,25 @@ const ISSUED = "i.status <> '미발행' AND i.issued_date IS NOT NULL";
 const LINE_TOTAL_JOIN = "JOIN (SELECT invoice_id, SUM(amount) AS line_total FROM invoice_items GROUP BY invoice_id) ilt ON ilt.invoice_id = ii.invoice_id";
 const ATTR_SUPPLY = "ROUND(ii.amount * 1.0 * (i.amount - i.tax_amount) / NULLIF(ilt.line_total, 0))";
 
+/**
+ * 세션을 invoice_items 라인 수와 무관하게 **세션당 1행**으로 접은 서브테이블(session_id, invoice_id, amount).
+ *
+ * 2026-08-22 감사 발견(Critical): 세션 근거가 기본가/초과 등 여러 라인으로 쪼개지면(2026-07-26 도입)
+ * `invoice_items ii JOIN sessions s ON s.id = ii.session_id`로 직접 조인하는 쿼리는 그 세션이 라인
+ * 개수만큼 중복 등장한다. 공급가(ATTR_SUPPLY) 합산은 GROUP BY 대상이 사람/세션이라 우연히 맞았지만,
+ * **세션당 한 번만 값을 갖는 지급액(worker_rate)·건수(COUNT)는 라인 수배로 부풀었다**(예: 2줄짜리
+ * 세션의 외주 지급 20만원이 매출 화면엔 40만원으로 집계). 여기서 먼저 세션 단위로 공급가를 합쳐 두면
+ * 아래 세션 축 쿼리들이 다시 invoice_items를 직접 조인할 필요가 없어 이 클래스가 원천적으로 사라진다.
+ */
+const SESSION_LINES_SQL = `(
+  SELECT ii.session_id AS session_id, ii.invoice_id AS invoice_id, SUM(${ATTR_SUPPLY}) AS amount
+  FROM invoice_items ii
+  JOIN invoices i ON i.id = ii.invoice_id
+  ${LINE_TOTAL_JOIN}
+  WHERE ii.session_id IS NOT NULL
+  GROUP BY ii.session_id
+)`;
+
 // 발행일 기간 조건 SQL. period 없음/year 없음/year==='all' = 전체 기간(조건 없음).
 // ISSUED가 이미 issued_date IS NOT NULL을 포함하므로 '1=1'이어도 발행일 없는 행은 안 섞인다.
 // year·month는 라우트에서 정수 파싱(month='all' 연간). 정수/고정문자열만 보간(주입 안전).
@@ -64,7 +83,7 @@ function revenueSummary({ year, month }) {
   const supplyIn = (cond) => db().prepare(`SELECT COALESCE(SUM(i.amount - i.tax_amount),0) AS v FROM invoices i WHERE ${ISSUED} AND ${cond}`).get().v;
   const payoutIn = (cond) => {
     const taskPay = db().prepare(`SELECT COALESCE(SUM(t.worker_rate),0) AS v FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN invoices i ON i.id = ii.invoice_id WHERE ${ISSUED} AND ${cond}`).get().v;
-    const sessPay = db().prepare(`SELECT COALESCE(SUM(se.worker_rate),0) AS v FROM invoice_items ii JOIN sessions s ON s.id = ii.session_id JOIN session_engineers se ON se.session_id = s.id JOIN invoices i ON i.id = ii.invoice_id WHERE ${ISSUED} AND ${cond}`).get().v;
+    const sessPay = db().prepare(`SELECT COALESCE(SUM(se.worker_rate),0) AS v FROM ${SESSION_LINES_SQL} sl JOIN sessions s ON s.id = sl.session_id JOIN session_engineers se ON se.session_id = s.id JOIN invoices i ON i.id = sl.invoice_id WHERE ${ISSUED} AND ${cond}`).get().v;
     return taskPay + sessPay;
   };
   const profitIn = (cond) => supplyIn(cond) - payoutIn(cond);
@@ -90,7 +109,7 @@ function revenueSummary({ year, month }) {
   const groupByMonth = (sql) => new Map(db().prepare(sql).all().map((r) => [r.m, r.v]));
   const supM = groupByMonth(`SELECT CAST(substr(i.issued_date,6,2) AS INTEGER) AS m, COALESCE(SUM(i.amount - i.tax_amount),0) AS v FROM invoices i WHERE ${ISSUED} AND substr(i.issued_date,1,4) = '${y}' GROUP BY m`);
   const taskPayM = groupByMonth(`SELECT CAST(substr(i.issued_date,6,2) AS INTEGER) AS m, COALESCE(SUM(t.worker_rate),0) AS v FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN invoices i ON i.id = ii.invoice_id WHERE ${ISSUED} AND substr(i.issued_date,1,4) = '${y}' GROUP BY m`);
-  const sessPayM = groupByMonth(`SELECT CAST(substr(i.issued_date,6,2) AS INTEGER) AS m, COALESCE(SUM(se.worker_rate),0) AS v FROM invoice_items ii JOIN sessions s ON s.id = ii.session_id JOIN session_engineers se ON se.session_id = s.id JOIN invoices i ON i.id = ii.invoice_id WHERE ${ISSUED} AND substr(i.issued_date,1,4) = '${y}' GROUP BY m`);
+  const sessPayM = groupByMonth(`SELECT CAST(substr(i.issued_date,6,2) AS INTEGER) AS m, COALESCE(SUM(se.worker_rate),0) AS v FROM ${SESSION_LINES_SQL} sl JOIN sessions s ON s.id = sl.session_id JOIN session_engineers se ON se.session_id = s.id JOIN invoices i ON i.id = sl.invoice_id WHERE ${ISSUED} AND substr(i.issued_date,1,4) = '${y}' GROUP BY m`);
   const monthly = Array.from({ length: 12 }, (_, k) => {
     const mm = k + 1;
     const sup = supM.get(mm) || 0;
@@ -107,7 +126,7 @@ function revenueTax({ year, month }) {
   const per = issuedInPeriodSql("i", { year, month });
   const vatTotal = db().prepare(`SELECT COALESCE(SUM(i.tax_amount),0) AS v FROM invoices i WHERE ${ISSUED} AND ${per}`).get().v;
   const taskPay = db().prepare(`SELECT COALESCE(SUM(t.worker_rate),0) AS v FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN invoices i ON i.id = ii.invoice_id WHERE ${ISSUED} AND ${per}`).get().v;
-  const sessPay = db().prepare(`SELECT COALESCE(SUM(se.worker_rate),0) AS v FROM invoice_items ii JOIN sessions s ON s.id = ii.session_id JOIN session_engineers se ON se.session_id = s.id JOIN invoices i ON i.id = ii.invoice_id WHERE ${ISSUED} AND ${per}`).get().v;
+  const sessPay = db().prepare(`SELECT COALESCE(SUM(se.worker_rate),0) AS v FROM ${SESSION_LINES_SQL} sl JOIN sessions s ON s.id = sl.session_id JOIN session_engineers se ON se.session_id = s.id JOIN invoices i ON i.id = sl.invoice_id WHERE ${ISSUED} AND ${per}`).get().v;
   const payoutTotal = taskPay + sessPay;
   return { vatTotal, payoutTotal, withholding: withholding33(payoutTotal) };
 }
@@ -120,8 +139,9 @@ function revenueByStaff(period) {
   const q = (sql) => db().prepare(sql).all();
   const taskRev = q(`SELECT t.engineer_id AS id, COALESCE(SUM(${ATTR_SUPPLY}),0) AS supply, COUNT(*) AS cnt, MAX(i.issued_date) AS last_issued FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN invoices i ON i.id = ii.invoice_id ${LINE_TOTAL_JOIN} WHERE ${ISSUED} AND ${per} AND t.engineer_id IS NOT NULL GROUP BY t.engineer_id`);
   const taskPay = q(`SELECT t.engineer_id AS id, COALESCE(SUM(t.worker_rate),0) AS payout FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN invoices i ON i.id = ii.invoice_id WHERE ${ISSUED} AND ${per} AND t.engineer_id IS NOT NULL GROUP BY t.engineer_id`);
-  const sessRev = q(`SELECT s.engineer_name AS name, COALESCE(SUM(${ATTR_SUPPLY}),0) AS supply, COUNT(*) AS cnt, MAX(i.issued_date) AS last_issued FROM invoice_items ii JOIN sessions s ON s.id = ii.session_id JOIN invoices i ON i.id = ii.invoice_id ${LINE_TOTAL_JOIN} WHERE ${ISSUED} AND ${per} AND s.engineer_name IS NOT NULL GROUP BY s.engineer_name`);
-  const sessPay = q(`SELECT s.engineer_name AS name, COALESCE(SUM(se.worker_rate),0) AS payout FROM invoice_items ii JOIN sessions s ON s.id = ii.session_id JOIN session_engineers se ON se.session_id = s.id JOIN invoices i ON i.id = ii.invoice_id WHERE ${ISSUED} AND ${per} AND s.engineer_name IS NOT NULL GROUP BY s.engineer_name`);
+  // COUNT(*)도 sl이 세션당 1행이라 '건수 = 세션 수'가 정확하다(예전엔 라인 수만큼 부풀었다).
+  const sessRev = q(`SELECT s.engineer_name AS name, COALESCE(SUM(sl.amount),0) AS supply, COUNT(*) AS cnt, MAX(i.issued_date) AS last_issued FROM ${SESSION_LINES_SQL} sl JOIN sessions s ON s.id = sl.session_id JOIN invoices i ON i.id = sl.invoice_id WHERE ${ISSUED} AND ${per} AND s.engineer_name IS NOT NULL GROUP BY s.engineer_name`);
+  const sessPay = q(`SELECT s.engineer_name AS name, COALESCE(SUM(se.worker_rate),0) AS payout FROM ${SESSION_LINES_SQL} sl JOIN sessions s ON s.id = sl.session_id JOIN session_engineers se ON se.session_id = s.id JOIN invoices i ON i.id = sl.invoice_id WHERE ${ISSUED} AND ${per} AND s.engineer_name IS NOT NULL GROUP BY s.engineer_name`);
   const trById = new Map(taskRev.map((r) => [r.id, r]));
   const tpById = new Map(taskPay.map((r) => [r.id, r.payout]));
   const srByName = new Map(sessRev.map((r) => [r.name, r]));
@@ -146,9 +166,11 @@ function revenueForStaff(id, period) {
   const per = issuedInPeriodSql("i", period);
   const tasks = db().prepare(`SELECT t.id, t.task_type, ${ATTR_SUPPLY} AS amount, t.worker_rate, tr.title AS track_title, p.id AS project_id, p.title AS project_title, COALESCE(NULLIF(tr.artist, ''), p.artist) AS artist, i.issued_date FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN project_tracks tr ON tr.id = t.track_id JOIN projects p ON p.id = tr.project_id JOIN invoices i ON i.id = ii.invoice_id ${LINE_TOTAL_JOIN} WHERE ${ISSUED} AND ${per} AND t.engineer_id = ? ORDER BY i.issued_date DESC, p.title COLLATE NOCASE`).all(Number(id));
   // payout = 그 세션에 배정된 전 엔지니어의 지급단가 합(모델 A: 리드가 전체를 흡수).
-  const sessions = db().prepare(`SELECT s.id, s.session_date, s.session_type, ${ATTR_SUPPLY} AS amount, p.id AS project_id, p.title AS project_title, p.artist AS artist, i.issued_date,
+  // sl(세션당 1행)을 거치므로 근거 라인이 여러 개인 세션도 이 목록에 한 번만, 총 공급가로 나온다
+  // (예전엔 invoice_items를 직접 조인해 라인 수만큼 같은 세션이 중복 행으로 나오고 payout도 그만큼 더해졌다).
+  const sessions = db().prepare(`SELECT s.id, s.session_date, s.session_type, sl.amount AS amount, p.id AS project_id, p.title AS project_title, p.artist AS artist, i.issued_date,
       (SELECT COALESCE(SUM(se.worker_rate),0) FROM session_engineers se WHERE se.session_id = s.id) AS payout
-    FROM invoice_items ii JOIN sessions s ON s.id = ii.session_id JOIN projects p ON p.id = s.project_id JOIN invoices i ON i.id = ii.invoice_id ${LINE_TOTAL_JOIN}
+    FROM ${SESSION_LINES_SQL} sl JOIN sessions s ON s.id = sl.session_id JOIN projects p ON p.id = s.project_id JOIN invoices i ON i.id = sl.invoice_id
     WHERE ${ISSUED} AND ${per} AND s.engineer_name = ? ORDER BY i.issued_date DESC, s.session_date DESC`).all(manager.name);
   const supply = tasks.reduce((a, t) => a + (t.amount || 0), 0) + sessions.reduce((a, s) => a + (s.amount || 0), 0);
   const payout = tasks.reduce((a, t) => a + (t.worker_rate || 0), 0) + sessions.reduce((a, s) => a + (s.payout || 0), 0);
@@ -174,9 +196,9 @@ function revenueForStaff(id, period) {
 function revenueUnattributed(period) {
   const per = issuedInPeriodSql("i", period);
   const tasks = db().prepare(`SELECT t.id, t.task_type, ${ATTR_SUPPLY} AS amount, t.worker_rate, tr.title AS track_title, p.id AS project_id, p.title AS project_title, COALESCE(NULLIF(tr.artist, ''), p.artist) AS artist, i.issued_date FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN project_tracks tr ON tr.id = t.track_id JOIN projects p ON p.id = tr.project_id JOIN invoices i ON i.id = ii.invoice_id ${LINE_TOTAL_JOIN} WHERE ${ISSUED} AND ${per} AND t.engineer_id IS NULL ORDER BY i.issued_date DESC, p.title COLLATE NOCASE`).all();
-  const sessions = db().prepare(`SELECT s.id, s.session_date, s.session_type, ${ATTR_SUPPLY} AS amount, p.id AS project_id, p.title AS project_title, p.artist AS artist, i.issued_date,
+  const sessions = db().prepare(`SELECT s.id, s.session_date, s.session_type, sl.amount AS amount, p.id AS project_id, p.title AS project_title, p.artist AS artist, i.issued_date,
       (SELECT COALESCE(SUM(se.worker_rate),0) FROM session_engineers se WHERE se.session_id = s.id) AS payout
-    FROM invoice_items ii JOIN sessions s ON s.id = ii.session_id JOIN projects p ON p.id = s.project_id JOIN invoices i ON i.id = ii.invoice_id ${LINE_TOTAL_JOIN}
+    FROM ${SESSION_LINES_SQL} sl JOIN sessions s ON s.id = sl.session_id JOIN projects p ON p.id = s.project_id JOIN invoices i ON i.id = sl.invoice_id
     WHERE ${ISSUED} AND ${per} AND (s.engineer_name IS NULL OR TRIM(s.engineer_name) = '' OR s.engineer_name NOT IN (SELECT name FROM project_managers))
     ORDER BY i.issued_date DESC, s.session_date DESC`).all();
   const supply = tasks.reduce((a, t) => a + (t.amount || 0), 0) + sessions.reduce((a, s) => a + (s.amount || 0), 0);
