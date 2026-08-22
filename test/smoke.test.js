@@ -59,6 +59,9 @@ test("스모크: 치프 로그인 후 주요 화면 전부 200 + 역할별 권�
       assert.equal(r.status, 200, `${p} → ${r.status}`);
       const body = await r.text();
       assert.ok(body.length > 500, `${p} 본문 렌더(${body.length}B)`);
+      // 2026-08-22 감사: 로그인 상태 응답에 no-store가 없어 주민등록번호·계좌번호 등 PII 화면이
+      // 브라우저 디스크 캐시에 남을 수 있었다(server.js의 전역 no-store 미들웨어를 여기서 잠근다).
+      assert.match(r.headers.get("cache-control") || "", /no-store/, `${p} Cache-Control no-store`);
     }
 
     // ── 역할별 권한 배선 매트릭스 ──
@@ -127,6 +130,17 @@ test("스모크: 치프 로그인 후 주요 화면 전부 200 + 역할별 권�
     // 비로그인은 로그인으로 리다이렉트(인증 게이트가 살아있는지 — static 순서 회귀 감지)
     const anon = await fetch(base + "/projects", { redirect: "manual" });
     assert.equal(anon.status, 302, "비로그인 302");
+
+    // 2026-08-22 감사: Sec-Fetch-Site: same-site는 등록 가능 도메인이 같으면 붙는데(형제 서브도메인
+    // studios.omgworks.kr 포함), CSRF 토큰이 없는 구조에서 이 검사가 유일한 방어선이라 same-site도
+    // cross-site와 동일하게 차단해야 한다(server.js sameOriginRequest).
+    const crossSubdomain = await fetch(base + "/settings/alert-email", {
+      method: "POST",
+      headers: { cookie: chiefCookie, "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": "same-site" },
+      body: "alert_email=" + encodeURIComponent("evil@t.t"),
+      redirect: "manual",
+    });
+    assert.equal(crossSubdomain.status, 403, "same-site 요청도 차단(형제 서브도메인 CSRF 방지)");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupDb(process.env.DB_PATH);

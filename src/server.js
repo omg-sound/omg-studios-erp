@@ -84,7 +84,10 @@ function sameOriginRequest(req) {
   //    동일 출처 폼 제출은 same-origin, 외부 사이트의 CSRF는 cross-site로 구분된다.
   const fetchSite = req.get("sec-fetch-site");
   if (fetchSite) {
-    return fetchSite === "same-origin" || fetchSite === "same-site" || fetchSite === "none";
+    // same-site는 뺀다(2026-08-22 감사) — 등록 가능 도메인이 같으면 붙는데, studios.omgworks.kr(공개
+    // CMS 보유)도 erp.omgworks.kr과 same-site라 이 검사를 통과하고 SameSite=Lax 쿠키도 함께 실린다.
+    // CSRF 토큰이 없는 구조라 origin 검사가 유일한 방어선인데, 이 앱엔 정당한 서브도메인 호출자가 없다.
+    return fetchSite === "same-origin" || fetchSite === "none";
   }
 
   // 2) 폴백: Origin host(도메인:포트) 비교(프로토콜 차이는 무시).
@@ -119,6 +122,15 @@ app.use((req, _res, next) => runWithTheme({ theme: req.cookies.theme }, next));
 
 // 모든 요청에 req.user 부착(라우트 차단은 각 라우트의 미들웨어가 담당)
 app.use(attachUser);
+
+// 로그인 상태 응답은 전부 no-store(2026-08-22 감사) — 일부 민감 라우트(청구·매출·정산 등)만
+// 개별적으로 no-store를 붙이고 있었는데, 정작 주민등록번호·계좌번호가 렌더되는 화면 대부분은
+// Cache-Control이 아예 없어 브라우저 디스크 캐시에 남을 수 있었다. 개별 라우트의 기존 헤더는
+// 그대로 둬도 무해(같은 값 재설정).
+app.use((req, res, next) => {
+  if (req.user) res.setHeader("Cache-Control", "private, no-store");
+  next();
+});
 
 // 헬스체크(인증 불필요)
 app.get("/healthz", (_req, res) => res.json({ ok: true }));

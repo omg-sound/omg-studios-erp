@@ -369,7 +369,21 @@ function deleteProject(projectId) {
     .prepare("SELECT 1 FROM session_engineers se JOIN sessions s ON s.id = se.session_id WHERE s.project_id = ? AND se.worker_paid = 1 LIMIT 1")
     .get(pid);
   if (paidTask || paidSession) throw new Error("PAYOUT_LOCKED");
+  // 자료 전달 첨부 실파일도 회수 — deliverables는 project_id CASCADE라 DB 행은 사라지지만 Drive/로컬의
+  // 실제 파일은 그대로 남아 고아로 누적된다(2026-08-22 감사, deleteParty의 첨부 회수와 같은 이유).
+  // 삭제 확정(COMMIT) 후에만 지운다 — 나중에 PROJECT_HAS_INVOICED 등으로 삭제 자체가 실패해도 파일이
+  // 먼저 지워지는 사고를 피한다(deleteParty가 setImmediate를 트랜잭션 전에 예약해 롤백 시에도 파일이
+  // 사라지는 것과 같은 함정을 여기서는 만들지 않는다).
+  const orphanFiles = db().prepare("SELECT storage_backend, file_id FROM deliverables WHERE project_id = ?").all(pid);
   db().prepare("DELETE FROM projects WHERE id = ?").run(pid);
+  if (orphanFiles.length) {
+    const storage = require("../storage"); // 지연 require(순환 방지)
+    for (const f of orphanFiles) {
+      Promise.resolve(storage.remove(f.storage_backend, f.file_id)).catch((e) =>
+        console.warn("[deleteProject] 자료 삭제 실패(고아 파일 잔존):", f.storage_backend, f.file_id, e && e.message)
+      );
+    }
+  }
 }
 
 /**
