@@ -364,12 +364,10 @@ function projectForm(p = {}, err = "") {
       ${e ? `<p class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">${esc(e)}</p>` : ""}
       <div class="grid gap-3 sm:grid-cols-2">
         <div>
-          <label class="label">프로젝트 명</label>
-          <input class="input" name="title" value="${esc(p.title || "")}" placeholder="예: OOO 세션 (가제)" required />
+          <label class="label mb-0">프로젝트 명<input class="input mt-1 block" name="title" value="${esc(p.title || "")}" placeholder="예: OOO 세션 (가제)" required /></label>
         </div>
         <div>
-          <label class="label">프로젝트 매니저</label>
-          ${managerSelect(p.manager_id)}
+          <label class="label mb-0">프로젝트 매니저${managerSelect(p.manager_id)}</label>
         </div>
       </div>
       <div>
@@ -385,8 +383,7 @@ function projectForm(p = {}, err = "") {
         ${(() => { const sel = p.id ? listProjectContacts(p.id) : []; return personCombo({ multi: true, selected: sel, options: contactOptions(), companyOptions: partyOptions({ role: "company" }), placeholder: sel.length ? "" : "담당자 — 검색 또는 새로 등록" }); })()}
       </div>
       <div>
-        <label class="label">메모</label>
-        <textarea class="input" name="memo" rows="3" placeholder="비고">${esc(p.memo || "")}</textarea>
+        <label class="label mb-0">메모<textarea class="input mt-1 block" name="memo" rows="3" placeholder="비고">${esc(p.memo || "")}</textarea></label>
       </div>
       <div class="flex items-center justify-between gap-3 pt-1">
         <a href="/projects" class="btn-ghost btn-sm">취소</a>
@@ -403,12 +400,10 @@ function projectEditForm(p = {}, err = "") {
       ${err ? `<p class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">${esc(err)}</p>` : ""}
       <div class="grid gap-3 sm:grid-cols-2">
         <div>
-          <label class="label">프로젝트 명</label>
-          <input class="input" name="title" value="${esc(p.title || "")}" required />
+          <label class="label mb-0">프로젝트 명<input class="input mt-1 block" name="title" value="${esc(p.title || "")}" required /></label>
         </div>
         <div>
-          <label class="label">프로젝트 매니저</label>
-          ${managerSelect(p.manager_id)}
+          <label class="label mb-0">프로젝트 매니저${managerSelect(p.manager_id)}</label>
         </div>
       </div>
       <div>
@@ -424,8 +419,7 @@ function projectEditForm(p = {}, err = "") {
         ${(() => { const sel = p.id ? listProjectContacts(p.id) : []; return personCombo({ multi: true, selected: sel, options: contactOptions(), companyOptions: partyOptions({ role: "company" }), placeholder: sel.length ? "" : "담당자 — 검색 또는 새로 등록" }); })()}
       </div>
       <div>
-        <label class="label">메모</label>
-        <textarea class="input" name="memo" rows="3">${esc(p.memo || "")}</textarea>
+        <label class="label mb-0">메모<textarea class="input mt-1 block" name="memo" rows="3">${esc(p.memo || "")}</textarea></label>
       </div>
       ${dirtyActionRow({ deleteFormId: `del-proj-${p.id}`, deleteLabel: "프로젝트 삭제", cancelHref: "/projects" })}
     </form>`;
@@ -493,14 +487,13 @@ function artistCombo(p = {}) {
           <div class="font-display text-lg font-semibold">새 아티스트 등록</div>
           <!-- 유형 먼저(2026-07-14 사용자 리포트 '그룹 체크가 [이 사람이 그룹 소속]인지 [이름 자체가 그룹]인지 불명확').
                개인=사람 party(활동명·본명·소속 그룹), 그룹=group party(그룹명). name 없는 select(폼 제출 안 됨·app.js가 읽음). -->
-          <div><label class="label">등록 유형</label>
-            <select class="input" data-am-type>
+          <div><label class="label mb-0">등록 유형<select class="input mt-1 block" data-am-type>
               <option value="artist" selected>개인 아티스트 (솔로·멤버)</option>
               <option value="group">그룹 (밴드 · 팀 자체)</option>
-            </select>
+            </select></label>
           </div>
           <div><label class="label" data-am-name-label>활동명</label><input class="input" data-am-name placeholder="아티스트 활동명" /></div>
-          <div data-am-real-wrap><label class="label">본명 <span class="text-xs font-normal text-muted">(활동명과 다르면)</span></label><input class="input" data-am-real placeholder="본명(선택)" /></div>
+          <div data-am-real-wrap><label class="label mb-0">본명 <span class="text-xs font-normal text-muted">(활동명과 다르면)</span><input class="input mt-1 block" data-am-real placeholder="본명(선택)" /></label></div>
           <div data-am-group-wrap><label class="label">소속 그룹 <span class="text-xs font-normal text-muted">(선택 · 밴드·팀 멤버면)</span></label>
             <input type="hidden" data-am-group-id value="" />
             <div class="relative">
@@ -516,8 +509,8 @@ function artistCombo(p = {}) {
             </div>
             <script type="application/json" data-am-agency-options>${JSON.stringify(companies.map((co) => ({ id: co.id, name: co.name }))).replace(/</g, "\\u003c")}</script>
           </div>
-          <div data-am-person-only><label class="label">전화 <span class="text-xs font-normal text-muted">(선택)</span></label><input class="input" data-am-phone autocomplete="off" /></div>
-          <div data-am-person-only><label class="label">이메일 <span class="text-xs font-normal text-muted">(선택)</span></label><input class="input" type="email" data-am-email autocomplete="off" /></div>
+          <div data-am-person-only><label class="label mb-0">전화 <span class="text-xs font-normal text-muted">(선택)</span><input class="input mt-1 block" data-am-phone autocomplete="off" /></label></div>
+          <div data-am-person-only><label class="label mb-0">이메일 <span class="text-xs font-normal text-muted">(선택)</span><input class="input mt-1 block" type="email" data-am-email autocomplete="off" /></label></div>
           <div class="flex items-center gap-2 pt-1">
             <button type="button" class="btn-primary" data-am-save>등록</button>
             <button type="button" class="btn-ghost" data-am-cancel>취소</button>
@@ -545,8 +538,10 @@ function managerSelect(selectedId) {
   const missing = cur && !opts.some((m) => m.id === cur)
     ? listProjectManagers({ includeInactive: true }).find((m) => m.id === cur) || null
     : null;
+  // mt-1 block: 호출부가 이 select을 label.label(mb-0)로 감싸므로(스크린리더 연결), 라벨 텍스트와의
+  // 간격(옛 .label mb-1)을 여기서 만든다. 인라인 배치면 라벨 텍스트 줄에 붙고 아래로 디센더 여백이 생긴다.
   return `
-    <select name="manager_id" class="input">
+    <select name="manager_id" class="input mt-1 block">
       <option value="">프로젝트 매니저 미지정</option>
       ${missing ? `<option value="${missing.id}" selected>${esc(missing.name)} (목록에 없음)</option>` : ""}
       ${opts.map((m) => `<option value="${m.id}" ${cur === m.id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
@@ -736,16 +731,13 @@ function taskEditForm(task, managers = []) {
   return `
     <form method="post" action="/projects/tasks/${task.id}" id="task-form-${task.id}" class="grid gap-2 sm:grid-cols-2" data-dirty-form>
       <div>
-        <label class="label mb-0.5 text-xs">작업 종류</label>
-        <select class="input py-1.5 text-sm" name="task_type">${taskTypeOptions(task.task_type)}</select>
+        <label class="label mb-0 text-xs">작업 종류<select class="input mt-0.5 block py-1.5 text-sm" name="task_type">${taskTypeOptions(task.task_type)}</select></label>
       </div>
       <div>
-        <label class="label mb-0.5 text-xs">담당 엔지니어</label>
-        <select class="input py-1.5 text-sm" name="engineer_id">${engineerSelect(managers, task)}</select>
+        <label class="label mb-0 text-xs">담당 엔지니어<select class="input mt-0.5 block py-1.5 text-sm" name="engineer_id">${engineerSelect(managers, task)}</select></label>
       </div>
       <div data-worker-rate>
-        <label class="label mb-0.5 text-xs">외주 지급단가 <span class="font-normal text-muted">(정산 기준 · 원)</span></label>
-        <input class="input py-1.5 text-sm" name="worker_rate" inputmode="numeric" placeholder="0" value="${esc(String(task.worker_rate || ""))}" />
+        <label class="label mb-0 text-xs">외주 지급단가 <span class="font-normal text-muted">(정산 기준 · 원)</span><input class="input mt-0.5 block py-1.5 text-sm" name="worker_rate" inputmode="numeric" placeholder="0" value="${esc(String(task.worker_rate || ""))}" /></label>
       </div>
       ${legacyName ? `<input type="hidden" name="engineer_name" value="${esc(legacyName)}" />` : ""}
       <div class="flex items-center justify-end gap-2 sm:col-span-2">
@@ -932,8 +924,7 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
         <h3 class="text-sm font-semibold">청구 생성</h3>
       </div>
       <div class="mb-2">
-        <label class="label mb-1 text-xs">청구 제목</label>
-        <input class="input" name="title" value="${esc(project.title)} 청구" />
+        <label class="label mb-0 text-xs">청구 제목<input class="input mt-1 block" name="title" value="${esc(project.title)} 청구" /></label>
       </div>
       <div class="mb-2">
         <label class="label mb-1 text-xs">청구처 <span class="font-normal text-danger">*</span></label>
@@ -952,8 +943,7 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
           <p class="mt-1 text-xs text-muted">여기에 입력하면 청구처 정보에 저장됩니다.</p>
         </div>
         <div data-payer-email-row class="mt-1.5 hidden">
-          <label class="label mb-1 text-xs">세금계산서 발행 이메일</label>
-          <input class="input py-1.5 text-sm" type="text" name="payer_email" inputmode="email" autocomplete="off" data-payer-email />
+          <label class="label mb-0 text-xs">세금계산서 발행 이메일<input class="input mt-1 block py-1.5 text-sm" type="text" name="payer_email" inputmode="email" autocomplete="off" data-payer-email /></label>
           <input type="hidden" name="payer_email_set" value="0" data-payer-email-set />
           ${explain("이번 청구서에만 적용됩니다 — 청구처 정보는 바뀌지 않습니다. 비우면 이 청구서는 발행 이메일 없이 기록됩니다.")}
         </div>

@@ -78,25 +78,23 @@ function equipmentForm(item, { rooms = [], categories = [], locations = [] } = {
   // dirtyActionRow(공용, contacts.routes.js와 동일 패턴)로 버튼만 폼 안에 두고 form=ID로 연결.
   return `<form method="post" action="${action}" class="space-y-3" data-dirty-form>
       <div>
-        <label class="label mb-1 text-xs">장비명 <span class="text-danger">*</span></label>
-        <input class="input" name="equipment_name" value="${val(e.name)}" autocomplete="off" required />
+        <label class="label mb-0 text-xs">장비명 <span class="text-danger">*</span><input class="input mt-1 block" name="equipment_name" value="${val(e.name)}" autocomplete="off" required /></label>
       </div>
       <div>
-        <label class="label mb-1 text-xs">종류</label>
-        <input class="input" name="category" value="${val(e.category)}" autocomplete="off" data-equip-category placeholder="예: 마이크 · 프리앰프 · 아웃보드" />
+        <label class="label mb-0 text-xs">종류<input class="input mt-1 block" name="category" value="${val(e.category)}" autocomplete="off" data-equip-category placeholder="예: 마이크 · 프리앰프 · 아웃보드" /></label>
         ${suggestChips(categories, "[data-equip-category]")}
       </div>
       <div class="grid gap-3 sm:grid-cols-2">
         <div>
-          <label class="label mb-1 text-xs">시리얼/제품번호</label>
-          <input class="input" name="serial_no" value="${val(e.serial_no)}" autocomplete="off" />
+          <label class="label mb-0 text-xs">시리얼/제품번호<input class="input mt-1 block" name="serial_no" value="${val(e.serial_no)}" autocomplete="off" /></label>
         </div>
         <div>
-          <label class="label mb-1 text-xs">매입가</label>
-          <div class="relative">
-            <input class="input pr-7 text-right tabular" type="text" inputmode="numeric" name="purchase_price" value="${e.purchase_price != null ? esc(String(e.purchase_price)) : ""}" placeholder="0" />
-            <span class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted">원</span>
-          </div>
+          <label class="label mb-0 text-xs">매입가
+            <div class="relative mt-1">
+              <input class="input pr-7 text-right tabular" type="text" inputmode="numeric" name="purchase_price" value="${e.purchase_price != null ? esc(String(e.purchase_price)) : ""}" placeholder="0" />
+              <span class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted">원</span>
+            </div>
+          </label>
         </div>
       </div>
       <div class="grid gap-3 sm:grid-cols-2">
@@ -105,14 +103,12 @@ function equipmentForm(item, { rooms = [], categories = [], locations = [] } = {
           ${dateCombo("purchased_on", e.purchased_on || "", { label: "구매 시기", inputCls: "input w-full py-1.5 text-sm" })}
         </div>
         <div>
-          <label class="label mb-1 text-xs">현재 장소</label>
-          <input class="input" name="location" value="${val(e.location)}" autocomplete="off" data-equip-location placeholder="룸을 고르거나 직접 입력" />
+          <label class="label mb-0 text-xs">현재 장소<input class="input mt-1 block" name="location" value="${val(e.location)}" autocomplete="off" data-equip-location placeholder="룸을 고르거나 직접 입력" /></label>
           ${suggestChips(locSuggest, "[data-equip-location]")}
         </div>
       </div>
       <div>
-        <label class="label mb-1 text-xs">메모</label>
-        <textarea class="input" name="memo" rows="2">${val(e.memo)}</textarea>
+        <label class="label mb-0 text-xs">메모<textarea class="input mt-1 block" name="memo" rows="2">${val(e.memo)}</textarea></label>
       </div>
       ${isEdit
         ? dirtyActionRow({ deleteFormId: `equip-del-${e.id}`, deleteLabel: "삭제", saveLabel: "저장" })

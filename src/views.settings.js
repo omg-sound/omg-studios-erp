@@ -438,25 +438,24 @@ function bookingDefaultsSection() {
       </div>
       <form method="post" action="/settings/booking-defaults" class="space-y-3" data-dirty-form>
         <div>
-          <label class="label-sm">기본 세션 시간 <span class="font-normal text-muted">(녹음 외 세션[믹싱·마스터링·기타]의 소요시간 슬라이더 기본값)</span></label>
-          <div class="flex items-center gap-2">
-            <input class="input w-28 py-1.5 text-sm" name="pro_hours" type="number" step="0.5" min="0.5" value="${esc(String(getProMinutes() / 60))}" placeholder="3.5" />
-            <span class="text-sm text-muted">시간</span>
-          </div>
+          <label class="label-sm mb-0">기본 세션 시간 <span class="font-normal text-muted">(녹음 외 세션[믹싱·마스터링·기타]의 소요시간 슬라이더 기본값)</span>
+            <div class="mt-1 flex items-center gap-2">
+              <input class="input w-28 py-1.5 text-sm" name="pro_hours" type="number" step="0.5" min="0.5" value="${esc(String(getProMinutes() / 60))}" placeholder="3.5" />
+              <span class="text-sm text-muted">시간</span>
+            </div>
+          </label>
         </div>
         <div>
-          <label class="label mb-0.5 text-xs">예약 담당자 <span class="font-normal text-muted">(세션 예약 폼에서 기본 선택)</span></label>
-          <select class="input py-1.5 text-sm" name="default_booker">
+          <label class="label mb-0 text-xs">예약 담당자 <span class="font-normal text-muted">(세션 예약 폼에서 기본 선택)</span><select class="input mt-0.5 block py-1.5 text-sm" name="default_booker">
             <option value="">지정 안 함</option>
             ${/* 🔒 비활성 담당자가 기본 예약 담당자로 남아 있으면 목록에 없다 → 보존 옵션(2026-08-02 전수 점검).
                   없으면 이 화면(예약 기본값은 통합 저장 폼)을 저장하는 것만으로 설정이 조용히 비워진다. */""}
             ${cur && !managers.some((m) => m.name === cur) ? `<option value="${esc(cur)}" selected>${esc(cur)} (목록에 없음)</option>` : ""}
             ${managers.map((m) => `<option value="${esc(m.name)}" ${m.name === cur ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
-          </select>
+          </select></label>
         </div>
         <div>
-          <label class="label mb-0.5 text-xs">기본 장소 <span class="font-normal text-muted">(예약 시 일정 장소로 자동 입력)</span></label>
-          <input class="input py-1.5 text-sm" name="studio_location" value="${esc(calendar.getStudioLocation())}" placeholder="예: OMG 스튜디오 (서울 ...)" />
+          <label class="label mb-0 text-xs">기본 장소 <span class="font-normal text-muted">(예약 시 일정 장소로 자동 입력)</span><input class="input mt-0.5 block py-1.5 text-sm" name="studio_location" value="${esc(calendar.getStudioLocation())}" placeholder="예: OMG 스튜디오 (서울 ...)" /></label>
         </div>
         ${saveRow()}
       </form>
@@ -468,7 +467,7 @@ function studioInfoSection() {
   const s = getStudioInfo();
   const logo = getStudioLogo();
   const field = (name, label, ph = "") =>
-    `<div><label class="label mb-0.5 text-xs">${esc(label)}</label><input class="input py-1.5 text-sm" name="${esc(name)}" value="${esc(s[name] || "")}" placeholder="${esc(ph)}" /></div>`;
+    `<div><label class="label mb-0 text-xs">${esc(label)}<input class="input mt-0.5 block py-1.5 text-sm" name="${esc(name)}" value="${esc(s[name] || "")}" placeholder="${esc(ph)}" /></label></div>`;
   return `
     <div class="${SETTING_BLOCK}">
       <div>
@@ -483,7 +482,7 @@ function studioInfoSection() {
           ${field("studio_biz_type", "업태", "서비스")}
           ${field("studio_biz_item", "종목", "음반녹음")}
         </div>
-        <div><label class="label mb-0.5 text-xs">사업장 주소</label><input class="input py-1.5 text-sm" name="studio_address" value="${esc(s.studio_address || "")}" /></div>
+        <div><label class="label mb-0 text-xs">사업장 주소<input class="input mt-0.5 block py-1.5 text-sm" name="studio_address" value="${esc(s.studio_address || "")}" /></label></div>
         ${saveRow("공급자 정보 저장")}
       </form>
       <div class="border-t border-border pt-4">
@@ -542,13 +541,11 @@ function alertsSection(chief = true) {
     </div>
     <form method="post" action="/settings/alerts" class="space-y-3" data-dirty-form>
       <div>
-        <label class="label mb-0.5 text-xs">알림 웹훅 <span class="font-normal text-muted">(Incoming Webhook URL · 비우면 끔 · 저장 시 암호화)</span></label>
-        <input class="input py-1.5 text-sm" name="webhook_url" value="${esc(url)}" placeholder="https://hooks.slack.com/services/..." />
+        <label class="label mb-0 text-xs">알림 웹훅 <span class="font-normal text-muted">(Incoming Webhook URL · 비우면 끔 · 저장 시 암호화)</span><input class="input mt-0.5 block py-1.5 text-sm" name="webhook_url" value="${esc(url)}" placeholder="https://hooks.slack.com/services/..." /></label>
         ${envNote}
       </div>
       <div>
-        <label class="label mb-0.5 text-xs">청구 알림 이메일 <span class="font-normal text-muted">(콤마로 여러 명 · 비우면 끔)</span></label>
-        <input class="input py-1.5 text-sm" name="alert_email" value="${esc(raw)}" placeholder="owner@omgworks.kr, chief@omgworks.kr" />
+        <label class="label mb-0 text-xs">청구 알림 이메일 <span class="font-normal text-muted">(콤마로 여러 명 · 비우면 끔)</span><input class="input mt-0.5 block py-1.5 text-sm" name="alert_email" value="${esc(raw)}" placeholder="owner@omgworks.kr, chief@omgworks.kr" /></label>
         ${linkNote}
       </div>
       ${saveRow()}

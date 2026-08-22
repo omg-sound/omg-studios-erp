@@ -673,9 +673,9 @@ function personCombo({ idField = "contact_id", nameField = "contact_name", selec
         <div class="w-full max-w-sm space-y-3 rounded-xl border border-border bg-bg p-4 shadow-xl" role="dialog" aria-modal="true">
           <div class="font-display text-lg font-semibold">새 ${esc(entityLabel)} 등록</div>
           ${simpleModal ? `<p class="text-xs text-muted">이 업체의 ${esc(entityLabel)}로 등록됩니다 — 회사·직책은 자동 지정.</p>` : ""}
-          <div><label class="label">이름</label><input class="input" data-pc-name placeholder="${esc(entityLabel)} 이름" /></div>
-          ${simpleModal ? "" : `<div><label class="label">직책</label><input class="input" data-pc-job autocomplete="off" /></div>
-          <div><label class="label">활동명 <span class="text-xs font-normal text-muted">(입력 시 아티스트로도 등록)</span></label><input class="input" data-pc-activity autocomplete="off" placeholder="아티스트 활동명(선택)" /></div>
+          <div><label class="label mb-0">이름<input class="input mt-1 block" data-pc-name placeholder="${esc(entityLabel)} 이름" /></label></div>
+          ${simpleModal ? "" : `<div><label class="label mb-0">직책<input class="input mt-1 block" data-pc-job autocomplete="off" /></label></div>
+          <div><label class="label mb-0">활동명 <span class="text-xs font-normal text-muted">(입력 시 아티스트로도 등록)</span><input class="input mt-1 block" data-pc-activity autocomplete="off" placeholder="아티스트 활동명(선택)" /></label></div>
           <div><label class="label">회사</label>
             <div class="relative">
               <input class="input pr-9" data-pc-company autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="회사 검색 또는 새로 등록" />
@@ -684,8 +684,8 @@ function personCombo({ idField = "contact_id", nameField = "contact_name", selec
             </div>
             ${companyOptionsRef ? "" : `<script type="application/json" data-pc-company-options>${companyJson}</script>`}
           </div>`}
-          <div><label class="label">전화</label><input class="input" data-pc-phone autocomplete="off" /></div>
-          <div><label class="label">이메일</label><input class="input" type="email" data-pc-email autocomplete="off" /></div>
+          <div><label class="label mb-0">전화<input class="input mt-1 block" data-pc-phone autocomplete="off" /></label></div>
+          <div><label class="label mb-0">이메일<input class="input mt-1 block" type="email" data-pc-email autocomplete="off" /></label></div>
           <div class="flex items-center gap-2 pt-1">
             <button type="button" class="btn-primary" data-pc-save>등록</button>
             <button type="button" class="btn-ghost" data-pc-cancel>취소</button>
@@ -891,7 +891,7 @@ function companyCombo(fieldName, value, roleKey, label, extra = {}) {
       <div data-cc-modal class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 p-4">
         <div class="w-full max-w-sm space-y-3 rounded-xl border border-border bg-bg p-4 shadow-xl" role="dialog" aria-modal="true">
           <div class="font-display text-lg font-semibold">새 ${esc(label)} 등록</div>
-          <div><label class="label">업체명</label><input class="input" data-cc-name placeholder="상호(업체명)" /></div>
+          <div><label class="label mb-0">업체명<input class="input mt-1 block" data-cc-name placeholder="상호(업체명)" /></label></div>
           <div><label class="label">역할 <span class="text-xs font-normal text-muted">(겸업 가능)</span></label>
             <div class="flex flex-wrap gap-4">
               <label class="flex items-center gap-1.5 text-sm"><input type="checkbox" data-cc-agency ${isProd ? "" : "checked"} class="h-4 w-4 rounded border-border text-primary" /> 소속/레이블</label>
@@ -899,7 +899,7 @@ function companyCombo(fieldName, value, roleKey, label, extra = {}) {
             </div>
           </div>
           <div class="grid gap-3 sm:grid-cols-2">
-            <div><label class="label">사업자등록번호</label><input class="input" data-cc-biz placeholder="000-00-00000" autocomplete="off" /></div>
+            <div><label class="label mb-0">사업자등록번호<input class="input mt-1 block" data-cc-biz placeholder="000-00-00000" autocomplete="off" /></label></div>
             <div><label class="label">대표자 <span class="text-xs font-normal text-muted">(공동대표 가능)</span></label>
               <div class="relative">
                 <!-- 대표자 칩(공동대표) — 저장 시 owner_id/owner_name 쌍을 칩 수만큼 전송(app.js) -->
@@ -947,7 +947,7 @@ function groupCombo(fieldName, selectedId, currentName, groups = []) {
       <div data-gc-modal class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 p-4">
         <div class="w-full max-w-sm space-y-3 rounded-xl border border-border bg-bg p-4 shadow-xl" role="dialog" aria-modal="true">
           <div class="font-display text-lg font-semibold">새 그룹 등록</div>
-          <div><label class="label">그룹명</label><input class="input" data-gc-name placeholder="그룹명" autocomplete="off" /></div>
+          <div><label class="label mb-0">그룹명<input class="input mt-1 block" data-gc-name placeholder="그룹명" autocomplete="off" /></label></div>
           <div class="flex items-center gap-2 pt-1">
             <button type="button" class="btn-primary" data-gc-save>등록</button>
             <button type="button" class="btn-ghost" data-gc-cancel>취소</button>

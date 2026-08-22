@@ -35,7 +35,8 @@ function roomSelect(rooms, currentId) {
     opts.push(`<option value="${r.id}" data-external="${r.is_external ? 1 : 0}" ${String(r.id) === auto ? "selected" : ""}>${esc(r.name)}</option>`);
   }
   opts.push(`<option value="" data-external="0" ${auto === "" ? "selected" : ""}>장소 미지정</option>`); // 맨 아래
-  return `<select class="input py-1.5 text-sm" name="room_id">${opts.join("")}</select>`;
+  // mt-1 block: 호출부가 label.label-sm(mb-0)로 감싸므로(스크린리더 연결) 라벨 텍스트와의 간격을 여기서 만든다.
+  return `<select class="input mt-1 block py-1.5 text-sm" name="room_id">${opts.join("")}</select>`;
 }
 
 /** 담당자 마스터 선택지. 현재값이 목록에 없으면 보존용으로 추가. 예약 담당자·담당 엔지니어 공용. */
@@ -198,13 +199,10 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
   const curItems = itemsByKind[curKind] || [];
   const rateKindsAttr = Object.entries(SESSION_TYPE_RATE_KIND).map(([k, v]) => `${k}:${v}`).join(","); // "녹음:recording,촬영:filming,공연:performance"
   const typeRateRow = `<div class="grid gap-2 sm:grid-cols-3">
-         <div><label class="label-sm">세션 종류</label>
-          <select class="input py-1.5 text-sm" name="session_type" data-rec-types="${esc(RENTAL_SESSION_TYPES.join(","))}" data-rate-kinds="${esc(rateKindsAttr)}">${orderedSessionTypes().map((t) => `<option value="${esc(t)}" ${t === s.session_type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
-         <div data-show-when="rec"><label class="label-sm">단가 항목</label>
-          <select class="input py-1.5 text-sm" name="rate_item_id" data-rate-select>${rateOptionsHtml(curItems, s.rate_item_id)}</select>
+         <div><label class="label-sm mb-0">세션 종류<select class="input mt-1 block py-1.5 text-sm" name="session_type" data-rec-types="${esc(RENTAL_SESSION_TYPES.join(","))}" data-rate-kinds="${esc(rateKindsAttr)}">${orderedSessionTypes().map((t) => `<option value="${esc(t)}" ${t === s.session_type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label></div>
+         <div data-show-when="rec"><label class="label-sm mb-0">단가 항목<select class="input mt-1 block py-1.5 text-sm" name="rate_item_id" data-rate-select>${rateOptionsHtml(curItems, s.rate_item_id)}</select></label>
           ${rateKinds.map((k) => `<template data-rate-opts-${k}>${rateOptionsHtml(itemsByKind[k], s.rate_item_id)}</template>`).join("")}</div>
-         <div><label class="label-sm">장소</label>
-          ${roomSelect(roomList, s.room_id)}</div>
+         <div><label class="label-sm mb-0">장소${roomSelect(roomList, s.room_id)}</label></div>
        </div>
        <div class="mt-2" data-external-loc ${s.room_id && roomList.some((r) => Number(r.id) === Number(s.room_id) && r.is_external) ? "" : "hidden"}>
          <label class="label-sm">장소 주소 <span class="font-normal text-muted text-xs">(외부 장소 — 구글 지도용 주소${config && config.placesApiKey ? " · 타이핑하면 제안" : ""})</span></label>
@@ -326,8 +324,7 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
           <div class="text-sm font-medium">${esc(pmName)}</div>
           <p class="mt-0.5 text-xs text-muted">프로젝트 담당 — 표기만</p>
         </div>` : ""}
-        <div><label class="label-sm">예약 담당자</label>
-          <select class="input py-1.5 text-sm" name="booker_name">${managerOptions(managers, s.booker_name || defaultBooker || getDefaultBooker() || "", "", { allowEmpty: false })}</select></div>
+        <div><label class="label-sm mb-0">예약 담당자<select class="input mt-1 block py-1.5 text-sm" name="booker_name">${managerOptions(managers, s.booker_name || defaultBooker || getDefaultBooker() || "", "", { allowEmpty: false })}</select></label></div>
         ${engineerField}
       </div>
     </div>`;

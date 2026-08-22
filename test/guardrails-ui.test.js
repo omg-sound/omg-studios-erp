@@ -257,3 +257,44 @@ test("정적 자산: layout이 참조하는 css/js가 전부 ASSET_FILES에 포�
   const bare = [...src.matchAll(/"(\/(?:css|js)\/[A-Za-z0-9._-]+)"/g)].map((m) => m[1]);
   assert.deepEqual(bare, [], `버전 없는 정적 참조: ${bare.join(", ")}`);
 });
+
+// ⑱ 라벨-입력 연결(2026-08-22 접근성 감사): `.label`/`.label-sm` 폼 라벨은 입력과 **프로그램적으로** 이어져야 한다.
+// 안 이어지면 스크린리더가 그 칸을 '편집 텍스트'로만 읽고(칸 이름이 없다) 라벨 클릭 포커스도 안 된다.
+// 감사 시점 실측: `<label>` 135개 중 for= 3개·감싼 것 13개뿐, 나머지 ~119개가 미연결이었다.
+//
+// 이 앱의 지배적 패턴이자 유일한 결함 형태는 **라벨 바로 뒤에 형제로 놓인 컨트롤**이라, 그 형태를 직접 막는다.
+// 콤보(`${personCombo(...)}` 등)는 뒤가 템플릿 표현식이라 자연히 안 걸린다 — 의도된 제외다:
+// 한 라벨에 입력이 여럿(hidden·검색칸·팝오버 버튼)이라 감싸면 오히려 스크린리더에 더 나쁘고,
+// 팝오버 버튼이 라벨 안에 들어가면 클릭이 라벨 활성화와 겹친다.
+test("ui-guardrail: .label 폼 라벨은 인접 입력을 감싼다(for= 또는 wrapping)", () => {
+  // app.js가 textContent를 통째로 갈아끼우는 라벨(활동명↔그룹명)은 감쌀 수 없다 — 입력이 함께 지워진다.
+  const EXEMPT = ["data-am-name-label"];
+  const LABEL_RE = /<label\b([^>]*)>([\s\S]*?)<\/label>/g;
+  const isFormLabel = (attrs) => /class="[^"]*\b(?:label|label-sm)\b/.test(attrs);
+  const violations = [];
+  const overWrapped = [];
+
+  for (const { f, s } of SRC_ALL) {
+    for (const m of s.matchAll(LABEL_RE)) {
+      const [whole, attrs, inner] = m;
+      if (!isFormLabel(attrs) || EXEMPT.some((e) => attrs.includes(e))) continue;
+      const line = s.slice(0, m.index).split("\n").length;
+
+      // hidden은 라벨 대상이 아니다(HTML 'labelable elements' 정의) — 세지도, 인접 판정에 쓰지도 않는다.
+      const labelable = (a) => !/type="hidden"/.test(a);
+      const ctrls = [...inner.matchAll(/<(input|select|textarea)\b([^>]*)>/g)].filter((c) => labelable(c[2]));
+
+      // (A) 감싸지도 for=도 없는데 라벨 뒤에 공백만 두고 형제 컨트롤이 오면 = 연결 안 된 그 결함.
+      if (!/\bfor=/.test(attrs) && ctrls.length === 0) {
+        const next = /^\s*<(input|select|textarea)\b([^>]*)>/.exec(s.slice(m.index + whole.length));
+        if (next && labelable(next[2])) violations.push(`${f}:${line} ${inner.slice(0, 24).trim()}`);
+      }
+
+      // (B) 반대로 억지로 감싸 컨트롤이 여럿 들어가면 한 라벨에 여러 칸이 묶여 더 나쁘다.
+      if (ctrls.length > 1) overWrapped.push(`${f}:${line} (${ctrls.length}개)`);
+    }
+  }
+
+  assert.deepEqual(violations, [], `라벨과 입력이 연결되지 않았다 — 라벨이 그 입력을 감싸야 한다:\n${violations.join("\n")}`);
+  assert.deepEqual(overWrapped, [], `한 라벨이 컨트롤을 여럿 감쌌다 — 스크린리더가 여러 칸을 한 이름으로 읽는다:\n${overWrapped.join("\n")}`);
+});

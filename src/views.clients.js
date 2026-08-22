@@ -174,7 +174,7 @@ function clientForm(c = {}, isEdit = false, files = [], fileErr = "", canFiles =
       ${e ? `<p class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">${esc(e)}</p>` : ""}
       <input type="hidden" name="type" value="${type}" />
       <div class="flex items-center gap-2"><span class="badge ${type === "company" ? "badge-neutral" : "badge-info"}">${typeLabel}</span>${isEdit ? `<span class="text-xs text-muted">유형은 변경할 수 없습니다</span>` : ""}</div>
-      <div><label class="label">${nameLabel}</label><input class="input" name="party_name" value="${esc(c.name || "")}" autocomplete="off" required /></div>
+      <div><label class="label mb-0">${nameLabel}<input class="input mt-1 block" name="party_name" value="${esc(c.name || "")}" autocomplete="off" required /></label></div>
       ${type === "company" ? `
       <div class="space-y-4">
         <div>
@@ -184,15 +184,15 @@ function clientForm(c = {}, isEdit = false, files = [], fileErr = "", canFiles =
           </div>
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
-          <div><label class="label">사업자등록번호</label><input class="input" name="biz_no" value="${esc(c.biz_no || "")}" placeholder="000-00-00000" /></div>
+          <div><label class="label mb-0">사업자등록번호<input class="input mt-1 block" name="biz_no" value="${esc(c.biz_no || "")}" placeholder="000-00-00000" /></label></div>
           <div><label class="label">대표자 <span class="font-normal text-muted text-xs">(연락처 연동 · 공동대표 가능)</span></label>
             ${(() => { const owners = isEdit && c.id ? listCompanyOwners(c.id) : []; return personCombo({ idField: "owner_id", nameField: "owner_name", selected: owners, options: contactOptions(), entityLabel: "대표자", placeholder: owners.length ? "" : "대표자 — 검색 또는 새로 등록", simpleModal: true, multi: true }); })()}
           </div>
         </div>
-        <div><label class="label">사업장 주소</label><input class="input" name="biz_address" value="${esc(c.address || "")}" autocomplete="off" /></div>
+        <div><label class="label mb-0">사업장 주소<input class="input mt-1 block" name="biz_address" value="${esc(c.address || "")}" autocomplete="off" /></label></div>
         <div class="grid gap-3 sm:grid-cols-2">
-          <div><label class="label">업태</label><input class="input" name="biz_type" value="${esc(c.biz_type || "")}" /></div>
-          <div><label class="label">종목</label><input class="input" name="biz_item" value="${esc(c.biz_item || "")}" /></div>
+          <div><label class="label mb-0">업태<input class="input mt-1 block" name="biz_type" value="${esc(c.biz_type || "")}" /></label></div>
+          <div><label class="label mb-0">종목<input class="input mt-1 block" name="biz_item" value="${esc(c.biz_item || "")}" /></label></div>
         </div>
       </div>` : ""}
       ${type === "group" ? `
@@ -206,9 +206,9 @@ function clientForm(c = {}, isEdit = false, files = [], fileErr = "", canFiles =
         ${personCombo({ idField: "contact_party_id", nameField: "contact_name", selectedId: c.contact_party_id || null, options: contactOptions(), companyOptions: companies })}
       </div>` : ""}
       ${type === "group" && isEdit ? `<p class="text-xs text-muted">멤버는 아래 <span class="text-fg">멤버</span> 섹션에서 연결·관리합니다.</p>` : ""}
-      <div><label class="label">${type === "company" ? "세금계산서 발행 이메일" : "이메일"}</label><input class="input" type="email" name="email" value="${esc(c.email || "")}" placeholder="${type === "company" ? "계산서 받을 이메일" : ""}" /></div>
+      <div><label class="label mb-0">${type === "company" ? "세금계산서 발행 이메일" : "이메일"}<input class="input mt-1 block" type="email" name="email" value="${esc(c.email || "")}" placeholder="${type === "company" ? "계산서 받을 이메일" : ""}" /></label></div>
       ${type === "company" ? clientContactCombo(c, isEdit) : ""}
-      <div><label class="label">메모</label><textarea class="input" name="memo" rows="2">${esc(c.memo || "")}</textarea></div>
+      <div><label class="label mb-0">메모<textarea class="input mt-1 block" name="memo" rows="2">${esc(c.memo || "")}</textarea></label></div>
       ${isEdit
         ? dirtyActionRow({ deleteFormId: `del-client-${c.id}`, deleteLabel: `${typeLabel} 삭제` })
         : dirtyActionRow({ cancelHref: "/clients", saveLabel: "추가", dirty: false })}

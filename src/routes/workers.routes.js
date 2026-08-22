@@ -381,13 +381,13 @@ router.get("/:id", requireInvoice, asyncHandler(async (req, res) => {
     ? `<section class="card mb-3">
         <h2 class="text-sm font-semibold">정보 수정</h2>
         <form method="post" action="/workers/${w.id}/edit" class="mt-3 grid gap-2 sm:grid-cols-3" data-dirty-form>
-          <div><label class="label">이름</label><input class="input py-1.5 text-sm" name="worker_name" value="${esc(w.name || "")}" placeholder="이름" autocomplete="off" required /></div>
-          <div><label class="label">이메일</label><input class="input py-1.5 text-sm" name="email" value="${esc(w.email || "")}" placeholder="이메일" /></div>
-          <div><label class="label">전화</label><input class="input py-1.5 text-sm" name="phone" autocomplete="off" value="${esc(w.phone || "")}" placeholder="전화" /></div>
-          <div class="sm:col-span-3"><label class="label">주민등록번호 / 사업자등록번호</label><input class="input py-1.5 text-sm" name="id_number" value="${esc(decrypt(w.id_number) || "")}" placeholder="어느 쪽이든 한 칸에" autocomplete="off" /></div>
-          <div><label class="label">은행</label><input class="input py-1.5 text-sm" name="bank_name" value="${esc(w.bank_name || "")}" placeholder="은행" autocomplete="off" /></div>
-          <div><label class="label">계좌번호</label><input class="input py-1.5 text-sm" name="account_number" value="${esc(decrypt(w.account_number) || "")}" placeholder="계좌번호" autocomplete="off" /></div>
-          <div><label class="label">입금자명(예금주)</label><input class="input py-1.5 text-sm" name="account_holder" value="${esc(w.account_holder || "")}" placeholder="입금자명(예금주)" autocomplete="off" /></div>
+          <div><label class="label mb-0">이름<input class="input mt-1 block py-1.5 text-sm" name="worker_name" value="${esc(w.name || "")}" placeholder="이름" autocomplete="off" required /></label></div>
+          <div><label class="label mb-0">이메일<input class="input mt-1 block py-1.5 text-sm" name="email" value="${esc(w.email || "")}" placeholder="이메일" /></label></div>
+          <div><label class="label mb-0">전화<input class="input mt-1 block py-1.5 text-sm" name="phone" autocomplete="off" value="${esc(w.phone || "")}" placeholder="전화" /></label></div>
+          <div class="sm:col-span-3"><label class="label mb-0">주민등록번호 / 사업자등록번호<input class="input mt-1 block py-1.5 text-sm" name="id_number" value="${esc(decrypt(w.id_number) || "")}" placeholder="어느 쪽이든 한 칸에" autocomplete="off" /></label></div>
+          <div><label class="label mb-0">은행<input class="input mt-1 block py-1.5 text-sm" name="bank_name" value="${esc(w.bank_name || "")}" placeholder="은행" autocomplete="off" /></label></div>
+          <div><label class="label mb-0">계좌번호<input class="input mt-1 block py-1.5 text-sm" name="account_number" value="${esc(decrypt(w.account_number) || "")}" placeholder="계좌번호" autocomplete="off" /></label></div>
+          <div><label class="label mb-0">입금자명(예금주)<input class="input mt-1 block py-1.5 text-sm" name="account_holder" value="${esc(w.account_holder || "")}" placeholder="입금자명(예금주)" autocomplete="off" /></label></div>
           ${explain(`주민등록번호·계좌번호는 암호화해 저장됩니다. 정산(지급) 시 참고용 — 세금신고·이체에 사용하세요.`)}
           <div class="sm:col-span-3">${dirtyActionRow({ saveLabel: "저장" })}</div>
         </form>
@@ -463,9 +463,19 @@ router.post("/:id/payout-all", requireInvoice, (req, res) => {
   const paidOn = isValidYmd(String(req.body.paid_on || "")) ? String(req.body.paid_on) : null;
   // 0원(단가 미입력)도 포함해 전부 지급 처리(2026-07-09 사용자 결정 — 무료 작업도 정산 완료로 정리).
   const tasks = listTasksForWorker(w).filter((t) => !t.worker_paid);
-  tasks.forEach((t) => setTaskPayout(t.id, true, paidOn));
   const sessionPayouts = listSessionPayoutsForWorker(w).filter((s) => !s.worker_paid);
-  sessionPayouts.forEach((s) => setSessionEngineerPayout(s.session_id, w.id, true, paidOn));
+  // 한 트랜잭션으로(2026-08-22 감사) — 예전엔 forEach 루프가 트랜잭션 없이 독립 UPDATE라, 중간 실패 시
+  // 일부만 지급 처리된 상태로 남고 감사 로그도 안 남았다(원천세 신고 근거가 반쪽이 됨).
+  const d = db();
+  d.exec("BEGIN IMMEDIATE");
+  try {
+    tasks.forEach((t) => setTaskPayout(t.id, true, paidOn));
+    sessionPayouts.forEach((s) => setSessionEngineerPayout(s.session_id, w.id, true, paidOn));
+    d.exec("COMMIT");
+  } catch (e) {
+    try { d.exec("ROLLBACK"); } catch (_) { /* ignore */ }
+    throw e;
+  }
   logAudit(req.user, "worker.payout", `${w.name} 일괄 지급 ${tasks.length + sessionPayouts.length}건${paidOn ? ` (지급일 ${paidOn})` : ""}`);
   // 상세 정산 탭에서 눌렀으면 그 자리로 복귀(목록 카드의 버튼은 기존대로 목록).
   if (req.body.return === "detail") return res.redirect(`/workers/${w.id}?tab=payout&flash=saved`);

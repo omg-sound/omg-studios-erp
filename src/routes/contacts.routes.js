@@ -106,7 +106,10 @@ router.post("/", asyncHandler(async (req, res) => {
       const contact = getParty(id);
       const ref = await people.createPerson(contact);
       if (ref) setPartyGoogleRef(id, ref.resourceName, ref.etag);
-    } catch (_e) {}
+    } catch (e) {
+      // 완전 무음 catch는 함정 #21⑨(People API 무음 사망) 사고와 같은 모양이라(2026-08-22 감사) 사유를 남긴다.
+      console.warn("[contacts] People push 실패(무시, 앱은 정상 진행):", e && e.message);
+    }
     if (req.get("X-Requested-With") === "fetch") { // 간이 등록(프로젝트 폼 모달) — 리다이렉트 대신 JSON
       const pp = getParty(id);
       return res.json({ ok: true, id, name: pp.name });
@@ -169,7 +172,9 @@ router.post("/:id", asyncHandler(async (req, res) => {
         const ref = await people.createPerson(updated);
         if (ref) setPartyGoogleRef(id, ref.resourceName, ref.etag);
       }
-    } catch (_e) {}
+    } catch (e) {
+      console.warn("[contacts] People push 실패(무시, 앱은 정상 진행):", e && e.message);
+    }
     // 백링크 규약(CLAUDE.md): return이 있으면 그 화면(예: 클라이언트 관계자 탭)으로, 없으면 읽기 뷰로.
     const ret = safePath(b.return);
     res.redirect(ret || `/contacts/${id}?flash=saved`);
@@ -193,7 +198,9 @@ router.post("/:id/delete", asyncHandler(async (req, res) => {
   deleteParty(id);
   // DB 삭제 후 People 삭제 — fail-safe: 실패해도 앱 정상.
   if (resourceName) {
-    try { await people.deletePerson(resourceName); } catch (_e) {}
+    try { await people.deletePerson(resourceName); } catch (e) {
+      console.warn("[contacts] People 삭제 실패(무시, 앱은 정상 진행):", e && e.message);
+    }
   }
   res.redirect("/contacts?flash=deleted");
 }));
@@ -295,13 +302,12 @@ function contactForm(c = {}, isEdit = false, manager = null, embedded = false, g
       <div class="rounded-lg border border-border bg-bg/40 p-3 space-y-3">
         <div class="text-sm font-medium">이름</div>
         <div class="grid gap-3 sm:grid-cols-3">
-          <div><label class="label">성</label><input class="input" name="family_name" value="${esc(c.family_name || "")}" placeholder="예: 김" /></div>
-          <div><label class="label">이름</label><input class="input" name="given_name" value="${esc(c.given_name || "")}" placeholder="예: 지훈" /></div>
-          <div><label class="label">호칭</label><input class="input" name="honorific" value="${esc(c.honorific || "")}" placeholder="예: 대표님 · 팀장님" /></div>
+          <div><label class="label mb-0">성<input class="input mt-1 block" name="family_name" value="${esc(c.family_name || "")}" placeholder="예: 김" /></label></div>
+          <div><label class="label mb-0">이름<input class="input mt-1 block" name="given_name" value="${esc(c.given_name || "")}" placeholder="예: 지훈" /></label></div>
+          <div><label class="label mb-0">호칭<input class="input mt-1 block" name="honorific" value="${esc(c.honorific || "")}" placeholder="예: 대표님 · 팀장님" /></label></div>
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
-          <div><label class="label">아티스트명</label>
-            <input class="input" name="activity_name" value="${esc(c.activity_name || "")}" placeholder="예: 아티스트 활동명" autocomplete="off" />
+          <div><label class="label mb-0">아티스트명<input class="input mt-1 block" name="activity_name" value="${esc(c.activity_name || "")}" placeholder="예: 아티스트 활동명" autocomplete="off" /></label>
           </div>
           <div><label class="label">소속 그룹</label>
             ${groupCombo("group_id", c.group_id || "", (groups.find((g) => Number(g.id) === Number(c.group_id)) || {}).name || "", groups)}
@@ -313,14 +319,13 @@ function contactForm(c = {}, isEdit = false, manager = null, embedded = false, g
            min-w-0 = grid 항목 기본 min-width:auto가 칩 폭만큼 칸을 부풀려 옆 칸을 밀어내는 것 방지. -->
       <div class="grid gap-3 sm:grid-cols-[1.4fr_0.8fr_0.8fr]">
         <div class="min-w-0"><label class="label">소속</label>${companyCombo("company", "", "소속사/레이블", "소속", { multi: true, selected: (c._currentAffs || []).map(a => ({ id: a.org_id, name: a.client_name })) })}</div>
-        <div><label class="label">직책</label><input class="input" name="job_title" value="${esc(c.job_title || "")}" placeholder="예: 대표 · 팀장" /></div>
-        <div><label class="label">부서</label><input class="input" name="department" value="${esc(c.department || "")}" placeholder="예: A&R팀" /></div>
+        <div><label class="label mb-0">직책<input class="input mt-1 block" name="job_title" value="${esc(c.job_title || "")}" placeholder="예: 대표 · 팀장" /></label></div>
+        <div><label class="label mb-0">부서<input class="input mt-1 block" name="department" value="${esc(c.department || "")}" placeholder="예: A&R팀" /></label></div>
       </div>
       <div class="grid gap-3 sm:grid-cols-2">
-        <div><label class="label">전화</label><input class="input" name="phone" autocomplete="off" value="${esc(c.phone || "")}" placeholder="010-0000-0000" /></div>
+        <div><label class="label mb-0">전화<input class="input mt-1 block" name="phone" autocomplete="off" value="${esc(c.phone || "")}" placeholder="010-0000-0000" /></label></div>
         <div>
-          <label class="label">이메일${isHouseEngineer ? ` <span class="font-normal text-muted">(로그인 계정)</span>` : ""}</label>
-          <input class="input${lockEmail ? " opacity-60 cursor-not-allowed" : ""}" type="email" name="email" value="${esc(c.email || "")}"${lockEmail ? ' readonly aria-readonly="true"' : ""} />
+          <label class="label mb-0">이메일${isHouseEngineer ? ` <span class="font-normal text-muted">(로그인 계정)</span>` : ""}<input class="input mt-1 block${lockEmail ? " opacity-60 cursor-not-allowed" : ""}" type="email" name="email" value="${esc(c.email || "")}"${lockEmail ? ' readonly aria-readonly="true"' : ""} /></label>
           ${isHouseEngineer ? `<p class="mt-0.5 text-xs text-muted">하우스 엔지니어 로그인 계정 이메일이라 변경 불가합니다.</p>` : ""}
         </div>
       </div>
@@ -331,16 +336,14 @@ function contactForm(c = {}, isEdit = false, manager = null, embedded = false, g
           <label class="flex items-center gap-2 text-sm"><input type="radio" name="tax_type" value="biz" ${c.biz_no ? "checked" : ""} data-tax-toggle> 세금계산서 (개인 사업자)</label>
         </div>
         <div data-tax-wrap="cash" class="${c.biz_no ? 'hidden' : ''}">
-          <label class="label">현금영수증 발급번호</label>
-          <input class="input" name="cash_receipt_no" autocomplete="off" value="${esc(c.cash_receipt_no || "")}" placeholder="예: 010-0000-0000" />
+          <label class="label mb-0">현금영수증 발급번호<input class="input mt-1 block" name="cash_receipt_no" autocomplete="off" value="${esc(c.cash_receipt_no || "")}" placeholder="예: 010-0000-0000" /></label>
         </div>
         <div data-tax-wrap="biz" class="${!c.biz_no ? 'hidden' : ''}">
-          <label class="label">사업자등록번호</label>
-          <input class="input" name="biz_no" autocomplete="off" value="${esc(c.biz_no || "")}" placeholder="예: 000-00-00000" />
+          <label class="label mb-0">사업자등록번호<input class="input mt-1 block" name="biz_no" autocomplete="off" value="${esc(c.biz_no || "")}" placeholder="예: 000-00-00000" /></label>
           <p class="mt-1 text-xs text-muted">세금계산서를 발급받을 개인 사업자의 사업자 번호를 입력하세요.</p>
         </div>
       </div>
-      <div><label class="label">메모</label><textarea class="input" name="memo" rows="2">${esc(c.memo || "")}</textarea></div>
+      <div><label class="label mb-0">메모<textarea class="input mt-1 block" name="memo" rows="2">${esc(c.memo || "")}</textarea></label></div>
       ${affBlock}
       ${isEdit
         ? dirtyActionRow({ deleteFormId: `del-contact-${c.id}`, deleteLabel: "연락처 삭제" })
@@ -458,11 +461,11 @@ function editPaneFor(c, returnTo = null) {
                   <label class="label mb-0.5 text-xs">소속 회사 <span class="font-normal text-muted">(검색 · 비우면 무소속)</span></label>
                   ${companyCombo("affiliation_company", a.client_name || "", "소속사/레이블", "회사")}
                 </div>
-                <div><label class="label mb-0.5 text-xs">직함</label><input class="input py-1.5 text-sm" name="title" value="${esc(a.title || "")}" placeholder="예: A&amp;R · 매니저" /></div>
+                <div><label class="label mb-0 text-xs">직함<input class="input mt-0.5 block py-1.5 text-sm" name="title" value="${esc(a.title || "")}" placeholder="예: A&amp;R · 매니저" /></label></div>
                 <div><label class="label mb-0.5 text-xs">시작일</label>${dateCombo("started_on", a.started_on || "", { label: "시작일", inputCls: "input w-full py-1.5 text-sm" })}</div>
                 <div><label class="label mb-0.5 text-xs">종료일 <span class="font-normal text-muted">(비우면 현재)</span></label>${dateCombo("ended_on", a.ended_on || "", { label: "종료일", inputCls: "input w-full py-1.5 text-sm" })}</div>
               </div>
-              <div><label class="label mb-0.5 text-xs">메모</label><input class="input py-1.5 text-sm" name="memo" value="${esc(a.memo || "")}" /></div>
+              <div><label class="label mb-0 text-xs">메모<input class="input mt-0.5 block py-1.5 text-sm" name="memo" value="${esc(a.memo || "")}" /></label></div>
               <div class="flex items-center gap-2">
                 <button class="btn-primary btn-xs transition" type="submit" data-dirty-save>저장</button>
                 <span class="text-xs text-warning" data-dirty-hint hidden>저장되지 않은 변경사항</span>
@@ -498,7 +501,7 @@ function editPaneFor(c, returnTo = null) {
           <label class="label">소속 회사 <span class="font-normal text-muted text-xs">(검색 · 목록 외 이름은 새 업체 등록)</span></label>
           ${companyCombo("affiliation_company", "", "소속사/레이블", "회사")}
         </div>
-        <div><label class="label">직함</label><input class="input" name="title" placeholder="예: A&amp;R · 매니저" /></div>
+        <div><label class="label mb-0">직함<input class="input mt-1 block" name="title" placeholder="예: A&amp;R · 매니저" /></label></div>
       </div>
       <div><label class="label">시작일</label>${dateCombo("started_on", "", { label: "시작일", inputCls: "input w-full" })}</div>
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="closeCurrent" value="1" checked /> 기존 현재 소속 종료(이직)</label>

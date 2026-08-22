@@ -18,6 +18,7 @@ const {
 } = require("../data");
 const storage = require("../storage");
 const { activeBackend } = storage;
+const { decodeName } = require("../lib/attachments");
 const { asyncHandler } = require("../lib/async");
 const { layout, pageHeader, esc, formatBytes, emptyState, dateCombo } = require("../views");
 const { linkStatus } = require("../views.deliverables");
@@ -34,14 +35,6 @@ const upload = multer({
   limits: { fileSize: config.maxUploadMb * 1024 * 1024 },
 });
 
-/** multipart 파일명은 latin1로 오므로 UTF-8 복원(한글 깨짐 방지). */
-function decodeName(name) {
-  try {
-    return Buffer.from(String(name || ""), "latin1").toString("utf8");
-  } catch {
-    return String(name || "");
-  }
-}
 
 function cleanYmd(v) {
   const s = String(v || "").trim();
@@ -262,23 +255,19 @@ function uploadForm(project, b = {}) {
     <form method="post" action="/projects/${project.id}/deliverables" enctype="multipart/form-data" class="card space-y-4">
       ${e ? `<p class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">${esc(e)}</p>` : ""}
       <div>
-        <label class="label">파일 (최대 ${config.maxUploadMb}MB)</label>
-        <input class="input" type="file" name="file" required />
+        <label class="label mb-0">파일 (최대 ${config.maxUploadMb}MB)<input class="input mt-1 block" type="file" name="file" required /></label>
       </div>
       <div>
-        <label class="label">제목</label>
-        <input class="input" name="title" value="${esc(b.title || "")}" placeholder="예: Mix v2 stems" required />
+        <label class="label mb-0">제목<input class="input mt-1 block" name="title" value="${esc(b.title || "")}" placeholder="예: Mix v2 stems" required /></label>
       </div>
       <div class="grid gap-3 sm:grid-cols-2">
         <div>
-          <label class="label">자료 구분</label>
-          <select name="kind" class="input">
+          <label class="label mb-0">자료 구분<select name="kind" class="input mt-1 block">
             ${DELIVERABLE_KINDS.map((k) => `<option ${k === (b.kind || DELIVERABLE_KINDS[0]) ? "selected" : ""}>${esc(k)}</option>`).join("")}
-          </select>
+          </select></label>
         </div>
         <div>
-          <label class="label">버전(선택)</label>
-          <input class="input" name="version" value="${esc(b.version || "")}" placeholder="v1, v2, final" />
+          <label class="label mb-0">버전(선택)<input class="input mt-1 block" name="version" value="${esc(b.version || "")}" placeholder="v1, v2, final" /></label>
         </div>
       </div>
       <div class="grid gap-3 sm:grid-cols-2">
@@ -291,8 +280,7 @@ function uploadForm(project, b = {}) {
         </div>
       </div>
       <div>
-        <label class="label">메모(선택)</label>
-        <textarea class="input" name="note" rows="2">${esc(b.note || "")}</textarea>
+        <label class="label mb-0">메모(선택)<textarea class="input mt-1 block" name="note" rows="2">${esc(b.note || "")}</textarea></label>
       </div>
       <div class="flex gap-2">
         <button class="btn-primary" type="submit">업로드</button>
