@@ -111,6 +111,24 @@ test("세션 잠금·복원: 라인이 여러 개여도 청구 잠금과 삭제 
   assert.equal(db().prepare("SELECT COUNT(*) n FROM invoice_items WHERE session_id = ?").get(sessionId).n, 0, "라인 전부 삭제");
 });
 
+test("종일 다일(all_day+end_date) 세션은 청구 항목 설명에 기간 전체가 나온다(2026-08-26)", () => {
+  // 회귀: 9/1~9/4(4일) 종일 세션이 설명에 9/1만 찍히고 금액도 1일치로만 청구되던 버그.
+  seq += 1;
+  const pj = db().prepare("INSERT INTO projects (title, artist, project_type, rate) VALUES (?, '루나', 'session', 0)").run(`다일${seq}`);
+  const projectId = Number(pj.lastInsertRowid);
+  const s = db()
+    .prepare(
+      `INSERT INTO sessions (project_id, session_type, session_date, end_date, all_day, status, rate_item_id)
+       VALUES (?, '녹음', '2026-09-01', '2026-09-04', 1, '완료', ?)`
+    )
+    .run(projectId, rateId("솔로 녹음"));
+  const sessionId = Number(s.lastInsertRowid);
+  const inv = createInvoiceFromTasks(CHIEF, { projectId, clientId: PAYER, sessionIds: [sessionId], issueDate: "2026-09-01" });
+  const items = listInvoiceItemsForInvoice(CHIEF, inv.id).rows;
+  assert.match(items[0].description, /9월 1일~9월 4일 · 루나 · 솔로 녹음/, "기간 전체 표기");
+  assert.equal(items.reduce((s, i) => s + i.amount, 0), 300000 * 4, "4일치 금액");
+});
+
 test("매출 상세의 '항목 수'는 라인 수가 아니라 일(세션·작업) 수로 센다", () => {
   const { projectId, sessionId } = seedSession({ start: "10:00", end: "21:40" }); // 라인 2개짜리 세션 1건
   const inv = createInvoiceFromTasks(CHIEF, { projectId, clientId: PAYER, sessionIds: [sessionId], issueDate: "2026-08-10" });

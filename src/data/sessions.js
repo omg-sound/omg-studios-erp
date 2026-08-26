@@ -12,7 +12,7 @@
  */
 
 const { db } = require("../db");
-const { todayYmd, isValidYmd, cleanTime, timeToMin, minutesBetween, calendarMonthCells } = require("../lib/date");
+const { todayYmd, isValidYmd, cleanTime, timeToMin, minutesBetween, daysSpan, calendarMonthCells } = require("../lib/date");
 const { parseMoney } = require("../lib/forms");
 const { MAX_LEN: PLACE_LABEL_MAX } = require("../lib/place-label"); // 캘린더 제목 라벨 길이 상한(계산은 라우트가 함)
 const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES, SESSION_SEGMENT_KINDS } = require("../config");
@@ -396,9 +396,12 @@ function sessionRateAmount(session, itemOverride, batch = {}) {
   const fixed = session.billing_amount != null ? Math.round(session.billing_amount) : null;
   // batch.segments: 목록 조회가 1회 로드해 넘기는 배치 경로(행당 단건 조회 N+1 제거 — withBilling 참조).
   // 종일 세션은 시간이 없어 시간제 산정 불가 → 1 기준 블록으로 취급(정액 항목=base_price, 시간제 항목=1Pro). 금액은 청구 시 조정.
+  // 다일 종일(end_date 있음)은 일수만큼 기준 블록을 곱한다(2026-08-26) — 안 곱하면 4일 대관도 1일치로만 청구된다.
   // 촬영은 구간(반입·설치/촬영/철수) 합산이 요금 시간이다 — 구간이 없으면 시작~종료 span으로 폴백.
   const allDay = !!session.all_day;
-  const minutes = allDay ? item.base_minutes || 0 : sessionBillableMinutes(session, batch.segments ? batch.segments.get(session.id) || [] : undefined);
+  const minutes = allDay
+    ? (item.base_minutes || 0) * daysSpan(session.session_date, session.end_date)
+    : sessionBillableMinutes(session, batch.segments ? batch.segments.get(session.id) || [] : undefined);
   if (!allDay && minutes <= 0) return null;
   const charge = computeCharge(item, minutes);
   // 금액을 사람이 조정했으면 근거 라인을 쪼개지 않는다 — 조정된 총액을 기본가·초과로 되쪼개면 거짓 근거가 된다.

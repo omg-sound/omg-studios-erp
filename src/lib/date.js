@@ -65,6 +65,14 @@ function timeToMin(hhmm) {
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
+/** 'YYYY-MM-DD' 두 날짜 사이 일수(포함, 최소 1). endYmd 없거나 무효면 1(단일일). */
+function daysSpan(startYmd, endYmd) {
+  if (!isValidYmd(startYmd) || !endYmd || !isValidYmd(endYmd)) return 1;
+  const toUtc = (s) => Date.UTC(...s.split("-").map((n, i) => (i === 1 ? Number(n) - 1 : Number(n))));
+  const days = Math.round((toUtc(endYmd) - toUtc(startYmd)) / 86400000) + 1;
+  return days > 0 ? days : 1;
+}
+
 /** 'HH:MM' 두 값 사이 분. end<start면 자정 넘김(+24h, 야간 세션). 동일 시각은 0분. 유효하지 않으면 0. */
 function minutesBetween(start, end) {
   const s = timeToMin(start);
@@ -183,4 +191,4 @@ function durationKo(mins) {
   return (hh ? `${hh}시간` : "") + (mm ? (hh ? " " : "") + `${mm}분` : "");
 }
 
-module.exports = { todayYmd, ymd, isValidYmd, daysUntilYmd, ddayLabel, formatYmdShort, formatYmdCombo, cleanTime, timeToMin, minutesBetween, durationKo, kstDate, kstYmd, kstDateTime, kstHms, utcStampFromKst, calendarMonthCells };
+module.exports = { todayYmd, ymd, isValidYmd, daysUntilYmd, ddayLabel, formatYmdShort, formatYmdCombo, cleanTime, timeToMin, minutesBetween, daysSpan, durationKo, kstDate, kstYmd, kstDateTime, kstHms, utcStampFromKst, calendarMonthCells };

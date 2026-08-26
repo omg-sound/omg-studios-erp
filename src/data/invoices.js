@@ -464,7 +464,10 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
   for (const { session, calc, amount } of billSessions) {
     // 형식 = "7월 8일 아티스트명 보컬녹음"(2026-07-08 사용자 요청 — '녹음 세션' 접두·소요시간 제거, 날짜·아티스트·단가 항목명만).
     const dup = session.session_date && sessionDateCounts[session.session_date] > 1;
-    const dateLabel = formatYmdShort(session.session_date) + (dup && session.start_time ? ` ${session.start_time}` : "");
+    // 다일 종일(end_date 있음)은 "9월 1일~9월 4일"로 기간 전체를 밝힌다(2026-08-26) — 시작일만 보이면 나머지 날짜가 청구서에서 사라진 것처럼 보인다.
+    const dateLabel = session.all_day && session.end_date && session.end_date !== session.session_date
+      ? `${formatYmdShort(session.session_date)}~${formatYmdShort(session.end_date)}`
+      : formatYmdShort(session.session_date) + (dup && session.start_time ? ` ${session.start_time}` : "");
     const desc = [dateLabel, project.artist, calc.item.name].filter(Boolean).join(" · ");
     const base = { task_id: null, session_id: session.id, track_title: null, task_type: null, item_date: session.session_date || null };
     // 근거를 항목별로 분리 표시(2026-07-26 사용자 지시): 기본가 / 초과 N시간 / 할증을 각각 한 라인으로.

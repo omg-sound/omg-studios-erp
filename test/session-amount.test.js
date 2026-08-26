@@ -107,6 +107,30 @@ test("세션 금액: 종일(all_day) 세션도 프로젝트 예산에 반영(확
   assert.strictEqual(p.session_amount_total, 500000, "종일 세션 확정액 반영");
 });
 
+test("세션 금액: 종일 다일(all_day+end_date) 세션은 일수만큼 곱해 산정(2026-08-26)", () => {
+  // 회귀: end_date를 무시하고 항상 1 기준 블록으로만 계산해, 9/1~9/4(4일) 종일 세션이 1일치로만 청구되던 버그.
+  const d = db();
+  const rate = d
+    .prepare("INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active) VALUES (?,?,?,?,?,?,1)")
+    .run("다일종일녹음", "스튜디오 녹음", 210, 300000, 60, 100000).lastInsertRowid;
+  const pid = d.prepare("INSERT INTO projects (title) VALUES (?)").run("다일 종일 세션 프로젝트").lastInsertRowid;
+  const sid = d
+    .prepare(`INSERT INTO sessions (project_id, session_type, session_date, end_date, all_day, status, rate_item_id) VALUES (?,?,?,?,1,?,?)`)
+    .run(pid, "녹음", "2026-09-01", "2026-09-04", "완료", rate).lastInsertRowid; // 9/1~9/4 = 4일
+
+  const s = D.getSessionForUser(user, sid);
+  const b = D.sessionRateAmount(s);
+  assert.strictEqual(b.minutes, 210 * 4, "기준시간 × 4일");
+  assert.strictEqual(b.amount, 300000 * 4, "4일치 기본가");
+
+  const p = D.listProjects(user, {}).find((x) => x.id === pid);
+  assert.strictEqual(p.session_amount_total, 300000 * 4, "프로젝트 예산 합계도 4일치");
+
+  const billable = D.listBillableSessionsForProject(user, pid);
+  const row = billable.rows.find((r) => r.id === sid);
+  assert.strictEqual(row.billing.amount, 300000 * 4, "청구 후보 목록도 4일치");
+});
+
 test("세션 금액: 이미 청구된 세션은 변경 거부(SESSION_INVOICED)", () => {
   const { pid, sid } = seed();
   const inv = db().prepare("INSERT INTO invoices (project_id, title, amount, status) VALUES (?,?,?,?)").run(pid, "청구", 330000, "발행").lastInsertRowid;

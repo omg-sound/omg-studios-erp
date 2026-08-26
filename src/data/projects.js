@@ -10,7 +10,7 @@
  */
 
 const { db } = require("../db");
-const { minutesBetween, todayYmd } = require("../lib/date");
+const { minutesBetween, daysSpan, todayYmd } = require("../lib/date");
 const { computeRatePrice } = require("./rate-items"); // 무순환(rate-items는 projects를 호출하지 않음)
 const { RENTAL_SESSION_TYPES, POSTPROD_SESSION_TYPES } = require("../config");
 const RENTAL_IN = RENTAL_SESSION_TYPES.map((t) => `'${t}'`).join(", "); // SQL IN절(정적 config 값 — 인젝션 무관)
@@ -51,7 +51,7 @@ function sessionAmountsByProject(projectIds) {
     .prepare(
       // 종일(all_day) 세션은 시간이 없지만 청구 후보이고 확정액도 가질 수 있다(sessionRateAmount와 동일 규칙:
       // 1 기준 블록으로 산정). 시간 필수 조건만 걸어 두면 종일 세션 금액이 프로젝트 예산에서 통째로 빠진다.
-      `SELECT s.id, s.project_id, s.all_day, s.start_time, s.end_time, s.billing_amount,
+      `SELECT s.id, s.project_id, s.all_day, s.session_date, s.end_date, s.start_time, s.end_time, s.billing_amount,
               ri.base_minutes, ri.base_price, ri.extra_minutes, ri.extra_price
        FROM sessions s
        JOIN rate_items ri ON ri.id = s.rate_item_id
@@ -71,7 +71,10 @@ function sessionAmountsByProject(projectIds) {
       sums[row.project_id] = (sums[row.project_id] || 0) + Math.round(row.billing_amount);
       continue;
     }
-    const mins = row.all_day ? row.base_minutes || 0 : minutesBetween(row.start_time, row.end_time);
+    // 다일 종일(end_date 있음)은 일수만큼 기준 블록을 곱한다 — sessionRateAmount와 동일 규칙(2026-08-26).
+    const mins = row.all_day
+      ? (row.base_minutes || 0) * daysSpan(row.session_date, row.end_date)
+      : minutesBetween(row.start_time, row.end_time);
     if (!row.all_day && mins <= 0) continue;
     sums[row.project_id] = (sums[row.project_id] || 0) + computeRatePrice(row, mins);
   }

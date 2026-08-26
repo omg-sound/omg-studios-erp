@@ -890,7 +890,11 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
   // 녹음 세션 직접 청구 후보(곡·콘텐츠/버튼 없이 자동 노출). 완료 세션은 기본 체크, 예정은 흐리게·체크 시 완료 확인(작업과 동일 규칙).
   const sessionList = sessionRows
     .map((s) => {
-      const label = [formatYmdShort(s.session_date), project.artist, s.billing ? s.billing.item.name : s.session_type].filter(Boolean).join(" · "); // 청구 항목 스냅샷과 동일 형식 "7월 8일 · 아티스트 · 보컬녹음"(2026-07-08 — 접두 제거·· 구분)
+      // 다일 종일(end_date 있음)은 "9월 1일~9월 4일"로 기간 표기(2026-08-26) — 실제 발행될 청구 항목 설명과 동일 형식.
+      const dateLabel = s.all_day && s.end_date && s.end_date !== s.session_date
+        ? `${formatYmdShort(s.session_date)}~${formatYmdShort(s.end_date)}`
+        : formatYmdShort(s.session_date);
+      const label = [dateLabel, project.artist, s.billing ? s.billing.item.name : s.session_type].filter(Boolean).join(" · "); // 청구 항목 스냅샷과 동일 형식 "7월 8일 · 아티스트 · 보컬녹음"(2026-07-08 — 접두 제거·· 구분)
       const waiveAction = `/sessions/${s.id}/waive`;
       if (s.waived) return waivedRow(esc(label), waiveAction);
       // 산정 불가(단가 항목 미선택) — 체크박스·금액칸 없이 사유만 보여주고 '청구 안 함' 탈출구는 남긴다(2026-07-23).
@@ -907,7 +911,12 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
       }
       const done = s.status === "완료";
       const mins = s.billing.minutes;
-      const dur = `${Math.floor(mins / 60)}시간${mins % 60 ? " " + (mins % 60) + "분" : ""}`;
+      // 다일 종일은 시간 대신 일수로 보여준다(2026-08-26) — "14시간"처럼 하루짜리 세션으로 오인되는 표기 방지.
+      const multiDayCount = s.all_day && s.end_date && s.end_date !== s.session_date && s.billing.item.base_minutes > 0
+        ? Math.round(mins / s.billing.item.base_minutes) : null;
+      const dur = multiDayCount
+        ? `${multiDayCount}일`
+        : `${Math.floor(mins / 60)}시간${mins % 60 ? " " + (mins % 60) + "분" : ""}`;
       const time = [s.start_time, s.end_time].filter(Boolean).join("–");
       const statusTag = done ? "" : ` <span class="text-xs font-normal text-warning">${esc(s.status)}</span>`;
       return `
