@@ -321,6 +321,7 @@ router.post("/", requireEditor, (req, res) => {
   const type = "session"; // project_type은 이제 session으로 고정
   if (!title) return res.send(layout({ title: "새 프로젝트", user: req.user, current: "/projects", body: projectForm({ ...b, project_type: type, _err: "프로젝트 명을 입력하세요." }) }));
   const parties = resolveProjectParties(b); // 아티스트/소속사/제작사/담당자 → party 참조(+ 아티스트 표시·중복 방지)
+  const internalSupport = b.internal_support === "on" || b.internal_support === "1" ? 1 : 0;
   // projects 행(denormalized 컬럼) + 다대다 아티스트·담당자를 한 트랜잭션으로 — 중간 실패 시 컬럼↔조인 불일치·빈 담당자 방지(세션 경로와 동일).
   const d = db();
   let newId;
@@ -329,9 +330,9 @@ router.post("/", requireEditor, (req, res) => {
     const info = d
       .prepare(
         `INSERT INTO projects (title, project_type, artist, artist_company, production_company,
-           artist_id, agency_id, production_id, contact_party_id, manager_id, memo)
+           artist_id, agency_id, production_id, contact_party_id, manager_id, memo, internal_support)
          VALUES (@title, @project_type, @artist, @artist_company, @production_company,
-           @artist_id, @agency_id, @production_id, @contact_party_id, @manager_id, @memo)`
+           @artist_id, @agency_id, @production_id, @contact_party_id, @manager_id, @memo, @internal_support)`
       )
       .run({
         title,
@@ -346,6 +347,7 @@ router.post("/", requireEditor, (req, res) => {
         contact_party_id: parties.contactId,
         manager_id: b.manager_id ? Number(b.manager_id) : null,
         memo: String(b.memo || "").trim() || null,
+        internal_support: internalSupport,
       });
     newId = info.lastInsertRowid;
     setProjectArtists(newId, parties.artistIds); // 다대다 전체 기록(각 아티스트 상세 '연결 프로젝트' 매칭)
@@ -458,7 +460,7 @@ function renderProjectDetail(req, res, p, formState = null, err = "") {
     const unbilledRows = unbilled ? unbilled.rows : [];
     const billable = listBillableSessionsForProject(req.user, p.id);
     const sessionRows = billable ? billable.rows : [];
-    const needsPostprodBilling = hasPostprodSessionNeedingBilling(p.id);
+    const needsPostprodBilling = p.internal_support ? false : hasPostprodSessionNeedingBilling(p.id);
     const unbilledForm = (unbilledRows.length || sessionRows.length || needsPostprodBilling)
       ? unbilledInvoiceForm(p, unbilledRows, sessionRows, { hasPostprodSession: needsPostprodBilling })
       : "";
@@ -521,6 +523,7 @@ router.post("/:id", requireEditor, (req, res) => {
   }
   // project_type은 UPDATE에서 제외 → 기존 DB 값 보존(유형 구분은 UI에서 제거, 레거시 컬럼은 건드리지 않음).
   const parties = resolveProjectParties(b); // 아티스트/소속사/제작사/담당자 → party 참조
+  const internalSupport = b.internal_support === "on" || b.internal_support === "1" ? 1 : 0;
   // UPDATE + 다대다 통째 교체를 한 트랜잭션으로 — 담당자만 지워지고 컬럼은 옛값으로 남는 반쪽 갱신 방지(세션 경로와 동일).
   const d = db();
   d.exec("BEGIN IMMEDIATE;");
@@ -530,7 +533,7 @@ router.post("/:id", requireEditor, (req, res) => {
         `UPDATE projects SET title=@title, artist=@artist, artist_company=@artist_company,
          production_company=@production_company, artist_id=@artist_id, agency_id=@agency_id,
          production_id=@production_id, contact_party_id=@contact_party_id, manager_id=@manager_id,
-         memo=@memo WHERE id=@id`
+         memo=@memo, internal_support=@internal_support WHERE id=@id`
       )
       .run({
         id,
@@ -544,6 +547,7 @@ router.post("/:id", requireEditor, (req, res) => {
         contact_party_id: parties.contactId,
         manager_id: b.manager_id ? Number(b.manager_id) : null,
         memo: String(b.memo || "").trim() || null,
+        internal_support: internalSupport,
       });
     setProjectArtists(id, parties.artistIds); // 다대다 목록 통째 교체
     setProjectContacts(id, parties.contactIds); // 고객측 담당자 다대다 통째 교체(첫=contact_party_id)

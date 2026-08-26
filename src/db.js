@@ -519,6 +519,7 @@ function init() {
   addColumn("projects", "agency_id", "INTEGER"); // 소속사/레이블(parties.id, 기존 artist_company TEXT 대체)
   addColumn("projects", "production_id", "INTEGER"); // 제작사(parties.id, 기존 production_company TEXT 대체)
   addColumn("projects", "contact_party_id", "INTEGER"); // 고객측 담당자(parties.id, 기존 contact_id 대체)
+  addColumn("projects", "internal_support", "INTEGER NOT NULL DEFAULT 0"); // 내부 지원(청구 대상 아님, 2026-08-26) — unbilled_cnt 강제 0
   addColumn("project_managers", "party_id", "INTEGER"); // 작업 담당 엔지니어 = person party(기존 contact_id 대체)
   addColumn("sessions", "director_party_id", "INTEGER"); // 담당 디렉터 첫 명(parties.id, 레거시 director_contact_id 대체)
   addColumn("sessions", "all_day", "INTEGER NOT NULL DEFAULT 0"); // 종일(Google/Apple 개념 = 하루 종일·시간 없음). all_day=1이면 start/end NULL

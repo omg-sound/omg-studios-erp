@@ -292,6 +292,27 @@ test("unbilledInvoiceForm: 후보 0 + 후반작업 플래그 → 안내 문구 �
   assert.ok(!noFlag.includes("곡·콘텐츠 탭에서 작업을 만들어"), "플래그 없으면 안내 없음");
 });
 
+// ── ⑤ 내부 지원 프로젝트(청구 대상 아님, 2026-08-26) ──
+
+test("internal_support=1: 완료 후반작업 세션 + 미청구 작업 있어도 unbilled_cnt=0, done 탭으로 분류", () => {
+  const pid = seedProject("내부지원후반");
+  db().prepare("UPDATE projects SET internal_support=1 WHERE id=?").run(pid);
+  seedMixSession(pid, { date: "2026-07-20", done: true }); // roomA 시간 겹침 방지 — 다른 날짜
+  seedTask(pid, { waived: 0, invoiced: 0 });
+  const p = projectRow(pid);
+  assert.equal(Number(p.unbilled_cnt), 0, "내부 지원 프로젝트는 미청구 신호가 항상 0");
+  const tabs = splitProjectTabs([p]);
+  assert.equal(tabs.done.length, 1, "완료 탭(청구 필요 아님)으로 분류");
+  assert.equal(tabs.billing.length, 0, "청구 필요 탭엔 안 들어감");
+});
+
+test("internal_support=1: hasPostprodSessionNeedingBilling 자체는 그대로 true(호출부에서 게이트)", () => {
+  const pid = seedProject("내부지원안내");
+  db().prepare("UPDATE projects SET internal_support=1 WHERE id=?").run(pid);
+  seedMixSession(pid, { date: "2026-07-21", done: true }); // roomA 시간 겹침 방지 — 다른 날짜
+  assert.equal(hasPostprodSessionNeedingBilling(pid), true, "이 함수 자체는 internal_support를 모른다 — 라우트(projects.routes.js)가 p.internal_support로 게이트");
+});
+
 // ── ④ 세션 완료 판정 버튼 기준 (2026-07-25) ──
 
 test("지난 예정 세션(완료 안 누름)은 진행 중에 머문다(전엔 완료/청구필요로 샜음)", () => {

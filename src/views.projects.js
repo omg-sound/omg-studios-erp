@@ -178,6 +178,7 @@ function projectListRow(p, summary, { tab = "active", isAdmin = false, openId = 
   // 있으면(=진행 중 탭) 이미 끝난 세션의 미청구가 어디에도 안 보였다. 장기 앨범일수록 청구가 늦어지던 원인.
   const billingBadge = Number(p.unbilled_cnt) > 0
     ? ` <span class="badge bg-warning/10 text-warning">청구 필요 ${p.unbilled_cnt}</span>` : "";
+  const internalBadge = p.internal_support ? ` <span class="badge badge-neutral">내부</span>` : "";
   const created = p.created_at ? esc(kstYmd(p.created_at)) : ""; // DB는 UTC — KST로 변환해 표시(2026-07-20)
   const isOpen = openId != null && Number(p.id) === Number(openId);
   return `
@@ -186,7 +187,7 @@ function projectListRow(p, summary, { tab = "active", isAdmin = false, openId = 
         ${cellLink(created, "pt-created tabular text-muted", "작성일", "created", created)}
         ${cellLink(company || dash, "pt-company text-muted", "제작사", "company", companyRaw)}
         ${cellLink(artist || dash, "pt-artist font-medium", "아티스트", "artist", artistRaw)}
-        ${cellLink(title, "pt-title", "프로젝트", "title", titleRaw)}
+        ${cellLink(`${title}${internalBadge}`, "pt-title", "프로젝트", "title", titleRaw)}
         ${cellLink(pm || dash, "pt-pm text-muted", "PM", "pm", pmRaw)}
         ${cellLink(next, "pt-next", "다음 세션", "next", p.next_session_date || "")}
         ${cellLink(`${amount}${billingBadge}`, "pt-amount tabular", "금액", "amount", amt || "")}
@@ -379,6 +380,10 @@ function projectForm(p = {}, err = "") {
         ${companyCombo("production_company", p.production_company, "제작사", "제작/운영", { partyIdField: "production_party_id", partyIdValue: p.production_id })}
       </div>
       <div>
+        <label class="label mb-0 flex items-center gap-2"><input type="checkbox" name="internal_support" value="1" ${p.internal_support ? "checked" : ""} /> 내부 지원(청구 대상 아님)</label>
+        <p class="mt-1 text-xs text-muted">사내 다른 부서 지원 등 외부 청구가 없는 프로젝트입니다. 제작사·청구처는 비워둬도 됩니다.</p>
+      </div>
+      <div>
         <label class="label">고객측 담당자</label>
         ${(() => { const sel = p.id ? listProjectContacts(p.id) : []; return personCombo({ multi: true, selected: sel, options: contactOptions(), companyOptions: partyOptions({ role: "company" }), placeholder: sel.length ? "" : "담당자 — 검색 또는 새로 등록" }); })()}
       </div>
@@ -413,6 +418,10 @@ function projectEditForm(p = {}, err = "") {
       <div>
         <label class="label">제작/운영</label>
         ${companyCombo("production_company", p.production_company, "제작사", "제작/운영", { partyIdField: "production_party_id", partyIdValue: p.production_id })}
+      </div>
+      <div>
+        <label class="label mb-0 flex items-center gap-2"><input type="checkbox" name="internal_support" value="1" ${p.internal_support ? "checked" : ""} /> 내부 지원(청구 대상 아님)</label>
+        <p class="mt-1 text-xs text-muted">사내 다른 부서 지원 등 외부 청구가 없는 프로젝트입니다. 제작사·청구처는 비워둬도 됩니다.</p>
       </div>
       <div>
         <label class="label">고객측 담당자</label>

@@ -128,7 +128,9 @@ function listProjects(_user, { q } = {}) {
       -- ⚠️ 단가 항목 미선택(rate_item_id NULL)도 **센다**(2026-07-23) — 안 세면 완료된 대관 세션이
       --    청구 후보·집계 양쪽에서 동시에 사라져 프로젝트가 조용히 '완료'로 넘어간다(매출 누락).
       --    산정이 안 될 뿐 청구는 여전히 '필요'하다. 진짜로 안 받을 거면 '청구 안 함'(waived)이 탈출구.
-      ((SELECT COUNT(*) FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id
+      -- 내부 지원 프로젝트(internal_support=1)는 애초에 청구 대상이 아니므로 전부 0으로 강제(2026-08-26).
+      (CASE WHEN p.internal_support = 1 THEN 0 ELSE (
+      (SELECT COUNT(*) FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id
          WHERE tr.project_id = p.id AND t.is_invoiced = 0 AND t.waived = 0)
        + (SELECT COUNT(*) FROM sessions s
            WHERE s.project_id = p.id AND s.status <> '취소' AND s.session_type IN (${RENTAL_IN})
@@ -149,7 +151,8 @@ function listProjects(_user, { q } = {}) {
               AND NOT EXISTS (SELECT 1 FROM track_tasks t3 JOIN project_tracks tr3 ON tr3.id = t3.track_id
                                WHERE tr3.project_id = p.id)
               AND NOT EXISTS (SELECT 1 FROM invoices i3 WHERE i3.project_id = p.id)
-         ) THEN 1 ELSE 0 END)) AS unbilled_cnt,
+         ) THEN 1 ELSE 0 END)
+      ) END) AS unbilled_cnt,
       -- 청구서 단위 할인 합계 — 작업·세션이 연결된(from-tasks) 청구서만. 수동 청구서 라인은 프로젝트 버짓에
       -- 안 잡히므로 그 할인을 빼면 이중 차감이 된다. 목록·상세 금액 표시에서 확정 라인 합계에서 차감(2026-07-05).
       (SELECT COALESCE(SUM(i.discount_amount), 0) FROM invoices i
