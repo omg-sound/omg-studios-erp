@@ -135,6 +135,12 @@ app.use((req, res, next) => {
 // 헬스체크(인증 불필요)
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
+// 파비콘: 실제 아이콘은 모든 페이지 <head>의 인라인 SVG data-URI(views.js FAVICON)로 나간다.
+// 브라우저가 관례적으로 자동 요청하는 이 경로들은 파일이 없어 404 핸들러로 갔고, 파비콘 요청의
+// Accept 헤더에 */*가 있어 `req.accepts("html")`이 참 → 매 요청마다 전체 errorPage를 렌더했다.
+// 여기서 204로 끊는다(본문 없음 = 브라우저는 <link> 아이콘을 계속 사용).
+app.get(["/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"], (_req, res) => res.status(204).end());
+
 // ── 라우트 ──
 // 중요(플레이북 §3-1): 인증 게이팅 라우트가 정적 서빙보다 먼저 와야 한다.
 // 보호 대상 HTML은 모두 서버 렌더 라우트이며, static은 /css·/js 자산만 제공한다.

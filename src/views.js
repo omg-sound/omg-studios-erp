@@ -179,6 +179,10 @@ function sidebarLinks(user, current) {
 
 const WORDMARK = `<span class="font-display text-[17px] font-semibold text-fg">OMG Studios</span>`;
 
+// 파비콘: 인라인 SVG data-URI — 정적 파일·추가 요청이 없고 404가 날 수 없다(CSP img-src 'self' data: 로 허용).
+// 파랑(#0066CC = --color-primary) 각진 사각 배경 + 흰 "ERP" 모노그램. 라이트·다크 브라우저 크롬 모두에서 읽힌다.
+const FAVICON = `<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230066CC'/%3E%3Ctext x='16' y='21' fill='%23fff' font-family='Helvetica,Arial,sans-serif' font-size='12' font-weight='700' letter-spacing='-.5' text-anchor='middle'%3EERP%3C/text%3E%3C/svg%3E" />`;
+
 const FONT_LINKS = `<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <!-- ⚠️ 구글 폰트(Inter + Source Serif 4) 링크 제거(2026-07-30 단일 테마 전환). 렌더를 막는 서드파티 요청인데
        **한 글자도 안 쓰이고 있었다**: 본문 스택은 Pretendard가 맨 앞이라 Inter까지 내려가지 않고, 세리프는
@@ -209,6 +213,7 @@ function layout({ title, user, current = "", body, wide = false, recent = null }
 <head>
   <meta charset="utf-8" />
   <title>${esc(title)} · OMG Studios</title>
+  ${FAVICON}
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
@@ -793,7 +798,7 @@ function fileViewerPage({ title, rawUrl, pdf = false }) {
     : `<img src="${esc(rawUrl)}" alt="${esc(title)}" data-viewer-img class="h-screen w-screen object-contain" /><script src="/js/viewer.js?v=${ASSET_VERSION}" defer></script>`;
   return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${esc(title)}</title><link rel="stylesheet" href="/css/app.css?v=${ASSET_VERSION}" /></head>
+<title>${esc(title)}</title>${FAVICON}<link rel="stylesheet" href="/css/app.css?v=${ASSET_VERSION}" /></head>
 <body class="bg-black">${body}</body></html>`;
 }
 
