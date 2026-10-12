@@ -45,7 +45,7 @@ test("스모크: 치프 로그인 후 주요 화면 전부 200 + 역할별 권�
 
     // 주요 화면(각 메뉴 + 대표 탭). 리다이렉트 없이 200이어야 한다(403/500/302=회귀).
     const pages = [
-      "/", "/projects", "/projects?tab=billing", "/projects?tab=done", "/projects/new",
+      "/", "/projects", "/projects?tab=billing", "/projects?tab=done", "/new", "/new?type=task", "/new?date=2026-11-03",
       "/sessions", "/sessions?view=calendar", "/sessions?view=list&stab=past",
       "/invoices", "/invoices?filter=done", "/invoices?filter=paid", "/invoices?filter=todo",
       "/clients", "/contacts?tab=artist", "/contacts", "/contacts/new", "/equipment",
@@ -70,7 +70,7 @@ test("스모크: 치프 로그인 후 주요 화면 전부 200 + 역할별 권�
     //  - /revenue·/workers = requireInvoice(치프·대표) → owner 200 / staff 403
     //  - /settings·/deliverables = requireStaff(치프·스태프) → owner 403 / staff 200
     const matrix = [
-      { role: "owner", allow: ["/revenue", "/workers", "/projects", "/clients", "/equipment"], deny: ["/settings", "/deliverables"] },
+      { role: "owner", allow: ["/revenue", "/workers", "/projects", "/clients", "/equipment", "/new"], deny: ["/settings", "/deliverables"] },
       { role: "staff", allow: ["/settings", "/deliverables", "/projects", "/clients", "/equipment"], deny: ["/revenue", "/workers"] },
     ];
     for (const { role, allow, deny } of matrix) {

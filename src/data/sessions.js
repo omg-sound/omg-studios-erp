@@ -13,6 +13,7 @@
 
 const { db } = require("../db");
 const { todayYmd, isValidYmd, cleanTime, timeToMin, minutesBetween, daysSpan, calendarMonthCells } = require("../lib/date");
+const { withTx } = require("../lib/tx");
 const { parseMoney } = require("../lib/forms");
 const { MAX_LEN: PLACE_LABEL_MAX } = require("../lib/place-label"); // 캘린더 제목 라벨 길이 상한(계산은 라우트가 함)
 const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES, SESSION_SEGMENT_KINDS } = require("../config");
@@ -387,13 +388,18 @@ function listSessionDirectors(sessionId) {
 
 /** 녹음 세션의 진행시간 → 단가표 자동 산정. 시간제 대상(녹음+단가+시간)이 아니면 null. */
 function sessionRateAmount(session, itemOverride, batch = {}) {
-  if (!session || !RENTAL_SESSION_TYPES.includes(session.session_type) || !session.rate_item_id) return null;
-  // itemOverride: 목록 조회가 rate_items를 한 번만 로드해 넘기는 배치 경로(2026-07-09 감사 — 행당 단건 조회 N+1 제거).
-  const item = itemOverride || db().prepare("SELECT * FROM rate_items WHERE id = ?").get(session.rate_item_id);
-  if (!item) return null;
+  if (!session || !RENTAL_SESSION_TYPES.includes(session.session_type)) return null;
   // 확정 청구액(billing_amount)이 있으면 단가표 산정 대신 그 값을 쓴다(2026-07-14 — 청구 폼에서 고친 세션
   // 금액이 폼 안에서만 살아 있다가 새로고침하면 사라지던 문제. 작업 total_price 즉시 저장과 대칭).
   const fixed = session.billing_amount != null ? Math.round(session.billing_amount) : null;
+  // itemOverride: 목록 조회가 rate_items를 한 번만 로드해 넘기는 배치 경로(2026-07-09 감사 — 행당 단건 조회 N+1 제거).
+  const item = session.rate_item_id
+    ? itemOverride || db().prepare("SELECT * FROM rate_items WHERE id = ?").get(session.rate_item_id)
+    : null;
+  // 단가 항목 없음 = **수동 금액**(개편 1단계, 2026-10-13). 빠른 생성은 단가 항목을 접힌 상세로 옮기므로
+  // 단가 없는 세션이 흔해진다 — 예전처럼 null(청구 불가)로 두면 그 세션은 청구서에 넣을 길이 없다.
+  // 금액은 청구 폼에서 직접 입력(확정액이 있으면 그것). 단가표 자체는 3단계에서 제거된다.
+  if (!item) return manualSessionAmount(session, fixed, batch);
   // batch.segments: 목록 조회가 1회 로드해 넘기는 배치 경로(행당 단건 조회 N+1 제거 — withBilling 참조).
   // 종일 세션은 시간이 없어 시간제 산정 불가 → 1 기준 블록으로 취급(정액 항목=base_price, 시간제 항목=1Pro). 금액은 청구 시 조정.
   // 다일 종일(end_date 있음)은 일수만큼 기준 블록을 곱한다(2026-08-26) — 안 곱하면 4일 대관도 1일치로만 청구된다.
@@ -416,6 +422,28 @@ function sessionRateAmount(session, itemOverride, batch = {}) {
     lines,
     fixed: fixed != null,
     ...(allDay ? { allDay: true } : {}),
+  };
+}
+
+/**
+ * 단가 항목 없는 대관 세션의 청구 정보(개편 1단계). sessionRateAmount와 같은 모양으로 돌려줘 뷰·청구 경로가
+ * 분기 없이 쓰게 한다 — `item.name`은 세션 종류, 금액은 확정액 또는 0(청구 폼에서 입력). `manual: true`로 구분.
+ * 시간 세션인데 소요가 0 이하면 null(산정 경로와 같은 규칙 — 시간을 먼저 고쳐야 한다).
+ */
+function manualSessionAmount(session, fixed, batch = {}) {
+  const allDay = !!session.all_day;
+  const minutes = allDay ? 0 : sessionBillableMinutes(session, batch.segments ? batch.segments.get(session.id) || [] : undefined);
+  if (!allDay && minutes <= 0) return null;
+  const amount = fixed != null ? fixed : 0;
+  return {
+    item: { name: session.session_type, base_minutes: 0 },
+    minutes,
+    amount,
+    computed: 0,
+    lines: [{ label: session.session_type, amount, detail: "", quantity: 1, unit_price: amount }],
+    fixed: fixed != null,
+    manual: true,
+    ...(allDay ? { allDay: true, days: daysSpan(session.session_date, session.end_date) } : {}),
   };
 }
 
@@ -549,10 +577,10 @@ function createSession(user, projectId, input = {}) {
   f.engineer_name = firstEngineer ? firstEngineer.name : null; // 첫 엔지니어 이름(레거시 컬럼 동기화)
   assertNoSessionConflict(f, null, conflictOverride(input));
   // 세션 행 + 다대다 디렉터·엔지니어를 한 트랜잭션으로 — 중간 실패 시 반쪽 세션(디렉터·엔지니어 없는)이 남지 않게.
+  // withTx: 바깥 트랜잭션(`/new` — 프로젝트 자동 생성과 한 묶음) 안이면 그쪽이 커밋·롤백한다.
   const d = db();
   let newId;
-  d.exec("BEGIN IMMEDIATE;");
-  try {
+  withTx(() => {
     const info = d
       .prepare(
         `INSERT INTO sessions (project_id, session_type, session_date, all_day, end_date, start_time, end_time, booker_name, engineer_name, status, rate_item_id, room_id, location, location_label, director_party_id, memo)
@@ -563,11 +591,7 @@ function createSession(user, projectId, input = {}) {
     setSessionDirectors(newId, directorIds); // 다대다 디렉터 저장
     setSessionEngineers(newId, engineerAssignments); // 다대다 엔지니어 저장(+ 외주 지급단가)
     if (segments) setSessionSegments(newId, segments); // 촬영 구간 — 폼에 구간 칸이 없으면 null이라 건드리지 않는다
-    d.exec("COMMIT;");
-  } catch (e) {
-    d.exec("ROLLBACK;");
-    throw e;
-  }
+  });
   return d.prepare("SELECT * FROM sessions WHERE id = ?").get(newId);
 }
 

@@ -179,7 +179,14 @@ function orderedSessionTypes() {
  * 녹음 프로젝트: '녹음 종류'(단가표 항목을 분류로 묶음) 한 필드 + session_type='녹음' 고정.
  * 그 외(믹스 등): '세션 종류'(session_type) + '녹음 종류'(단가표 항목) 두 필드. 라벨은 편집 폼과 통일.
  */
-function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker = "", pmName = "", optionsRef = "") {
+/**
+ * 세션 입력 칸 묶음(추가·편집·`/new` 공용).
+ * 개편 1단계(2026-10-13): 본문 = 날짜·시간 + 종류·장소, 나머지(단가·디렉터·메모·예약 담당자·엔지니어)는
+ * **▸ 상세 정보** 접힘 섹션으로. 접혀 있어도 채워진 값은 summary 옆 한 줄 요약으로 보인다.
+ * @param {object} [opts] projectInfoHtml = 상세 섹션 맨 위에 넣을 '프로젝트 정보' 칸(`/new` 전용),
+ *   projectSummary = 그 요약 조각(문자열 배열), openDetails = 상세를 펼친 채 렌더
+ */
+function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker = "", pmName = "", optionsRef = "", opts = {}) {
   const initMins = s && s.start_time && s.end_time ? minutesBetween(s.start_time, s.end_time) : 0;
   const roomList = resolveRooms(rooms);
   // 담당 엔지니어 다대다(2026-07-05 — 여러 명 가능): 배정된 엔지니어 수만큼 행(select) + '담당 엔지니어 추가하기' 버튼(template 복제, app.js).
@@ -198,10 +205,9 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
   const curKind = SESSION_TYPE_RATE_KIND[s.session_type] || "recording";
   const curItems = itemsByKind[curKind] || [];
   const rateKindsAttr = Object.entries(SESSION_TYPE_RATE_KIND).map(([k, v]) => `${k}:${v}`).join(","); // "녹음:recording,촬영:filming,공연:performance"
-  const typeRateRow = `<div class="grid gap-2 sm:grid-cols-3">
+  // 본문 줄 = 세션 종류 + 장소(개편 1단계). 둘 다 기본값이 있지만 캘린더 표시·룸 겹침 판정에 직결돼 접지 않는다.
+  const typeRateRow = `<div class="grid gap-2 sm:grid-cols-2">
          <div><label class="label-sm mb-0">세션 종류<select class="input mt-1 block py-1.5 text-sm" name="session_type" data-rec-types="${esc(RENTAL_SESSION_TYPES.join(","))}" data-rate-kinds="${esc(rateKindsAttr)}">${orderedSessionTypes().map((t) => `<option value="${esc(t)}" ${t === s.session_type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label></div>
-         <div data-show-when="rec"><label class="label-sm mb-0">단가 항목<select class="input mt-1 block py-1.5 text-sm" name="rate_item_id" data-rate-select>${rateOptionsHtml(curItems, s.rate_item_id)}</select></label>
-          ${rateKinds.map((k) => `<template data-rate-opts-${k}>${rateOptionsHtml(itemsByKind[k], s.rate_item_id)}</template>`).join("")}</div>
          <div><label class="label-sm mb-0">장소${roomSelect(roomList, s.room_id)}</label></div>
        </div>
        <div class="mt-2" data-external-loc ${s.room_id && roomList.some((r) => Number(r.id) === Number(s.room_id) && r.is_external) ? "" : "hidden"}>
@@ -214,8 +220,10 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
            <input type="hidden" name="location_label" value="${esc(s.location_label || "")}" data-place-label />
            <div class="absolute left-0 right-0 z-30 mt-1 hidden max-h-64 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg" data-place-pop role="listbox"></div>
          </div>
-       </div>
-       ${explain(`청구하려면 <b>세션 종류=녹음/대관</b> + <b>단가 항목</b> 선택이 모두 필요합니다. (완료 처리 후 청구 탭에 노출)`)}`;
+       </div>`;
+  // 단가 항목은 접힌 상세로(개편 1단계 — 없어도 수동 금액으로 청구된다). 단가표 자체는 3단계에서 제거.
+  const rateField = `<div data-show-when="rec"><label class="label-sm mb-0">단가 항목 <span class="font-normal text-muted">(선택)</span><select class="input mt-1 block py-1.5 text-sm" name="rate_item_id" data-rate-select>${rateOptionsHtml(curItems, s.rate_item_id)}</select></label>
+          ${rateKinds.map((k) => `<template data-rate-opts-${k}>${rateOptionsHtml(itemsByKind[k], s.rate_item_id)}</template>`).join("")}</div>`;
   // 담당 디렉터 — 콤마로 여러 명(2026-07-05, 아티스트 콤보와 동일 UX·옛 행 복제(+추가/✕) 폐지):
   // personCombo(multi) 하나 — 마지막 콤마 뒤 조각으로 검색, 선택·간이등록은 이어붙임, 제출=director_name 콤마 텍스트(라벨 포함).
   // 서버 resolveDirectorIds가 콤마 split 후 이름별 해석(resolvePersonByName 라벨 안전망 — '박수한 대표님 (워터멜론)'도 그 사람으로).
@@ -284,6 +292,15 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
   //  ② 좌측 상자 = '세션 세부정보'(종류·단가·룸·디렉터·메모) — 구글의 일정 세부정보 카드
   //  ③ 우측 사이드 = 사람(PM 표기[프로젝트에서 지정·읽기 전용] + 예약 담당자·담당 엔지니어) — 구글의 참석자 패널
   //  md 미만은 소스 순서대로 세로 스택(시간 → 세부정보 → 사람).
+  // 접힘 요약 줄 — 접혀 있어도 무엇이 채워져 있는지 보이게(편집 화면에서 내용이 숨지 않도록).
+  const rateName = s.rate_item_id ? (rateItems.find((r) => Number(r.id) === Number(s.rate_item_id)) || {}).name : "";
+  const detailSummary = [
+    ...(opts.projectSummary || []),
+    currentEngineers.length ? `엔지니어 ${currentEngineers.map((e) => e.name).join(", ")}` : "",
+    currentDirectors.length ? `디렉터 ${currentDirectors.map((d) => personLabel(d.name, d.activity_name)).join(", ")}` : "",
+    rateName || "",
+    s.memo ? "메모" : "",
+  ].filter(Boolean).join(" · ");
   return `
     <input type="hidden" name="status" value="${esc(s.status || "예정")}" />
     <div class="space-y-3">
@@ -311,14 +328,22 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
         ${durationButtons(initMins)}
       </div>
     </div>
-    <div class="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
-      <div class="rounded-lg border border-border bg-bg/40 p-3">
-        <div class="mb-2 text-sm font-medium">세션 세부정보</div>
-        ${typeRateRow}
+    <div class="mt-3">${typeRateRow}</div>
+    <details class="group mt-3 rounded-lg border border-border bg-bg/40" data-detail-section${opts.openDetails ? " open" : ""}>
+      <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm">
+        ${detailsChevron()}<span class="font-medium">상세 정보</span>
+        <span class="min-w-0 truncate text-xs text-muted">${esc(detailSummary || "아티스트 · 엔지니어 · 디렉터 · 메모 등")}</span>
+      </summary>
+      <div class="space-y-3 border-t border-border p-3">
+    ${opts.projectInfoHtml || ""}
+    ${opts.projectInfoHtml ? '<div class="text-xs font-semibold text-muted">이 세션 정보</div>' : ""}
+    <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
+      <div class="space-y-2">
+        ${rateField}
         ${directorField}
-        <input class="input mt-3 py-1.5 text-sm" name="memo" placeholder="메모(선택)" value="${esc(s.memo || "")}" />
+        <input class="input mt-1 py-1.5 text-sm" name="memo" placeholder="메모(선택)" value="${esc(s.memo || "")}" />
       </div>
-      <div class="space-y-3 rounded-lg border border-border bg-bg/40 p-3">
+      <div class="space-y-3">
         ${pmName ? `<div>
           <div class="label-sm">PM</div>
           <div class="text-sm font-medium">${esc(pmName)}</div>
@@ -327,7 +352,9 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
         <div><label class="label-sm mb-0">예약 담당자<select class="input mt-1 block py-1.5 text-sm" name="booker_name">${managerOptions(managers, s.booker_name || defaultBooker || getDefaultBooker() || "", "", { allowEmpty: false })}</select></label></div>
         ${engineerField}
       </div>
-    </div>`;
+    </div>
+      </div>
+    </details>`;
 }
 
 /** 프로젝트 상세용 세션 추가 폼(버튼형 예약 UX). */
@@ -402,7 +429,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
     : "";
   // 청구 결핍 사유: 완료된 녹음 세션이 단가항목/시간이 없어 산정 불가하면 침묵하지 않고 사유를 옅게 안내(미청구·미전환 한정).
   const billReason = !s.billing && RENTAL_SESSION_TYPES.includes(s.session_type) && s.status === "완료" && !s.invoiced && !s.billed_task_id
-    ? (!s.rate_item_id ? "청구하려면 단가 항목을 선택하세요" : "청구하려면 시작·소요 시간을 입력하세요")
+    ? "청구하려면 시작·소요 시간을 입력하세요"
     : "";
   const reasonLine = billReason ? `<div class="mt-0.5 text-xs text-muted/70">${esc(billReason)}</div>` : "";
   // 외부 일정이면 청구 줄이 비운 자리에 **장소**를 넣는다(2026-08-03 사용자 요청) — 밖에서 하는 일은
@@ -555,7 +582,11 @@ function calendarDotColor(status) {
 }
 
 /** 월 캘린더 그리드(YYYY-MM). 날짜별 세션을 셀에 배치하고 이전/다음 월로 이동. */
-function monthCalendar(ym, sessions) {
+/**
+ * @param {object} [opts] canEdit = 날짜 칸에 '+'(그 날짜로 /new) 노출, openId = 이 세션 팝오버를 로드 직후 연다
+ *   (/new 저장 후 복귀 — 방금 만든 세션을 바로 보여준다. app.js가 [data-auto-open] 칩을 한 번 클릭).
+ */
+function monthCalendar(ym, sessions, { canEdit = false, openId = null } = {}) {
   const [y, mo] = String(ym).split("-").map(Number);
   const pad2 = (n) => String(n).padStart(2, "0");
   const prevYm = mo === 1 ? `${y - 1}-12` : `${y}-${pad2(mo - 1)}`;
@@ -598,13 +629,19 @@ function monthCalendar(ym, sessions) {
             : "";
           // 구글 캘린더식 칩(2026-07-21 사용자 요청): 기본은 배경 없이 **색 점 + 글자**, 마우스 올리면 회색 하이라이트(hover:bg-muted/10).
           // data-session-card: app.js가 클릭 가로채 GET .../card 조각을 중앙 모달로(서베이 흐름 유지). 무JS 폴백=프로젝트 세션 탭 링크.
-          return `<a href="/projects/${s.project_id}?tab=sessions" data-session-card="/sessions/${s.id}/card" class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] leading-snug hover:bg-muted/10 sm:text-xs${s.status === "취소" ? " opacity-60" : ""}" title="${esc(s.session_type)} · ${esc(s.project_title || "")}${t ? " · " + t : ""}${span}"><span class="h-1.5 w-1.5 shrink-0 rounded-full ${calendarDotColor(s.status)}"></span><span class="min-w-0 truncate font-medium">${t ? `<span class="hidden font-normal text-muted sm:inline">${t} </span>` : ""}${label}</span></a>`;
+          return `<a href="/projects/${s.project_id}?tab=sessions" data-session-card="/sessions/${s.id}/card"${openId && Number(openId) === Number(s.id) ? " data-auto-open" : ""} class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] leading-snug hover:bg-muted/10 sm:text-xs${s.status === "취소" ? " opacity-60" : ""}" title="${esc(s.session_type)} · ${esc(s.project_title || "")}${t ? " · " + t : ""}${span}"><span class="h-1.5 w-1.5 shrink-0 rounded-full ${calendarDotColor(s.status)}"></span><span class="min-w-0 truncate font-medium">${t ? `<span class="hidden font-normal text-muted sm:inline">${t} </span>` : ""}${label}</span></a>`;
         })
         .join("");
       // 이웃 달 칸: 흐린 배경 + 흐린 날짜(구글식). 세션은 그대로 보여준다(넘친 일정도 눈에 띄게).
       const cellBg = isToday ? "bg-primary/5" : inMonth ? "" : "bg-muted/5";
       const numCls = isToday ? "font-semibold text-primary" : inMonth ? "text-muted" : "text-muted/50";
-      return `<div class="${CELL} ${cellBg}">
+      // '+' = 그 날짜로 새로 만들기(개편 1단계). 데스크톱은 칸에 마우스를 올릴 때만, 터치는 항상(hover 없음).
+      const ret = encodeURIComponent(`/sessions?view=calendar&month=${ym}`);
+      const plus = canEdit
+        ? `<a href="/new?date=${date}&return=${ret}" class="absolute right-1 top-0.5 rounded px-1 text-xs leading-none text-muted hover:bg-muted/10 hover:text-primary sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100" aria-label="${date} 새로 만들기" title="이 날짜로 새로 만들기">+</a>`
+        : "";
+      return `<div class="group relative ${CELL} ${cellBg}">
+      ${plus}
       <div class="mb-0.5 text-center text-xs ${numCls}">${day}</div>
       <div class="space-y-0.5">${items}</div>
     </div>`;

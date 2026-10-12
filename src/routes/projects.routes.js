@@ -20,8 +20,6 @@ const {
   getManagerByUserId,
   getProjectForUser,
   deleteProject,
-  createGroup,
-  resolvePersonByName,
   getParty,
   listProjectManagers,
   listRateItems,
@@ -47,13 +45,9 @@ const {
   listOrgContacts,
   getStudioInfo,
   getStudioLogo,
-  ensureCompanyParty,
-  addCompanyRole,
-  resolvePartyByDisplay,
-  currentAffiliations,
-  setProjectArtists,
-  setProjectContacts,
   hasPostprodSessionNeedingBilling,
+  createProjectRecord,
+  updateProjectRecord,
 } = require("../data");
 const { layout, pageHeader, esc, formatKRW, flashBanner, errorPage, emptyState, capList, tabBar: renderTabs, searchBox } = require("../views");
 const { deliverablesSection } = require("../views.deliverables");
@@ -90,102 +84,7 @@ function payoutLockedPage(user, what) {
   });
 }
 
-// ensureCompanyParty는 parties.js 공용을 사용(로컬 중복 제거 — 2026-07-05 전수점검).
-
-/** 사람 party를 아티스트로 표시(is_artist=1, 활동명 비어 있으면 채움). 그룹은 이미 is_artist라 무해. */
-function markArtistParty(partyId, activityName) {
-  db()
-    .prepare("UPDATE parties SET is_artist = 1, activity_name = COALESCE(NULLIF(TRIM(activity_name), ''), ?) WHERE id = ?")
-    .run(String(activityName || "").trim() || null, Number(partyId));
-}
-
-/**
- * 프로젝트 폼 → 당사자(party) 참조 해석. { contactId, artistId, agencyId, productionId }.
- *  - 아티스트: 그룹 체크→group party / 명시 선택(artist_contact_id=party id) / 이름(본명 우선)으로 사람 party. 개인은 is_artist·활동명 세팅.
- *  - 소속사·제작사: 조직 party 찾거나 생성. 고객측 담당자: 사람 party.
- */
-// 고객측 담당자 = 콤마로 여러 명(2026-07-11, personCombo multi 칩). 제출 = 칩마다 contact_id(당사자 id·신규는 빈값) +
-// contact_name(순수 본명) 쌍(인덱스 페어링, linkClientContact와 동일). id 있으면 그대로, 신규 이름은 resolvePersonByName(재사용/생성).
-function resolveContactIds(b) {
-  const asArr = (v) => (Array.isArray(v) ? v : v != null && v !== "" ? [v] : []);
-  const rawIds = asArr(b.contact_id);
-  const rawNames = asArr(b.contact_name);
-  const ids = [];
-  const push = (pid) => { if (pid && !ids.includes(pid)) ids.push(pid); };
-  for (let i = 0; i < Math.max(rawIds.length, rawNames.length); i++) {
-    const pid = Number(rawIds[i]) || null;
-    if (pid) { push(pid); continue; }
-    const nm = String(rawNames[i] || "").trim();
-    if (nm) push(resolvePersonByName(nm));
-  }
-  return ids;
-}
-
-function resolveProjectParties(b) {
-  const contactIds = resolveContactIds(b);
-  const contactId = contactIds[0] || null; // 첫(대표) = contact_party_id 호환(청구처 파생·관계자 탭·표시)
-  // 아티스트 = 콤마로 여러 명 가능(2026-07-05 사용자 요청): "아이유, 태연" → 각 이름을 party로 해석해
-  // project_artists(다대다)에 전부 기록, artist_id=첫(대표) 아티스트(청구처 파생·레거시 호환), artist TEXT=정규화된 콤마 목록(표시).
-  const artistNames = String(b.artist || "").split(",").map((s) => s.trim()).filter(Boolean);
-  let artistIds = [];
-  if (artistNames.length === 1) {
-    // 단일 = 기존 경로 그대로(그룹 체크·명시 선택 artist_contact_id·본명 입력칸 모두 유효)
-    const artistName = artistNames[0];
-    if (b.artist_is_group) {
-      const ex = db().prepare("SELECT id FROM parties WHERE kind = 'group' AND name = ? ORDER BY id LIMIT 1").get(artistName);
-      artistIds = [ex ? ex.id : createGroup({ name: artistName })];
-    } else if (b.artist_contact_id) {
-      artistIds = [Number(b.artist_contact_id)];
-      markArtistParty(artistIds[0], artistName);
-    } else {
-      const realName = String(b.artist_real_name || "").trim();
-      artistIds = [resolvePersonByName(realName || artistName)];
-      markArtistParty(artistIds[0], artistName);
-    }
-  } else if (artistNames.length > 1) {
-    // 다중 = 각 이름 독립 해석(그룹 체크·명시 id·본명칸은 단일 전용이라 무시 — 이름 안전망이 커버):
-    // 기존 그룹 정확 일치 → 그 그룹 / 사람은 resolvePersonByName(유일·라벨·활동명 안전망, 없으면 생성) + 아티스트 마킹.
-    for (const nm of artistNames) {
-      const g = db().prepare("SELECT id FROM parties WHERE kind = 'group' AND name = ? ORDER BY id LIMIT 1").get(nm);
-      if (g) { artistIds.push(g.id); continue; }
-      const pid = resolvePersonByName(nm);
-      markArtistParty(pid, nm);
-      artistIds.push(pid);
-    }
-    artistIds = [...new Set(artistIds)]; // "아이유, 아이유" 같은 중복 제거
-  }
-  const artistId = artistIds[0] || null;
-  const artistText = artistNames.join(", ") || null; // 표시 TEXT 정규화("아이유,태연"→"아이유, 태연")
-  // 제작/운영: 콤보에서 사람(관계자·개인) 또는 회사를 선택하면 hidden production_party_id로 party id가 온다 → 그 party를 직접 사용
-  // (개인이 제작·운영하는 경우 지원, 2026-07-05). 없으면(새 이름 타이핑·id 미확정) ①기존 party 표시명 해석(resolvePartyByDisplay —
-  // 회사 상호·사람 본명/라벨/활동명; 사람 라벨 "조형우 (형우비트)"가 회사로 오생성되는 것 방지) ②그래도 없으면 새 회사 생성.
-  // 다운스트림 client_id 파생은 kind 무관(COALESCE JOIN).
-  const prodPartyId = b.production_party_id ? Number(b.production_party_id) : null;
-  const prodText = String(b.production_company || "").trim();
-  const productionId = prodPartyId || (prodText ? resolvePartyByDisplay(prodText) || ensureCompanyParty(prodText, "제작사") : null);
-  // 소속/레이블 = 아티스트 속성 → 프로젝트 폼 입력 필드 제거(2026-07-11 사용자 결정). 첫(대표) 아티스트의 현재 소속에서 파생.
-  // 다중 아티스트는 첫 아티스트 기준(사용자 확인), 소속 미설정이면 null(소속 지정은 아티스트/연락처 쪽에서). 표시 TEXT도 파생 이름 사용.
-  // ⚠️ 표시 이름과 FK는 **같은 소속 하나**에서 나와야 한다 — `agency_id`는 컬럼이 하나라 첫 소속만 담는데
-  // 표시를 전 소속 병기로 하면 화면엔 'A, B'가 뜨고 청구처 파생·역할 배지(addCompanyRole)는 A에만 걸려
-  // 보이는 것과 실제가 갈린다(2026-07-31 겸직 지원 도입 때 실제로 그랬다). 겸직은 연락처 상세에서 본다.
-  const affs = artistId ? currentAffiliations(artistId) : [];
-  const primaryAff = affs.find((a) => a.org_id) || null;
-  const agencyId = primaryAff ? primaryAff.org_id : null;
-  const agencyName = primaryAff ? primaryAff.org_name || null : null;
-  // 파생 소속사·제작/운영 회사에 클라이언트 역할 반영(사람이면 no-op·멱등, 2026-07-10). 소속/레이블 배지 일관.
-  if (agencyId) addCompanyRole(agencyId, "소속사/레이블");
-  if (productionId) addCompanyRole(productionId, "제작사");
-  return {
-    contactId,
-    contactIds,
-    artistId,
-    artistIds,
-    artistText,
-    agencyId,
-    agencyName,
-    productionId,
-  };
-}
+// 프로젝트 당사자 해석·생성·수정은 data/project-write.js(개편 1단계 — /new와 공용).
 
 function toArray(value) {
   if (value == null || value === "") return [];
@@ -310,52 +209,20 @@ router.get("/suggest", requireAuth, (req, res) => {
 });
 
 // ── 새 프로젝트 폼(관리자) — 유형 구분 없음(모든 신규=세션 취급) ──
+// 옛 '새 프로젝트' 화면 → 빠른 생성(개편 1단계). 북마크·옛 링크 호환. POST /projects(폼 제출 경로)는 그대로 둔다.
 router.get("/new", requireEditor, (req, res) => {
-  res.send(layout({ title: "새 프로젝트", user: req.user, current: "/projects", body: projectForm() }));
+  res.redirect(302, "/new?return=%2Fprojects");
 });
 
 // ── 생성(관리자) ──
 router.post("/", requireEditor, (req, res) => {
   const b = req.body;
-  const title = String(b.title || "").trim();
-  const type = "session"; // project_type은 이제 session으로 고정
-  if (!title) return res.send(layout({ title: "새 프로젝트", user: req.user, current: "/projects", body: projectForm({ ...b, project_type: type, _err: "프로젝트 명을 입력하세요." }) }));
-  const parties = resolveProjectParties(b); // 아티스트/소속사/제작사/담당자 → party 참조(+ 아티스트 표시·중복 방지)
-  const internalSupport = b.internal_support === "on" || b.internal_support === "1" ? 1 : 0;
-  // projects 행(denormalized 컬럼) + 다대다 아티스트·담당자를 한 트랜잭션으로 — 중간 실패 시 컬럼↔조인 불일치·빈 담당자 방지(세션 경로와 동일).
-  const d = db();
   let newId;
-  d.exec("BEGIN IMMEDIATE;");
   try {
-    const info = d
-      .prepare(
-        `INSERT INTO projects (title, project_type, artist, artist_company, production_company,
-           artist_id, agency_id, production_id, contact_party_id, manager_id, memo, internal_support)
-         VALUES (@title, @project_type, @artist, @artist_company, @production_company,
-           @artist_id, @agency_id, @production_id, @contact_party_id, @manager_id, @memo, @internal_support)`
-      )
-      .run({
-        title,
-        project_type: type,
-        // 표시용 denormalized TEXT 유지(목록·요약 렌더). 정체성/청구는 party 참조가 진실원천.
-        artist: parties.artistText, // 콤마 다중 정규화("아이유, 태연")
-        artist_company: parties.agencyName, // 첫 아티스트 소속에서 파생(폼 입력 필드 폐기)
-        production_company: String(b.production_company || "").trim() || null,
-        artist_id: parties.artistId,
-        agency_id: parties.agencyId,
-        production_id: parties.productionId,
-        contact_party_id: parties.contactId,
-        manager_id: b.manager_id ? Number(b.manager_id) : null,
-        memo: String(b.memo || "").trim() || null,
-        internal_support: internalSupport,
-      });
-    newId = info.lastInsertRowid;
-    setProjectArtists(newId, parties.artistIds); // 다대다 전체 기록(각 아티스트 상세 '연결 프로젝트' 매칭)
-    setProjectContacts(newId, parties.contactIds); // 고객측 담당자 다대다(첫=contact_party_id)
-    d.exec("COMMIT;");
+    newId = createProjectRecord(b); // 당사자 해석 + INSERT + 다대다(한 트랜잭션) — /new와 공용
   } catch (e) {
-    d.exec("ROLLBACK;");
-    throw e;
+    if (e.message !== "PROJECT_TITLE_REQUIRED") throw e;
+    return res.send(layout({ title: "새 프로젝트", user: req.user, current: "/projects", body: projectForm({ ...b, project_type: "session", _err: "프로젝트 명을 입력하세요." }) }));
   }
   res.redirect(`/projects/${newId}?flash=created`);
 });
@@ -516,45 +383,14 @@ router.post("/:id", requireEditor, (req, res) => {
   const exists = db().prepare("SELECT id FROM projects WHERE id = ?").get(id);
   if (!exists) return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
   const b = req.body;
-  const title = String(b.title || "").trim();
-  if (!title) {
+  // 정보 탭 폼은 제목·메모 칸을 항상 보낸다 — 키가 빠진 비정상 제출이 제목을 보존하는 쪽으로 새지 않게 명시.
+  const input = { ...b, title: b.title == null ? "" : b.title, memo: b.memo == null ? "" : b.memo };
+  try {
+    updateProjectRecord(id, input); // 당사자 해석 + UPDATE + 다대다 통째 교체(한 트랜잭션) — /new와 공용
+  } catch (e) {
+    if (e.message !== "PROJECT_TITLE_REQUIRED") throw e;
     const p = getProjectForUser(req.user, id);
     return renderProjectDetail(req, res, p, { ...b, id }, "프로젝트 명을 입력하세요.");
-  }
-  // project_type은 UPDATE에서 제외 → 기존 DB 값 보존(유형 구분은 UI에서 제거, 레거시 컬럼은 건드리지 않음).
-  const parties = resolveProjectParties(b); // 아티스트/소속사/제작사/담당자 → party 참조
-  const internalSupport = b.internal_support === "on" || b.internal_support === "1" ? 1 : 0;
-  // UPDATE + 다대다 통째 교체를 한 트랜잭션으로 — 담당자만 지워지고 컬럼은 옛값으로 남는 반쪽 갱신 방지(세션 경로와 동일).
-  const d = db();
-  d.exec("BEGIN IMMEDIATE;");
-  try {
-    d
-      .prepare(
-        `UPDATE projects SET title=@title, artist=@artist, artist_company=@artist_company,
-         production_company=@production_company, artist_id=@artist_id, agency_id=@agency_id,
-         production_id=@production_id, contact_party_id=@contact_party_id, manager_id=@manager_id,
-         memo=@memo, internal_support=@internal_support WHERE id=@id`
-      )
-      .run({
-        id,
-        title,
-        artist: parties.artistText, // 콤마 다중 정규화
-        artist_company: parties.agencyName, // 첫 아티스트 소속에서 파생(폼 입력 필드 폐기)
-        production_company: String(b.production_company || "").trim() || null,
-        artist_id: parties.artistId,
-        agency_id: parties.agencyId,
-        production_id: parties.productionId,
-        contact_party_id: parties.contactId,
-        manager_id: b.manager_id ? Number(b.manager_id) : null,
-        memo: String(b.memo || "").trim() || null,
-        internal_support: internalSupport,
-      });
-    setProjectArtists(id, parties.artistIds); // 다대다 목록 통째 교체
-    setProjectContacts(id, parties.contactIds); // 고객측 담당자 다대다 통째 교체(첫=contact_party_id)
-    d.exec("COMMIT;");
-  } catch (e) {
-    d.exec("ROLLBACK;");
-    throw e;
   }
   res.redirect(`/projects/${id}?flash=saved`);
 });
@@ -772,4 +608,4 @@ router.get("/:id/invoices/preview/:type/:name", requireBilling, asyncHandler(asy
 }));
 
 module.exports = router;
-module.exports.resolveProjectParties = resolveProjectParties; // 회귀 테스트(겸직 아티스트의 소속 파생 ≡ 표시 이름) 재사용
+module.exports.resolveProjectParties = require("../data").resolveProjectParties; // 회귀 테스트(겸직 아티스트의 소속 파생 ≡ 표시 이름) 재사용

@@ -18,6 +18,7 @@ const projectRoutes = require("./routes/projects.routes");
 const deliverableRoutes = require("./routes/deliverables.routes");
 const invoiceRoutes = require("./routes/invoices.routes");
 const sessionRoutes = require("./routes/sessions.routes");
+const newRoutes = require("./routes/new.routes"); // /new 빠른 생성(개편 1단계)
 const searchRoutes = require("./routes/search.routes");
 const clientRoutes = require("./routes/clients.routes");
 const contactRoutes = require("./routes/contacts.routes");
@@ -151,6 +152,7 @@ app.use("/projects", projectRoutes); // requireAuth(열람) — 내부 도구: �
 app.use("/", deliverableRoutes); // /deliverables, /projects/:pid/deliverables, 공개 /d/:token
 app.use("/invoices", invoiceRoutes); // 목록·생성·삭제·PDF=requireBilling(치프·대표·스태프), 계산서·입금 처리=requireInvoice(치프·대표)
 app.use("/", sessionRoutes); // /sessions (일정) + 세션 CRUD
+app.use("/new", newRoutes); // 빠른 생성(세션·작업 + 프로젝트 자동 생성) — requireEditor
 app.use("/clients", clientRoutes); // requireEditor(목록·상세·편집·첨부 서류 모두 치프·스태프)
 app.use("/contacts", contactRoutes); // requireEditor (클라이언트 측 담당자 마스터 + 소속 이력)
 app.use("/workers", workerRoutes); // 열람·정산=requireInvoice(치프·대표), 추가·삭제·수정(마스터)=requireChief

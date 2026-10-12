@@ -54,10 +54,9 @@ function sessionAmountsByProject(projectIds) {
       `SELECT s.id, s.project_id, s.all_day, s.session_date, s.end_date, s.start_time, s.end_time, s.billing_amount,
               ri.base_minutes, ri.base_price, ri.extra_minutes, ri.extra_price
        FROM sessions s
-       JOIN rate_items ri ON ri.id = s.rate_item_id
+       LEFT JOIN rate_items ri ON ri.id = s.rate_item_id
        WHERE s.project_id IN (${placeholders})
          AND s.session_type IN (${RENTAL_IN})
-         AND s.rate_item_id IS NOT NULL
          AND (s.all_day = 1 OR (s.start_time IS NOT NULL AND s.end_time IS NOT NULL))
          AND s.status <> '취소'
          AND s.waived = 0
@@ -71,6 +70,8 @@ function sessionAmountsByProject(projectIds) {
       sums[row.project_id] = (sums[row.project_id] || 0) + Math.round(row.billing_amount);
       continue;
     }
+    // 단가 항목 없음(수동 금액 — 개편 1단계) + 확정액 없음 = 아직 금액 미정이라 합계에 보탤 것이 없다.
+    if (row.base_price == null) continue;
     // 다일 종일(end_date 있음)은 일수만큼 기준 블록을 곱한다 — sessionRateAmount와 동일 규칙(2026-08-26).
     const mins = row.all_day
       ? (row.base_minutes || 0) * daysSpan(row.session_date, row.end_date)

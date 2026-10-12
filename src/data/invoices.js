@@ -289,11 +289,10 @@ function listUnbilledTasksForProject(user, projectId) {
 /**
  * 대관 세션(녹음·촬영·공연) 중 아직 청구/전환 안 된 것 — 세션 직접 청구 후보.
  *
- * ⚠️ **단가 항목이 없어 산정 불가한 세션도 `billing: null`로 함께 반환한다**(2026-07-23 기능성 평가).
- * 예전엔 `rate_item_id IS NOT NULL`로 걸러냈는데, 그러면 완료된 대관 세션이 **청구 후보와 미청구
- * 집계 양쪽에서 동시에 사라져** 프로젝트가 조용히 '완료' 탭으로 넘어갔다(매출이 소리 없이 빠짐).
- * 이제 청구 폼이 흐린 행 + 사유 + '청구 안 함' 탈출구로 렌더하고, 실제 발행은 `computeInvoiceDraft`가
- * 여전히 단가 항목을 요구해 막는다(체크박스 미렌더 + 서버 재검증).
+ * ⚠️ **단가 항목이 없는 세션도 함께 반환한다**(2026-07-23 기능성 평가). 예전엔 `rate_item_id IS NOT NULL`로
+ * 걸러냈는데, 그러면 완료된 대관 세션이 **청구 후보와 미청구 집계 양쪽에서 동시에 사라져** 프로젝트가
+ * 조용히 '완료' 탭으로 넘어갔다(매출이 소리 없이 빠짐). 개편 1단계(2026-10-13)부터는 단가 없는 세션도
+ * **수동 금액**(`billing.manual`)으로 바로 청구할 수 있다 — 금액은 청구 폼에서 직접 입력.
  * 미청구 집계(`listProjects.unbilled_cnt`)도 **이 함수와 같은 조건**을 써야 한다.
  */
 function listBillableSessionsForProject(user, projectId) {
@@ -312,7 +311,7 @@ function listBillableSessionsForProject(user, projectId) {
        ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC`
     )
     .all(project.id)
-    .map((row) => ({ ...row, billing: sessionRateAmount(row) })); // 산정 불가(단가 미선택)=null — 폼이 사유와 함께 흐리게 렌더
+    .map((row) => ({ ...row, billing: sessionRateAmount(row) })); // 단가 미선택=수동 금액(manual), 소요 0 이하만 null
   return { project, rows };
 }
 
@@ -404,7 +403,7 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
       .prepare(
         `SELECT s.* FROM sessions s
          WHERE s.project_id = ? AND s.status <> '취소' AND s.session_type IN (${RENTAL_IN})
-           AND s.rate_item_id IS NOT NULL AND (s.all_day = 1 OR (s.start_time IS NOT NULL AND s.end_time IS NOT NULL))
+           AND (s.all_day = 1 OR (s.start_time IS NOT NULL AND s.end_time IS NOT NULL))
            AND s.id IN (${placeholders})
            AND NOT EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.session_id = s.id)
            AND NOT EXISTS (SELECT 1 FROM track_tasks tt WHERE tt.session_id = s.id)`
@@ -452,7 +451,7 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
     const memoIn = taskMemos[t.id] != null ? taskMemos[t.id] : taskMemos[String(t.id)];
     const reason = String(memoIn != null ? memoIn : t.billing_memo || "").trim();
     const desc = [`${t.track_title} - ${taskTypeLabel(t.task_type)}`, reason].filter(Boolean).join(" · ");
-    taskItems.push({ task_id: t.id, session_id: null, track_title: t.track_title, task_type: t.task_type, description: desc, quantity: t.quantity, unit_price: t.unit_price, amount: t.total_price, item_date: kstYmd(t.created_at) || null });
+    taskItems.push({ task_id: t.id, session_id: null, track_title: t.track_title, task_type: t.task_type, description: desc, quantity: t.quantity, unit_price: t.unit_price, amount: t.total_price, item_date: t.work_date || kstYmd(t.created_at) || null }); // 작업일이 있으면 그 날짜(개편 1단계), 없으면 등록일
   }
   // 같은 날짜에 세션이 여럿이면(예: 하루 두 타임) 설명 문구가 완전히 같아져 청구서에서 중복처럼 보인다
   // (2026-08-22 사용자 리포트) — 그럴 때만 시작 시간을 덧붙여 구분한다(단일 세션인 날짜는 기존 형식 유지).
@@ -476,8 +475,9 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
     // 조정 사유 = 이번 폼 입력 우선, 없으면 세션에 남아 있던 사유(즉시 저장분).
     const memoIn = sessionMemos[session.id] != null ? sessionMemos[session.id] : sessionMemos[String(session.id)];
     const reason = String(memoIn != null ? memoIn : session.billing_memo || "").trim();
+    // 수동 금액 세션(단가 항목 없음 — 개편 1단계)은 처음부터 사람이 쓴 금액이라 '조정'이 아니다.
     const lines = adjusted
-      ? [{ label: calc.item.name, amount, detail: reason || "조정 금액", quantity: 1, unit_price: amount }]
+      ? [{ label: calc.item.name, amount, detail: reason || (calc.manual ? "" : "조정 금액"), quantity: 1, unit_price: amount }]
       : calc.lines;
     lines.forEach((ln, i) => {
       // 첫 라인만 기존 형식(날짜 · 아티스트 · 항목명)을 유지해 목록·PDF·매출 집계가 종전대로 읽힌다.

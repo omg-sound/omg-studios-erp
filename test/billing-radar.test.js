@@ -57,14 +57,39 @@ test.after(() => cleanupDb(process.env.DB_PATH, db()));
 
 // ── ① 단가 항목 미선택 세션 ──
 
-test("단가 미선택 완료 대관 세션이 청구 후보에 남는다(흐리게 — billing=null)", () => {
+test("단가 미선택 완료 대관 세션이 청구 후보에 남는다(수동 금액 — 개편 1단계)", () => {
   const pid = seedProject("단가미선택");
   const s = seedSession(pid, { date: "2026-11-03" });
 
   const { rows } = listBillableSessionsForProject(CHIEF, pid);
   assert.strictEqual(rows.length, 1, "후보 목록에서 사라지면 사용자가 이유를 알 길이 없다");
   assert.strictEqual(rows[0].id, s.id);
-  assert.strictEqual(rows[0].billing, null, "산정 불가 = billing null(청구 폼이 흐린 행으로 렌더)");
+  assert.ok(rows[0].billing && rows[0].billing.manual, "단가 없음 = 수동 금액(청구 폼에서 직접 입력)");
+  assert.strictEqual(rows[0].billing.amount, 0, "확정액이 없으면 0 — 금액은 사람이 쓴다");
+});
+
+test("단가 미선택 세션을 입력 금액으로 바로 청구한다 — 라인 = 날짜 · 세션 종류, '조정 금액' 표기 없음", () => {
+  const { createInvoiceFromTasks, createCompany, listInvoiceItemsForInvoice } = require("../src/data");
+  const payer = createCompany({ name: "수동청구처", biz_no: "123-45-67891" });
+  const pid = seedProject("수동청구");
+  const s = seedSession(pid, { date: "2026-11-05" });
+
+  assert.throws(
+    () => createInvoiceFromTasks(CHIEF, { projectId: pid, clientId: payer, sessionIds: [s.id], issueDate: "2026-11-06" }),
+    /TASK_AMOUNT_REQUIRED/,
+    "금액을 안 쓰면 0원 — 확인 없이는 발행되지 않는다",
+  );
+  const inv = createInvoiceFromTasks(CHIEF, {
+    projectId: pid, clientId: payer, sessionIds: [s.id], issueDate: "2026-11-06",
+    sessionAmounts: { [s.id]: "350,000" },
+  });
+  assert.ok(inv, "단가 항목 없이도 발행된다");
+  const items = listInvoiceItemsForInvoice(CHIEF, inv.id).rows;
+  assert.strictEqual(items.length, 1, "수동 금액은 기본가·초과로 쪼개지 않는다");
+  assert.strictEqual(items[0].amount, 350000);
+  assert.match(items[0].description, /녹음/);
+  assert.doesNotMatch(items[0].description, /조정 금액/, "처음부터 사람이 쓴 금액이라 '조정'이 아니다");
+  assert.strictEqual(Number(projectRow(pid).unbilled_cnt), 0, "청구 후 미청구 집계에서 빠진다");
 });
 
 test("단가 미선택 완료 대관 세션이 미청구 집계에 잡힌다 — 프로젝트가 '완료'로 새지 않는다", () => {
@@ -143,15 +168,28 @@ test("projectListRow: 진행 중 탭에서도 '청구 필요 N' 배지가 뜬다
   assert.doesNotMatch(listRow({ unbilled_cnt: 0 }), /청구 필요/, "미청구 0이면 배지 없음");
 });
 
-test("unbilledInvoiceForm: 단가 미선택 세션은 체크박스 없이 사유 + '청구 안 함'만", () => {
+test("unbilledInvoiceForm: 산정 불가 세션(billing=null)은 체크박스 없이 사유 + '청구 안 함'만", () => {
   const project = { id: 7, artist: "루나" };
   const s = { id: 42, session_date: "2026-11-03", session_type: "녹음", status: "완료", waived: 0, billing: null };
   const html = unbilledInvoiceForm(project, [], [s]);
 
-  assert.match(html, /단가 항목을 선택해야 청구할 수 있습니다/, "왜 청구가 안 되는지 그 자리에서 알려준다");
+  assert.match(html, /시작·종료 시간을 확인해야 청구할 수 있습니다/, "왜 청구가 안 되는지 그 자리에서 알려준다");
   assert.doesNotMatch(html, /name="session_id" value="42"/, "체크박스가 없어야 실수로 발행되지 않는다");
   assert.doesNotMatch(html, /session_amount_42/, "금액칸도 없다");
   assert.match(html, /\/sessions\/42\/waive/, "'청구 안 함' 탈출구는 남긴다");
+});
+
+test("unbilledInvoiceForm: 수동 금액 세션(단가 없음)은 체크박스 + 빈 금액칸 + 세션 종류 라벨", () => {
+  const project = { id: 7, artist: "루나" };
+  const s = {
+    id: 44, session_date: "2026-11-03", session_type: "녹음", status: "완료", waived: 0,
+    start_time: "14:00", end_time: "18:00",
+    billing: { item: { name: "녹음", base_minutes: 0 }, minutes: 240, amount: 0, fixed: false, manual: true },
+  };
+  const html = unbilledInvoiceForm(project, [], [s]);
+  assert.match(html, /name="session_id" value="44"/, "바로 청구할 수 있다");
+  assert.match(html, /name="session_amount_44"[^>]*value=""/, "금액칸은 비워 둔다(0을 미리 채우면 그대로 발행되기 쉽다)");
+  assert.match(html, /루나 · 녹음/, "라벨 = 날짜 · 아티스트 · 세션 종류");
 });
 
 test("unbilledInvoiceForm: 단가가 있는 세션은 종전대로 체크박스·금액칸(회귀)", () => {

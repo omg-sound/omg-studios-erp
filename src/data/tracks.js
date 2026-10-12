@@ -12,7 +12,7 @@
 
 const { db } = require("../db");
 const { normalizeTrackContentType, normalizeTaskStatus } = require("../config");
-const { parseMoney } = require("../lib/forms");
+const { parseMoney, cleanYmd } = require("../lib/forms");
 const { getProjectForUser } = require("./projects"); // 무순환
 const { getManagerByUserId } = require("./parties"); // 무순환
 const { normalizeTaskTypeDb, taskTypeUnitPrice } = require("./task-types"); // 무순환
@@ -158,7 +158,7 @@ function updateTask(user, taskId, input = {}) {
       `UPDATE track_tasks SET
          task_type = @task_type, billing_type = 'Fixed_Per_Track', quantity = 1,
          unit_price = @unit_price, total_price = @unit_price, engineer_name = @engineer_name,
-         engineer_id = @engineer_id, worker_rate = @worker_rate, status = @status
+         engineer_id = @engineer_id, worker_rate = @worker_rate, status = @status, work_date = @work_date
        WHERE id = @id`
     )
     .run({
@@ -169,6 +169,8 @@ function updateTask(user, taskId, input = {}) {
       engineer_id: eng.engineer_id,
       worker_rate: eng.is_external ? parseWon(input.worker_rate) : 0, // 하우스 엔지니어·미지정은 외주 지급단가 없음(0, NOT NULL 컬럼)
       status,
+      // 작업일 칸이 없는 폼(빠른 추가 버튼 등)의 저장이 기존 날짜를 지우지 않게 — 키가 있을 때만 갱신.
+      work_date: input.work_date !== undefined ? cleanYmd(input.work_date) : task.work_date || null,
     });
   return db().prepare("SELECT t.*, tr.project_id FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE t.id = ?").get(task.id);
 }
@@ -221,8 +223,8 @@ function createTask(user, trackId, input = {}) {
   const info = db()
     .prepare(
       `INSERT INTO track_tasks
-       (track_id, task_type, billing_type, quantity, unit_price, total_price, engineer_name, engineer_id, worker_rate, status, is_invoiced)
-       VALUES (@track_id, @task_type, 'Fixed_Per_Track', 1, @unit_price, @unit_price, @engineer_name, @engineer_id, @worker_rate, @status, 0)`
+       (track_id, task_type, billing_type, quantity, unit_price, total_price, engineer_name, engineer_id, worker_rate, status, is_invoiced, work_date)
+       VALUES (@track_id, @task_type, 'Fixed_Per_Track', 1, @unit_price, @unit_price, @engineer_name, @engineer_id, @worker_rate, @status, 0, @work_date)`
     )
     .run({
       track_id: track.id,
@@ -232,11 +234,27 @@ function createTask(user, trackId, input = {}) {
       engineer_id: eng.engineer_id,
       worker_rate: eng.is_external ? parseWon(input.worker_rate) : 0, // 하우스 엔지니어·미지정은 외주 지급단가 없음(0, NOT NULL 컬럼)
       status: normalizeTaskStatus(input.status),
+      work_date: cleanYmd(input.work_date), // 작업일(선택) — 형식이 틀리면 비운다
     });
   return db().prepare("SELECT * FROM track_tasks WHERE id = ?").get(info.lastInsertRowid);
 }
 
+/**
+ * 빠른 작업 생성(`/new`, 개편 1단계)용 곡 찾기·만들기. 곡명(비면 프로젝트 이름)과 **정확히 같은 곡**이 그 프로젝트에
+ * 있으면 그 곡, 없으면 새로 만든다. 곡 계층은 2단계에서 없어지고 이 곡 제목은 작업의 곡명 텍스트로 흡수된다.
+ */
+function resolveTrackForQuickTask(user, projectId, songTitle) {
+  const project = getProjectForUser(user, projectId);
+  if (!project) return null;
+  const title = String(songTitle || "").replace(/\s+/g, " ").trim() || project.title;
+  const ex = db()
+    .prepare("SELECT * FROM project_tracks WHERE project_id = ? AND TRIM(title) = ? ORDER BY id LIMIT 1")
+    .get(project.id, title);
+  return ex || createTrack(user, project.id, { title });
+}
+
 module.exports = {
+  resolveTrackForQuickTask,
   listTracksForProject,
   getTrackForUser,
   createTrack,

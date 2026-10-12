@@ -160,7 +160,7 @@ router.get("/sessions", requireAuth, (req, res) => {
   let content;
   if (view === "calendar") {
     const ym = /^\d{4}-\d{2}$/.test(req.query.month || "") ? req.query.month : todayYmd().slice(0, 7);
-    content = monthCalendar(ym, sessionsForCalendar(req.user, ym)); // 앞뒤 달 넘침 포함(구글식). 카드 래퍼 없이 — 그리드 라인으로 화면 끝까지(full)
+    content = monthCalendar(ym, sessionsForCalendar(req.user, ym), { canEdit: editable, openId: Number(req.query.open) || null }); // 앞뒤 달 넘침 포함(구글식). 카드 래퍼 없이 — 그리드 라인으로 화면 끝까지(full)
   } else {
     const managers = editable ? listProjectManagers() : [];
     const rateItems = editable ? listRateItems() : [];
@@ -207,7 +207,7 @@ router.get("/sessions", requireAuth, (req, res) => {
     const listHtml = activeSess.length
       ? `${sharedOpts}<div class="space-y-3">${groups.map((g) => sessionProjectCard(g, { isAdmin: editable, managers, rateItems, rooms, optionsRef })).join("")}</div>`
       : emptyState(
-          stab === "past" ? "지난 세션이 없습니다." : q ? "검색 결과가 없습니다." : "다가오는 세션이 없습니다. 프로젝트 상세에서 세션을 추가하세요.",
+          stab === "past" ? "지난 세션이 없습니다." : q ? "검색 결과가 없습니다." : "다가오는 세션이 없습니다. ‘+ 새로 만들기’로 예약하세요.",
           { card: true }
         );
     content = `${searchBoxHtml}${resultNote}${sessTabs}${listHtml}`;
@@ -445,3 +445,4 @@ module.exports = router;
 module.exports.eventInputForSession = eventInputForSession; // settings.routes.js 캘린더 재동기화 버튼에서 재사용(제목 포맷 통일)
 module.exports.syncSessionEvent = syncSessionEvent; // 회귀 테스트(취소+무id 유령 일정 가드) 재사용
 module.exports.calFlash = calFlash; // 회귀 테스트(동기화 실패 안내 분기) 재사용
+module.exports.sessionInputError = sessionInputError; // /new(빠른 생성)가 같은 오류 화면(겹침·지급 잠금)을 쓰게

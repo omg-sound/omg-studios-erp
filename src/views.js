@@ -134,6 +134,16 @@ const NAV_GROUPS = [
   { key: "manage", label: "관리" },
 ];
 
+/**
+ * 사이드바 '+ 새로 만들기'(개편 1단계, 2026-10-13) — 편집 권한자만. data-new-shortcut = 단축키 `n`의 목적지
+ * (app.js가 렌더된 링크에서만 찾으므로 권한 없는 계정은 단축키도 무동작). return은 /new가 Referer로 채운다.
+ */
+function newButton(user) {
+  const role = user && user.role;
+  if (!(role === "chief" || role === "staff" || role === "owner")) return "";
+  return `<a href="/new" data-new-shortcut title="새로 만들기 · n" class="btn-primary mb-6 flex w-full items-center justify-center gap-1.5">+ 새로 만들기</a>`;
+}
+
 function navItemsFor(user) {
   const role = user && user.role;
   const canInvoice = role === "chief" || role === "owner";
@@ -252,6 +262,7 @@ function layout({ title, user, current = "", body, wide = false, recent = null }
         </button>
       </div>
       <div class="mb-7 hidden items-center gap-2 px-2 sm:flex">${WORDMARK}</div>
+      ${newButton(user)}
       <nav class="space-y-6">
         ${sidebarLinks(user, current)}
       </nav>

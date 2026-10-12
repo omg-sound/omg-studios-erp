@@ -169,7 +169,7 @@ router.get("/", requireAuth, (req, res) => {
     ${pageHeader({
       title: "대시보드",
       desc: s.canInvoice ? "스튜디오 전체 현황" : "스튜디오 현황",
-      action: canEdit(user) ? '<a href="/projects/new" class="btn-primary">+ 새 프로젝트</a>' : "",
+      action: canEdit(user) ? '<a href="/new?return=%2F" class="btn-primary">+ 새로 만들기</a>' : "", // 개편 1단계 — 프로젝트는 이름을 쓰면 자동 생성
     })}
     ${cards}
     ${myTodoCard}

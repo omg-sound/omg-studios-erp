@@ -545,6 +545,7 @@ function init() {
   addColumn("sessions", "surcharge_memo", "TEXT");
   addColumn("sessions", "billing_memo", "TEXT"); // 금액을 산정치와 다르게 조정했을 때의 사유(청구 화면에서 입력)
   addColumn("track_tasks", "billing_memo", "TEXT"); // 위와 동일(작업 금액 조정 사유)
+  addColumn("track_tasks", "work_date", "TEXT"); // 작업일(YYYY-MM-DD, 선택 — 개편 1단계 2026-10-13). 청구 라인 날짜·대기함 기간 필터 기준, NULL=등록일로 폴백
   addColumn("session_directors", "party_id", "INTEGER"); // 다대다 디렉터(parties.id, 기존 contact_id 대체)
   addColumn("parties", "group_id", "INTEGER"); // 아티스트(사람)의 소속 그룹(parties.id, kind='group'). 그룹↔멤버 연결
   addColumn("parties", "contact_party_id", "INTEGER"); // 그룹의 담당자(parties.id, 사람 — 멤버 또는 관계자)

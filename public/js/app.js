@@ -1232,6 +1232,9 @@ function sortCellValue(cell) {
   // 배경이 얼지 않으므로(스크롤 잠금 없음) 스크롤·리사이즈로 칩이 움직이면 팝오버도 따라가야 한다.
   window.addEventListener("resize", reposition);
   window.addEventListener("scroll", reposition, true);
+  // /new 저장 후 복귀(?open=) — 방금 만든 세션 칩을 한 번 눌러 팝오버를 연다(서버가 data-auto-open 표시).
+  var auto = document.querySelector("[data-session-card][data-auto-open]");
+  if (auto) auto.click();
 })();
 
 // 할인 폼([data-discount-form]): 정률(%) → 정액(원) 자동변환 + 공급가/할인/과세표준/VAT/총액 미리보기 갱신.
@@ -1650,7 +1653,7 @@ function sortCellValue(cell) {
 // (작업 폼은 이제 [data-dirty-form] — engineer_id+worker-rate가 있는 폼만 처리하고 나머지는 가드로 무시.)
 (function () {
   "use strict";
-  var forms = document.querySelectorAll("[data-dirty-form]");
+  var forms = document.querySelectorAll("[data-dirty-form], [data-new-form]"); // /new 작업 상세도 같은 토글(개편 1단계)
   Array.prototype.forEach.call(forms, function (form) {
     var sel = form.querySelector('select[name="engineer_id"]');
     var wrap = form.querySelector("[data-worker-rate]");
@@ -3331,7 +3334,12 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
       if (link && link.getAttribute("href")) { e.preventDefault(); link.click(); } // 실제 사이드바 링크 클릭=이동
       return;
     }
-    if (k === "g") { armed = true; timer = setTimeout(disarm, 1500); } // g 후 1.5초 안에 둘째 키
+    if (k === "g") { armed = true; timer = setTimeout(disarm, 1500); return; } // g 후 1.5초 안에 둘째 키
+    // n = 새로 만들기(개편 1단계 — 단독 키). 사이드바 버튼이 렌더된 계정(편집 권한)에서만 동작.
+    if (k === "n") {
+      var nb = document.querySelector("[data-new-shortcut]");
+      if (nb && nb.getAttribute("href")) { e.preventDefault(); nb.click(); }
+    }
   });
 })();
 
@@ -3713,3 +3721,138 @@ document.addEventListener("click", function (e) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
   input.dispatchEvent(new Event("change", { bubbles: true })); // dirty 감시 통지(함정 #23)
 });
+
+// 빠른 생성 /new(개편 1단계, 2026-10-13 — docs/redesign/01-quick-create.md).
+//  ① 프로젝트 이름 콤보: 타이핑하면 기존 프로젝트 제안 → 고르면 ?project_id=로 다시 불러온다(입력한 본문 칸 유지).
+//     서버가 그 프로젝트 값으로 상세 칸을 채워 그리므로 아티스트·담당자 콤보를 JS로 재초기화할 필요가 없다.
+//  ② 같은 이름 확인(사용자 결정: 항상 확인): 타이핑 중 정확 일치를 미리 조회해 두고, 제출 시 있으면 막고 패널을 띄운다.
+//     (제출 시점에 비동기 조회하면 다시 제출할 때 겹침 확인창이 두 번 뜬다 — 그래서 미리 조회.)
+//  ③ 프로젝트 정보 변경 표시: 로드 시점과 제출 시점의 칸 값을 비교해 project_info_touched=1. 이벤트 추적은
+//     콤보 위젯이 hidden 값을 바꾸는 방식이 제각각이라 놓칠 수 있다 — 값 비교는 방식과 무관하게 정확하다.
+(function () {
+  "use strict";
+  var form = document.querySelector("[data-new-form]");
+  if (!form) return;
+  var CARRY = ["session_date", "start_time", "end_time", "end_date", "session_type", "room_id", "task_type", "song_title", "work_date"];
+
+  function carryQuery() {
+    var parts = [];
+    CARRY.forEach(function (n) {
+      var el = form.elements[n];
+      if (el && el.value) parts.push(n + "=" + encodeURIComponent(el.value));
+    });
+    var ad = form.querySelector('input[name="all_day"]');
+    if (ad && ad.checked) parts.push("all_day=1");
+    return parts.join("&");
+  }
+
+  // ── ① 프로젝트 콤보 ──
+  var pick = form.querySelector("[data-project-pick]");
+  var matches = {}; // 정리된 제목 → 정확 일치 후보 배열(조회 완료분)
+  var clean = function (v) { return String(v || "").replace(/\s+/g, " ").trim(); };
+  if (pick) {
+    var input = pick.querySelector("[data-project-input]");
+    var pop = pick.querySelector("[data-suggest-pop]");
+    var hint = form.querySelector("[data-project-dup-hint]");
+    var items = [], hi = -1, timer = null;
+    var go = function (id) {
+      var base = pick.getAttribute("data-pick-base") || "/new?type=session";
+      var q = carryQuery();
+      window.location.assign(base + "&project_id=" + encodeURIComponent(id) + (q ? "&" + q : ""));
+    };
+    var hide = function () { pop.classList.add("hidden"); input.setAttribute("aria-expanded", "false"); hi = -1; };
+    var render = function () {
+      if (!items.length) { pop.innerHTML = ""; hide(); return; }
+      pop.innerHTML = items.map(function (it, i) {
+        return '<button type="button" data-i="' + i + '" class="flex w-full flex-col gap-0.5 px-3 py-2 text-left hover:bg-elevated"><span class="truncate text-sm text-fg">' + esc(it.label) + "</span>" + (it.sub ? '<span class="truncate text-xs text-muted">' + esc(it.sub) + "</span>" : "") + "</button>";
+      }).join("");
+      pop.classList.remove("hidden"); input.setAttribute("aria-expanded", "true"); hi = -1;
+    };
+    var setHi = function (i) {
+      var bs = pop.querySelectorAll("button");
+      if (!bs.length) return;
+      hi = Math.max(0, Math.min(i, bs.length - 1));
+      for (var k = 0; k < bs.length; k++) bs[k].classList.toggle("bg-elevated", k === hi);
+    };
+    var checkMatch = function () {
+      var t = clean(input.value);
+      if (!t) { if (hint) hint.classList.add("hidden"); return; }
+      if (matches[t]) { if (hint) hint.classList.toggle("hidden", !matches[t].length); return; }
+      fetch(pick.getAttribute("data-match-url") + "?title=" + encodeURIComponent(t), { headers: { Accept: "application/json" }, credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (d) { matches[t] = Array.isArray(d) ? d : []; if (clean(input.value) === t && hint) hint.classList.toggle("hidden", !matches[t].length); })
+        .catch(function () {});
+    };
+    var fetchSuggest = function () {
+      var q = clean(input.value);
+      checkMatch();
+      if (!q) { items = []; render(); return; }
+      fetch(pick.getAttribute("data-suggest-url") + "?q=" + encodeURIComponent(q), { headers: { Accept: "application/json" }, credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (d) { if (clean(input.value) !== q) return; items = Array.isArray(d) ? d : []; render(); })
+        .catch(function () {});
+    };
+    input.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(fetchSuggest, 200); });
+    input.addEventListener("blur", function () { setTimeout(hide, 150); });
+    input.addEventListener("keydown", function (e) {
+      if (e.isComposing || e.keyCode === 229) return; // 한글 조합 중(함정 #18)
+      var open = !pop.classList.contains("hidden");
+      if (e.key === "ArrowDown" && open) { e.preventDefault(); setHi(hi + 1); }
+      else if (e.key === "ArrowUp" && open) { e.preventDefault(); setHi(hi - 1); }
+      else if (e.key === "Enter" && open && hi >= 0) { e.preventDefault(); go(items[hi].id); }
+      else if (e.key === "Escape") hide();
+    });
+    pop.addEventListener("mousedown", function (e) { e.preventDefault(); }); // 클릭 전 blur로 닫히지 않게
+    pop.addEventListener("click", function (e) {
+      var b = e.target.closest && e.target.closest("button[data-i]");
+      if (b && items[+b.getAttribute("data-i")]) go(items[+b.getAttribute("data-i")].id);
+    });
+    if (clean(input.value)) checkMatch(); // 서버가 되돌린 폼(값 보존)이면 바로 조회
+  }
+
+  function dupPanelHtml(rows) {
+    var li = rows.map(function (r) {
+      var sub = [r.artist, r.session_cnt ? "세션 " + r.session_cnt + "건" : "", r.last_date ? "최근 " + r.last_date : ""].filter(Boolean).join(" · ");
+      return '<li class="flex items-center justify-between gap-2 py-1.5"><span class="min-w-0"><span class="block truncate text-sm font-medium">' + esc(r.title) + "</span>" + (sub ? '<span class="block truncate text-xs text-muted">' + esc(sub) + "</span>" : "") + '</span><button type="submit" name="project_id" value="' + esc(String(r.id)) + '" class="btn-ghost btn-xs shrink-0">이 프로젝트에 추가</button></li>';
+    }).join("");
+    return '<p class="text-sm font-medium text-warning">같은 이름의 프로젝트가 있습니다</p><p class="mt-0.5 text-xs text-muted">기존 프로젝트에 추가하거나, 다른 프로젝트라면 새로 만드세요.</p><ul class="mt-2 divide-y divide-border">' + li + '</ul><button type="submit" name="project_new_confirmed" value="1" class="btn-ghost btn-xs mt-2">새 프로젝트로 만들기</button>';
+  }
+
+  // ── ③ 프로젝트 정보 변경 감지(값 스냅샷 비교) ──
+  var info = form.querySelector("[data-project-info]");
+  var touched = form.querySelector("[data-project-info-touched]");
+  var warn = form.querySelector("[data-project-info-warn]");
+  function snapshot() {
+    if (!info) return "";
+    return Array.prototype.map.call(info.querySelectorAll("input[name], select[name], textarea[name]"), function (el) {
+      if (el === touched) return "";
+      if (el.type === "checkbox" || el.type === "radio") return el.name + "=" + (el.checked ? el.value : "");
+      return el.name + "=" + el.value;
+    }).join("&");
+  }
+  var initial = null;
+  // 콤보 위젯들이 로드 직후 hidden 값을 정리할 수 있으므로 한 틱 뒤의 상태를 기준으로 삼는다.
+  setTimeout(function () { initial = snapshot(); }, 0);
+  function refreshWarn() {
+    if (!warn || initial == null) return;
+    warn.classList.toggle("hidden", snapshot() === initial);
+  }
+  if (info && warn) { info.addEventListener("change", refreshWarn); info.addEventListener("input", refreshWarn); info.addEventListener("click", function () { setTimeout(refreshWarn, 0); }); }
+
+  form.addEventListener("submit", function (e) {
+    if (touched) touched.value = initial != null && snapshot() !== initial ? "1" : "0";
+    if (!pick) return; // 기존 프로젝트가 정해진 폼
+    var by = e.submitter && e.submitter.getAttribute("name");
+    if (by === "project_id" || by === "project_new_confirmed") return; // 패널에서 고른 제출
+    var t = clean(pick.querySelector("[data-project-input]").value);
+    var rows = matches[t];
+    if (!rows || !rows.length) return; // 같은 이름 없음(또는 조회 전 — 그러면 서버가 같은 확인 화면으로 되돌린다)
+    e.preventDefault();
+    var panel = form.querySelector("[data-dup-panel]");
+    if (!panel) return;
+    panel.innerHTML = dupPanelHtml(rows);
+    panel.className = "rounded-lg border border-warning/40 bg-warning/5 p-3";
+    panel.hidden = false;
+    if (panel.scrollIntoView) panel.scrollIntoView({ block: "center", behavior: "smooth" });
+  });
+})();

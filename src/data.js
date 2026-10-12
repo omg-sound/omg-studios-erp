@@ -25,6 +25,7 @@ const rateCategories = require("./data/rate-categories"); // 단가표 분류(20
 const taskTypes = require("./data/task-types"); // 작업 종류 카탈로그(모듈 캐시 포함)
 const parties = require("./data/parties"); // 당사자(사람·조직·그룹) 통합 마스터 — clients/contacts 대체
 const projects = require("./data/projects"); // 프로젝트
+const projectWrite = require("./data/project-write"); // 프로젝트 생성·수정(개편 1단계 — /projects·/new 공용)
 const tracks = require("./data/tracks"); // 트랙/작업 CRUD
 const invoicesMod = require("./data/invoices"); // 청구(금액 파생·채번·초안/생성/삭제·목록/통계)
 const dashboard = require("./data/dashboard"); // 대시보드 통계
@@ -52,6 +53,7 @@ module.exports = {
   bulkUpdateTaskTypes,
   moveTaskType,
   deleteTaskType,
+  ...projectWrite, // src/data/project-write.js — createProjectRecord·updateProjectRecord·findProjectsByTitle
   ...projects, // src/data/projects.js (distinctProjectFields·listProjects·getProjectForUser·deleteProject)
   ...tracks, // src/data/tracks.js
   ...invoicesMod, // src/data/invoices.js (nextInvoiceNumber·computeInvoiceDraft 내부전용 제외)

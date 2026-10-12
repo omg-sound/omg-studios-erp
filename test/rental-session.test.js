@@ -118,9 +118,19 @@ test("외부 장소: is_external 룸이면 주소(location) 저장, 스튜디오
   assert.equal(studio.location, null, "스튜디오 룸은 주소 무시(기본 장소 사용)");
 });
 
-test("sessionRateAmount: 단가 미선택·시간 없음은 null(결핍 사유 안내 대상)", () => {
-  assert.equal(sessionRateAmount({ session_type: "촬영 대관", rate_item_id: null, start_time: "10:00", end_time: "14:00" }), null);
+test("sessionRateAmount: 단가 미선택은 수동 금액(개편 1단계), 시간 없음은 null", () => {
+  const manual = sessionRateAmount({ session_type: "촬영 대관", rate_item_id: null, start_time: "10:00", end_time: "14:00" });
+  assert.ok(manual && manual.manual, "단가 없음 = 수동 금액");
+  assert.equal(manual.amount, 0);
+  assert.equal(manual.item.name, "촬영 대관", "라벨은 세션 종류");
+  const fixed = sessionRateAmount({ session_type: "녹음", rate_item_id: null, start_time: "10:00", end_time: "14:00", billing_amount: 250000 });
+  assert.equal(fixed.amount, 250000, "확정액이 있으면 그 금액");
+  assert.equal(fixed.fixed, true);
+  const allDay = sessionRateAmount({ session_type: "녹음", rate_item_id: null, all_day: 1, session_date: "2026-09-01", end_date: "2026-09-03" });
+  assert.equal(allDay.days, 3, "다일 종일은 일수를 싣는다(청구 폼 표기)");
+  assert.equal(sessionRateAmount({ session_type: "촬영 대관", rate_item_id: null, start_time: null, end_time: null }), null);
   assert.equal(sessionRateAmount({ session_type: "촬영 대관", rate_item_id: rateId, start_time: null, end_time: null }), null);
+  assert.equal(sessionRateAmount({ session_type: "믹싱", rate_item_id: null, start_time: "10:00", end_time: "14:00" }), null, "후반작업 세션은 종전대로 대상 아님");
 });
 
 test.after(() => cleanupDb(process.env.DB_PATH));

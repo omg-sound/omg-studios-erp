@@ -34,9 +34,9 @@ const {
   listGroupsForPicker,
 } = require("./data");
 
-/** "+ 새 프로젝트" 버튼 — 유형 구분 없이 단일 진입(모든 프로젝트가 세션 일정+곡·콘텐츠 동일). */
+/** 목록 상단 버튼 — 개편 1단계(2026-10-13)부터 '새 프로젝트' 대신 빠른 생성(/new). 프로젝트는 이름을 쓰면 자동 생성된다. */
 function newProjectMenu() {
-  return `<a href="/projects/new" class="btn-primary ml-auto">+ 새 프로젝트</a>`;
+  return `<a href="/new?return=%2Fprojects" class="btn-primary ml-auto">+ 새로 만들기</a>`;
 }
 
 
@@ -398,6 +398,48 @@ function projectForm(p = {}, err = "") {
 }
 
 
+/**
+ * '프로젝트 정보' 칸 묶음 — `/new` 상세 섹션 전용(개편 1단계, 2026-10-13). 정보 탭 폼과 같은 위젯·같은 필드명이라
+ * 서버(updateProjectRecord)가 그대로 해석한다. **제목·메모 칸은 없다**(세션 메모와 이름이 겹치고, 제목은 위 콤보).
+ * 기존 프로젝트면 JS가 칸이 실제로 바뀔 때만 `project_info_touched=1`을 세팅하고, 서버는 그 표시가 있을 때만
+ * 저장한다 — 섹션을 안 열고 저장해도 빈 칸이 기존 아티스트·담당자를 지우지 않게.
+ */
+function projectInfoFields(p = {}, { existing = false, optionsRef = "" } = {}) {
+  const sel = p.id ? listProjectContacts(p.id) : [];
+  return `
+    <div class="space-y-3" data-project-info>
+      <input type="hidden" name="project_info_touched" value="0" data-project-info-touched />
+      <div class="flex items-baseline justify-between gap-2">
+        <div class="text-xs font-semibold text-muted">프로젝트 정보</div>
+        <div class="text-xs text-muted">${existing ? "이 프로젝트의 모든 세션·작업에 공통" : "새 프로젝트에 저장"}</div>
+      </div>
+      ${existing ? `<p class="hidden rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning" data-project-info-warn>프로젝트 정보가 바뀌었습니다 — 저장하면 이 프로젝트 전체에 반영됩니다.</p>` : ""}
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div><label class="label mb-0">아티스트</label>${artistCombo(p)}</div>
+        <div><label class="label mb-0">프로젝트 매니저${managerSelect(p.manager_id)}</label></div>
+      </div>
+      <div>
+        <label class="label">제작/운영</label>
+        ${companyCombo("production_company", p.production_company, "제작사", "제작/운영", { partyIdField: "production_party_id", partyIdValue: p.production_id })}
+      </div>
+      <div>
+        <label class="label">고객측 담당자</label>
+        ${personCombo({ multi: true, selected: sel, options: optionsRef ? [] : contactOptions(), optionsRef, companyOptions: optionsRef ? [] : partyOptions({ role: "company" }), companyOptionsRef: optionsRef ? "pc-company-shared" : "", placeholder: sel.length ? "" : "담당자 — 검색 또는 새로 등록" })}
+      </div>
+      <label class="label mb-0 flex items-center gap-2"><input type="checkbox" name="internal_support" value="1" ${p.internal_support ? "checked" : ""} /> 내부 지원(청구 대상 아님)</label>
+    </div>`;
+}
+
+/** 접힘 요약 줄용 프로젝트 조각(아티스트·제작·PM) — 값이 있는 것만. */
+function projectInfoSummary(p = {}) {
+  const pm = p.manager_id ? listProjectManagers({ includeInactive: true }).find((m) => Number(m.id) === Number(p.manager_id)) : null;
+  return [
+    p.artist ? `아티스트 ${p.artist}` : "",
+    p.production_company ? `제작 ${p.production_company}` : "",
+    pm ? `PM ${pm.name}` : "",
+  ].filter(Boolean);
+}
+
 function projectEditForm(p = {}, err = "") {
   // 명시적 저장 버튼(변경 시 하이라이트) — app.js [data-dirty-form] 공통 처리.
   return `
@@ -655,7 +697,7 @@ function taskRow(task, { isAdmin, managers = [], open = false } = {}) {
   // 금액은 청구 탭에서 확정 — 작업 행엔 청구된 작업의 확정액만 표시(미청구는 숨김, '기록만' 일관).
   const amount = `<span class="text-sm font-semibold">${task.is_invoiced && task.total_price ? formatKRW(task.total_price) : ""}</span>`;
   // 종류·담당은 '작업 저장' 후 서버 재렌더로 갱신된다(자동저장은 2026-07-01 명시 저장 버튼으로 전환).
-  const title = `<span class="min-w-0 truncate text-sm"><span class="font-medium">${esc(label)}</span><span class="text-xs text-muted">${task.engineer_name ? " · " + esc(task.engineer_name) : ""}</span></span>`;
+  const title = `<span class="min-w-0 truncate text-sm"><span class="font-medium">${esc(label)}</span><span class="text-xs text-muted">${task.engineer_name ? " · " + esc(task.engineer_name) : ""}${task.work_date ? " · " + esc(formatYmdShort(task.work_date)) : ""}</span></span>`;
   const statusBadge = `<span class="badge ${statusCls}">${esc(status)}</span>`;
 
   // 비관리자/청구된 작업: 편집 불가 → 단순 행(접기 없음).
@@ -744,6 +786,10 @@ function taskEditForm(task, managers = []) {
       </div>
       <div>
         <label class="label mb-0 text-xs">담당 엔지니어<select class="input mt-0.5 block py-1.5 text-sm" name="engineer_id">${engineerSelect(managers, task)}</select></label>
+      </div>
+      <div>
+        <span class="label mb-0 text-xs">작업일 <span class="font-normal text-muted">(선택)</span></span>
+        <div class="mt-0.5">${dateCombo("work_date", task.work_date || "", { label: "작업일" })}</div>
       </div>
       <div data-worker-rate>
         <label class="label mb-0 text-xs">외주 지급단가 <span class="font-normal text-muted">(정산 기준 · 원)</span><input class="input mt-0.5 block py-1.5 text-sm" name="worker_rate" inputmode="numeric" placeholder="0" value="${esc(String(task.worker_rate || ""))}" /></label>
@@ -897,14 +943,15 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
       const label = [dateLabel, project.artist, s.billing ? s.billing.item.name : s.session_type].filter(Boolean).join(" · "); // 청구 항목 스냅샷과 동일 형식 "7월 8일 · 아티스트 · 보컬녹음"(2026-07-08 — 접두 제거·· 구분)
       const waiveAction = `/sessions/${s.id}/waive`;
       if (s.waived) return waivedRow(esc(label), waiveAction);
-      // 산정 불가(단가 항목 미선택) — 체크박스·금액칸 없이 사유만 보여주고 '청구 안 함' 탈출구는 남긴다(2026-07-23).
+      // 산정 불가(소요 시간 0 이하) — 체크박스·금액칸 없이 사유만 보여주고 '청구 안 함' 탈출구는 남긴다(2026-07-23).
       // 예전엔 이런 세션이 후보 목록에서 통째로 빠져 매출이 소리 없이 샜다(프로젝트가 조용히 '완료'로 이동).
+      // 단가 항목 미선택은 더 이상 여기 오지 않는다 — 수동 금액(billing.manual)으로 바로 청구한다(개편 1단계).
       if (!s.billing) {
         return `
         <div class="${LINE_ROW} opacity-60" data-line-row>
           <span class="${LINE_LABEL}">
             <span class="block font-medium">${esc(label)}</span>
-            <span class="block text-xs text-warning">단가 항목을 선택해야 청구할 수 있습니다 — 세션 일정 탭에서 지정하세요</span>
+            <span class="block text-xs text-warning">시작·종료 시간을 확인해야 청구할 수 있습니다 — 세션 일정 탭에서 고치세요</span>
           </span>
           <button type="submit" formaction="${waiveAction}" formmethod="post" data-waive-btn class="btn-ghost btn-xs shrink-0 whitespace-nowrap text-muted">청구 안 함</button>
         </div>`;
@@ -914,7 +961,10 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
       // 다일 종일은 시간 대신 일수로 보여준다(2026-08-26) — "14시간"처럼 하루짜리 세션으로 오인되는 표기 방지.
       const multiDayCount = s.all_day && s.end_date && s.end_date !== s.session_date && s.billing.item.base_minutes > 0
         ? Math.round(mins / s.billing.item.base_minutes) : null;
-      const dur = multiDayCount
+      const manualAllDay = s.billing.manual && s.billing.allDay;
+      const dur = manualAllDay
+        ? (s.billing.days > 1 ? `${s.billing.days}일` : "종일")
+        : multiDayCount
         ? `${multiDayCount}일`
         : `${Math.floor(mins / 60)}시간${mins % 60 ? " " + (mins % 60) + "분" : ""}`;
       const time = [s.start_time, s.end_time].filter(Boolean).join("–");
@@ -928,7 +978,7 @@ function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
           </label>
           <div class="${LINE_CTRL}">
             <button type="submit" formaction="${waiveAction}" formmethod="post" data-waive-btn class="btn-ghost btn-xs shrink-0 whitespace-nowrap text-muted">청구 안 함</button>
-            ${amountCell(`session_amount_${s.id}`, s.billing.amount == null ? "" : s.billing.amount, label, { memoName: `session_billing_memo_${s.id}`, memo: s.billing_memo })}
+            ${amountCell(`session_amount_${s.id}`, s.billing.amount == null || (s.billing.manual && !s.billing.fixed) ? "" : s.billing.amount, label, { memoName: `session_billing_memo_${s.id}`, memo: s.billing_memo })}
           </div>
         </div>`;
     })
@@ -1060,4 +1110,8 @@ module.exports = { artistCombo,
   unbilledInvoiceForm,
   sessionInvoicedModal,
   invoicePreviewErrorPage,
+  projectInfoFields,
+  projectInfoSummary,
+  engineerSelect,
+  taskTypeOptions,
 };
