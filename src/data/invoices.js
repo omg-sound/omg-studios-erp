@@ -36,8 +36,11 @@ function payerDisplayName(p) {
 // item_date는 실제 작업일이 아니라 ERP에 그 작업을 등록한 날짜라, 날짜 하나로만 정렬하면 등록 시점에 따라
 // 세션과 작업이 무작위로 뒤섞인다. → 날짜가 실제로 의미 있는 라인(세션·task_id 없는 수동 라인)은 날짜순으로
 // 먼저, 작업 라인은 뒤에 원래 등록 순서(id, 트랙 등록 순서와 일치)를 그대로 유지한다.
+// 유형 순서 = 세션(날짜순) → 작업(등록 순서) → 자유 줄(날짜순). 개편 3단계(2026-10-13)에서 자유 줄(계약금 등)이 생겨
+// 맨 뒤 그룹을 따로 뒀다 — 작성 화면·발행 초안(buildInvoiceDraft)과 같은 순서라야 화면과 PDF가 어긋나지 않는다.
+// 라인이 전부 자유 줄인 옛 수동 청구서는 종전처럼 순수 날짜순.
 const ITEM_ORDER_SQL =
-  "(task_id IS NOT NULL), CASE WHEN task_id IS NULL THEN (item_date IS NULL) END, CASE WHEN task_id IS NULL THEN item_date END, id";
+  "CASE WHEN session_id IS NOT NULL THEN 0 WHEN task_id IS NOT NULL THEN 1 ELSE 2 END, CASE WHEN task_id IS NULL THEN (item_date IS NULL) END, CASE WHEN task_id IS NULL THEN item_date END, id";
 
 /**
  * 발행 시점 청구처(payer) 정보 스냅샷(JSON 문자열). 이후 클라이언트 정보가 바뀌어도 과거 청구서 표시/PDF가
@@ -367,165 +370,239 @@ function invoiceAmountsFromSupply(supply, discount, vatIncluded = true) {
  * 청구 초안 계산(읽기 전용, 쓰기 없음) — 청구서 생성과 미리보기 PDF가 공유.
  * 선택 작업/세션 + 폼 입력 금액 → 라인아이템·공급가·할인·VAT·총액·청구처 계산. 반환: null(권한 없음) 또는 draft 객체.
  */
-function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, issueDate, dueDate, title, discount, discountPct, vatIncluded = true, taskAmounts = {}, sessionAmounts = {}, taskMemos = {}, sessionMemos = {} } = {}) {
-  const { sessionRateAmount } = require("../data"); // sessions와 상호의존 → 지연 require
-  const project = getProjectForUser(user, projectId);
-  if (!project || !canBill(user)) return null;
-  const d = db();
-  const selectedTasks = Array.isArray(taskIds) ? taskIds.map(Number).filter(Boolean) : [];
-  const selectedSessions = Array.isArray(sessionIds) ? sessionIds.map(Number).filter(Boolean) : [];
-  if (!selectedTasks.length && !selectedSessions.length) throw new Error("TASK_IDS_REQUIRED");
-
-  let tasks = [];
-  if (selectedTasks.length) {
-    const placeholders = selectedTasks.map(() => "?").join(",");
-    tasks = d
-      .prepare(
-        `SELECT t.*, COALESCE(t.song_title, ?) AS track_title, t.song_artist AS track_artist
-         FROM track_tasks t
-         WHERE t.project_id = ? AND t.is_invoiced = 0 AND t.id IN (${placeholders})
-         ORDER BY ${songOrderSql("t")}`
-      )
-      .all(project.title, project.id, ...selectedTasks);
-    if (tasks.length !== selectedTasks.length) throw new Error("TASK_NOT_BILLABLE");
-  }
-  tasks = tasks.map((t) => {
-    const raw = taskAmounts[t.id] != null ? taskAmounts[t.id] : taskAmounts[String(t.id)];
-    const amt = raw != null && String(raw).trim() !== "" ? parseWon(raw) : (t.total_price || 0);
-    return { ...t, unit_price: amt, total_price: amt };
-  });
-
-  let billSessions = [];
-  if (selectedSessions.length) {
-    const placeholders = selectedSessions.map(() => "?").join(",");
-    const rawSessions = d
-      .prepare(
-        `SELECT s.* FROM sessions s
-         WHERE s.project_id = ? AND s.status <> '취소' AND s.session_type IN (${RENTAL_IN})
-           AND (s.all_day = 1 OR (s.start_time IS NOT NULL AND s.end_time IS NOT NULL))
-           AND s.id IN (${placeholders})
-           AND NOT EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.session_id = s.id)
-           AND NOT EXISTS (SELECT 1 FROM track_tasks tt WHERE tt.session_id = s.id)`
-      )
-      .all(project.id, ...selectedSessions);
-    billSessions = rawSessions.map((s) => ({ session: s, calc: sessionRateAmount(s) })).filter((x) => x.calc); // 산정액 0(금액 미정 정액)도 허용 — 입력 금액으로 확정
-    if (billSessions.length !== selectedSessions.length) throw new Error("TASK_NOT_BILLABLE");
-    billSessions = billSessions.map((x) => {
-      const raw = sessionAmounts[x.session.id] != null ? sessionAmounts[x.session.id] : sessionAmounts[String(x.session.id)];
-      const amount = raw != null && String(raw).trim() !== "" ? parseWon(raw) : x.calc.amount;
-      return { ...x, amount };
-    });
-  }
-
-
-  const subtotal = tasks.reduce((s, t) => s + (t.total_price || 0), 0) + billSessions.reduce((s, x) => s + x.amount, 0);
-  // 할인: 정액(discount) 우선. 정액이 없고 정률(%)만 있으면 공급가 기준으로 서버가 산정한다 —
-  // 정률→정액 변환은 원래 app.js(JS)뿐이라 JS 미동작 시 %만 입력하면 할인이 조용히 0으로 적용되던 것(감사 L2).
-  let effDiscount = discount || 0;
-  if (!effDiscount) {
-    const pct = Number(discountPct);
-    if (pct > 0) effDiscount = Math.round((subtotal * Math.min(100, pct)) / 100);
-  }
-  const { discount: discountAmt, tax, total } = invoiceAmountsFromSupply(subtotal, effDiscount, vatIncluded);
-  const issued = issueDate || todayYmd();
-  const invoiceTitle = String(title || "").trim() || `${project.title} 청구`;
-  // 청구처(payer) = parties.id — **항상 폼에서 명시 선택**(2026-07-15 사용자 결정).
-  // 이전엔 미선택 시 제작사›소속사›아티스트로 자동 파생했는데, '제작/운영 = 결제자'라는 가정이 실무와 어긋난다
-  // (예: 음악감독이 턴키로 받아 감독 개인이 결제). 조용한 기본값이 오발행을 부르므로 자동 파생을 폐기하고,
-  // 안 고르면 발행을 차단한다(폼은 프로젝트 당사자를 '추천 칩'으로 제시 — 흔한 경우는 1클릭).
-  const resolvedPayerId = clientId ? Number(clientId) : null;
-  if (!resolvedPayerId) throw new Error("PAYER_REQUIRED");
-  if (!d.prepare("SELECT 1 FROM parties WHERE id = ?").get(resolvedPayerId)) throw new Error("CLIENT_NOT_FOUND");
-
-  // 라인아이템(청구서·PDF 공용). 작업=곡명 - 종류, 세션=녹음 세션 라인.
-  // item_date = 정렬용 날짜 스냅샷(2026-07-05 사용자 요청 — 청구 항목도 세션 탭처럼 항상 날짜순).
-  // 세션=session_date(실제 일정), 작업=생성일(작업 자체엔 일정 개념이 없어 created_at으로 근사).
-  // 🔒 배열은 세션(taskItems 아님)을 먼저 두고 나중에 작업을 붙인다(ITEM_ORDER_SQL과 동일한 유형 우선순위 —
-  // 아래 최종 정렬 참조).
-  const taskItems = [];
-  for (const t of tasks) {
-    // item_date: created_at은 UTC라 kstYmd로 KST 달력 날짜를 쓴다 — 세션 라인(session_date)과 같은 기준이라야
-    // 한 청구서 안에서 작업·세션 라인이 하루 어긋나지 않는다(2026-07-20 메인터넌스).
-    // 조정 사유가 있으면 품목명에 덧붙인다(청구서에서 '왜 이 금액인지' 읽히게) — 세션 라인과 같은 규칙.
-    const memoIn = taskMemos[t.id] != null ? taskMemos[t.id] : taskMemos[String(t.id)];
-    const reason = String(memoIn != null ? memoIn : t.billing_memo || "").trim();
-    const desc = [`${t.track_title} - ${taskTypeLabel(t.task_type)}`, reason].filter(Boolean).join(" · ");
-    taskItems.push({ task_id: t.id, session_id: null, track_title: t.track_title, task_type: t.task_type, description: desc, quantity: t.quantity, unit_price: t.unit_price, amount: t.total_price, item_date: t.work_date || kstYmd(t.created_at) || null }); // 작업일이 있으면 그 날짜(개편 1단계), 없으면 등록일
-  }
-  // 같은 날짜에 세션이 여럿이면(예: 하루 두 타임) 설명 문구가 완전히 같아져 청구서에서 중복처럼 보인다
-  // (2026-08-22 사용자 리포트) — 그럴 때만 시작 시간을 덧붙여 구분한다(단일 세션인 날짜는 기존 형식 유지).
-  const sessionDateCounts = {};
-  for (const { session } of billSessions) {
-    if (session.session_date) sessionDateCounts[session.session_date] = (sessionDateCounts[session.session_date] || 0) + 1;
-  }
-  const sessionItems = [];
-  for (const { session, calc, amount } of billSessions) {
-    // 형식 = "7월 8일 아티스트명 보컬녹음"(2026-07-08 사용자 요청 — '녹음 세션' 접두·소요시간 제거, 날짜·아티스트·단가 항목명만).
-    const dup = session.session_date && sessionDateCounts[session.session_date] > 1;
-    // 다일 종일(end_date 있음)은 "9월 1일~9월 4일"로 기간 전체를 밝힌다(2026-08-26) — 시작일만 보이면 나머지 날짜가 청구서에서 사라진 것처럼 보인다.
-    const dateLabel = session.all_day && session.end_date && session.end_date !== session.session_date
-      ? `${formatYmdShort(session.session_date)}~${formatYmdShort(session.end_date)}`
-      : formatYmdShort(session.session_date) + (dup && session.start_time ? ` ${session.start_time}` : "");
-    const desc = [dateLabel, project.artist, calc.item.name].filter(Boolean).join(" · ");
-    const base = { task_id: null, session_id: session.id, track_title: null, task_type: null, item_date: session.session_date || null };
-    // 근거를 항목별로 분리 표시(2026-07-26 사용자 지시): 기본가 / 초과 N시간 / 할증을 각각 한 라인으로.
-    // 폼에서 금액을 조정했으면(입력값 ≠ 산정치) 쪼개지 않는다 — 조정된 총액을 되쪼개면 거짓 근거가 된다.
-    const adjusted = amount !== calc.amount || calc.fixed;
-    // 조정 사유 = 이번 폼 입력 우선, 없으면 세션에 남아 있던 사유(즉시 저장분).
-    const memoIn = sessionMemos[session.id] != null ? sessionMemos[session.id] : sessionMemos[String(session.id)];
-    const reason = String(memoIn != null ? memoIn : session.billing_memo || "").trim();
-    // 수동 금액 세션(단가 항목 없음 — 개편 1단계)은 처음부터 사람이 쓴 금액이라 '조정'이 아니다.
-    const lines = adjusted
-      ? [{ label: calc.item.name, amount, detail: reason || (calc.manual ? "" : "조정 금액"), quantity: 1, unit_price: amount }]
-      : calc.lines;
-    lines.forEach((ln, i) => {
-      // 첫 라인만 기존 형식(날짜 · 아티스트 · 항목명)을 유지해 목록·PDF·매출 집계가 종전대로 읽힌다.
-      // 뒤 라인은 무엇에 붙는 금액인지 알 수 있게 근거를 그대로 쓴다(예: "초과 시간 · 1시간 30분 초과 → 2시간 × ₩100,000").
-      const description = i === 0
-        ? [desc, ln.detail].filter(Boolean).join(" · ")
-        : [ln.label, ln.detail].filter(Boolean).join(" · ");
-      sessionItems.push({ ...base, description, quantity: ln.quantity != null ? ln.quantity : 1, unit_price: ln.unit_price != null ? ln.unit_price : ln.amount, amount: ln.amount });
-    });
-  }
-  // 유형별 섹션(세션 → 작업) + 세션 내부는 날짜순(2026-08-22 사용자 리포트 '녹음·믹싱이 산발적으로 섞여 있다').
-  // 작업의 item_date는 실제 작업 순서와 무관한 'ERP 등록일'일 뿐이라, 항목 전체를 날짜 하나로만 정렬하면
-  // 등록 시점에 따라 세션 사이사이에 무작위로 끼어든다. 세션은 날짜순으로 정렬하고, 작업은 원래 순서
-  // (트랙·작업 등록 순서, taskItems를 만든 쿼리의 ORDER BY)를 그대로 보존한다 — DB 읽기 경로의
-  // ITEM_ORDER_SQL과 동일한 유형 우선순위·정렬 기준(값 없는 세션 날짜는 뒤로, 동일 날짜는 안정 정렬 유지).
-  sessionItems.sort((a, b) => {
-    const ad = a.item_date || "", bd = b.item_date || "";
-    if (!ad && !bd) return 0;
-    if (!ad) return 1;
-    if (!bd) return -1;
-    return ad.localeCompare(bd);
-  });
-  const items = [...sessionItems, ...taskItems];
-  return { project, tasks, billSessions, items, subtotal, discountAmt, tax, total, issued, dueDate: dueDate || null, invoiceTitle, resolvedPayerId };
+/** 세션 라인 기본 설명 — "10월 2일 · 아티스트 · 녹음"(다일 종일은 "9월 1일~9월 4일"). 청구서에서 고칠 수 있다. */
+function sessionLineLabel(s, artist, { withTime = false } = {}) {
+  // 같은 날짜에 세션이 둘 이상이면 시작 시간을 붙여 구분한다(2026-08-22 사용자 리포트 — 설명이 같아 중복처럼 보였다).
+  const dateLabel = s.all_day && s.end_date && s.end_date !== s.session_date
+    ? `${formatYmdShort(s.session_date)}~${formatYmdShort(s.end_date)}`
+    : formatYmdShort(s.session_date) + (withTime && s.start_time ? ` ${s.start_time}` : "");
+  return [dateLabel, artist, s.session_type].filter(Boolean).join(" · ");
+}
+/** 작업 라인 기본 설명 — "곡명(없으면 프로젝트 이름) - 종류". */
+function taskLineLabel(t, projectTitle) {
+  return `${t.song_title || projectTitle || ""} - ${taskTypeLabel(t.task_type)}`;
 }
 
-function createInvoiceFromTasks(user, opts = {}) {
-  const draft = computeInvoiceDraft(user, opts);
-  if (!draft) return null;
-  // 0원 라인은 확인 후 허용(2026-07-05 사용자 결정 — 무료로 해준 작업도 기록·청구서에 남길 수 있게).
-  // opts.confirmZero(폼이 window.confirm 후 hidden confirm_zero_amount=1로 세팅)로만 우회 —
-  // 서버는 확인 없이는 여전히 차단(JS 미동작·경합 대비 안전망, 세션 겹침 override_conflict와 동일 패턴).
-  if (draft.items.some((it) => !(it.amount > 0)) && !opts.confirmZero) throw new Error("TASK_AMOUNT_REQUIRED");
-  // 청구처 발행 정보 없으면 생성 차단(회사=세금계산서 정보 biz_no, 개인=현금영수증 정보). 폼에서도 막지만 서버가 최종 보루.
-  if (draft.resolvedPayerId) {
-    const miss = payerDocMissing(getParty(draft.resolvedPayerId));
-    if (miss) throw new Error(miss);
+// 청구 가능한 세션 조건(개편 3단계 — 대기함·청구 생성·미청구 집계가 같은 조건이어야 한다. listProjects.unbilled_cnt 참조).
+// 대관 종류(믹싱·마스터링 '세션'은 제외 — 같은 일을 작업으로 청구, 2026-10-13 사용자 결정), 취소 제외, 시간 있음(또는 종일),
+// 아직 청구 라인·작업 전환 없음.
+const BILLABLE_SESSION_SQL = `s.status <> '취소' AND s.session_type IN (${RENTAL_IN})
+  AND (s.all_day = 1 OR (s.start_time IS NOT NULL AND s.end_time IS NOT NULL))
+  AND NOT EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.session_id = s.id)
+  AND NOT EXISTS (SELECT 1 FROM track_tasks tt WHERE tt.session_id = s.id)`;
+
+/**
+ * 청구 대기함(개편 3단계) — **모든 프로젝트**의 미청구 세션·작업을 프로젝트별로 묶어 반환.
+ * 내부 지원 프로젝트는 뺀다. 금액은 사람이 적어 둔 값만(세션 확정액·작업 금액) — 산정치 없음.
+ * @param {object} f q=프로젝트·아티스트·제작/운영·소속 검색, from/to=날짜(YYYY-MM-DD), doneOnly=완료만,
+ *   showWaived='청구 안 함'도 보기, projectId=한 프로젝트만
+ * @returns {{groups: Array<{project:object, items:Array}>, count:number, postprod: Array}}
+ */
+function listBillableItems(_user, f = {}) {
+  const d = db();
+  const where = ["p.internal_support = 0"];
+  const params = {};
+  if (f.projectId) { where.push("p.id = @pid"); params.pid = Number(f.projectId); }
+  const q = String(f.q || "").trim();
+  if (q) {
+    where.push(`(p.title LIKE @q OR p.artist LIKE @q OR p.production_company LIKE @q OR p.artist_company LIKE @q)`);
+    params.q = `%${q}%`;
   }
-  // 발행 이메일(청구서 건별, 2026-07-27 스펙): 폼이 프리필/직접 입력을 거쳤을 때만(payerEmailSet) 적용 —
-  // 보이는 값 = 이번 청구서의 발행 이메일(빈값=이메일 없음). party 정보는 불변, 스냅샷에만 기록.
-  // 마커 없으면(JS-off 제출) 기존 동작 — 빈 필드가 이메일을 조용히 지우는 사고 방지.
-  let payerSnapshot = snapshotPayer(draft.resolvedPayerId);
+  const projWhere = where.join(" AND ");
+  const dateCond = (col) => {
+    const c = [];
+    if (f.from) { c.push(`${col} >= @from`); params.from = f.from; }
+    if (f.to) { c.push(`${col} <= @to`); params.to = f.to; }
+    return c.length ? " AND " + c.join(" AND ") : "";
+  };
+  const waived = f.showWaived ? "" : " AND s.waived = 0";
+  const sessions = d.prepare(
+    `SELECT s.*, p.id AS pid FROM sessions s JOIN projects p ON p.id = s.project_id
+     WHERE ${projWhere} AND ${BILLABLE_SESSION_SQL}${waived}${f.doneOnly ? " AND s.status = '완료'" : ""}${dateCond("s.session_date")}
+     ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC`
+  ).all(params);
+  const tWaived = f.showWaived ? "" : " AND t.waived = 0";
+  const tasks = d.prepare(
+    `SELECT t.*, p.id AS pid FROM track_tasks t JOIN projects p ON p.id = t.project_id
+     WHERE ${projWhere} AND t.is_invoiced = 0${tWaived}${f.doneOnly ? " AND t.status = 'Completed'" : ""}${dateCond("COALESCE(t.work_date, substr(t.created_at, 1, 10))")}
+     ORDER BY ${songOrderSql("t")}`
+  ).all(params);
+  const ids = [...new Set([...sessions, ...tasks].map((r) => r.pid))];
+  const projects = ids.length
+    ? d.prepare(`SELECT p.*, (SELECT MAX(s.session_date) FROM sessions s WHERE s.project_id = p.id) AS last_date FROM projects p WHERE p.id IN (${ids.map(() => "?").join(",")})`).all(...ids)
+    : [];
+  const byId = new Map(projects.map((p) => [p.id, { project: p, items: [] }]));
+  for (const s of sessions) {
+    const g = byId.get(s.pid);
+    g.items.push({
+      kind: "session", id: s.id, key: `s${s.id}`, date: s.session_date, status: s.status, done: s.status === "완료", waived: !!s.waived,
+      label: sessionLineLabel(s, g.project.artist), time: [s.start_time, s.end_time].filter(Boolean).join("–"),
+      amount: s.billing_amount != null ? Math.round(s.billing_amount) : null,
+    });
+  }
+  for (const t of tasks) {
+    const g = byId.get(t.pid);
+    g.items.push({
+      kind: "task", id: t.id, key: `t${t.id}`, date: t.work_date || null, status: t.status, done: t.status === "Completed", waived: !!t.waived,
+      label: taskLineLabel(t, g.project.title), time: "", engineer: t.engineer_name || "",
+      amount: t.total_price > 0 ? t.total_price : null,
+    });
+  }
+  // 프로젝트 순서 = 가장 오래된 미청구 항목 날짜(먼저 끝난 일부터 청구).
+  const groups = [...byId.values()];
+  const firstDate = (g) => g.items.map((i) => i.date).filter(Boolean).sort()[0] || "9999";
+  groups.sort((a, b) => firstDate(a).localeCompare(firstDate(b)) || a.project.id - b.project.id);
+  // 작업 없는 완료 후반작업 세션(믹싱·마스터링) — 대기함엔 안 올리고(작업으로 청구) 알림만(hasPostprodSessionNeedingBilling과 같은 술어).
+  const { hasPostprodSessionNeedingBilling } = require("./projects");
+  const postprod = d.prepare(`SELECT DISTINCT p.id, p.title FROM projects p JOIN sessions s ON s.project_id = p.id WHERE ${projWhere} AND s.status = '완료' AND s.session_type IN ('믹싱', '마스터링')`).all(params)
+    .filter((p) => hasPostprodSessionNeedingBilling(p.id));
+  return { groups, count: sessions.length + tasks.length, postprod };
+}
+
+/**
+ * 대기함에서 고른 키("s12"·"t34")를 청구서 작성 화면의 라인으로(청구 가능한 것만 — 이미 청구됐거나 취소된 건 빠지고 skipped로).
+ * @returns {{lines:Array, projects:Array, skipped:number}}
+ */
+function composeLinesForKeys(keys) {
+  const d = db();
+  const list = [...new Set((Array.isArray(keys) ? keys : keys ? [keys] : []).map(String))];
+  const lines = [];
+  const pids = new Set();
+  let skipped = 0;
+  for (const k of list) {
+    const m = /^([st])(\d+)$/.exec(k);
+    if (!m) { skipped++; continue; }
+    const id = Number(m[2]);
+    if (m[1] === "s") {
+      const s = d.prepare(`SELECT s.*, p.artist AS p_artist FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.id = ? AND ${BILLABLE_SESSION_SQL}`).get(id);
+      if (!s) { skipped++; continue; }
+      pids.add(s.project_id);
+      lines.push({ kind: "session", id, key: k, project_id: s.project_id, date: s.session_date, done: s.status === "완료", label: sessionLineLabel(s, s.p_artist), amount: s.billing_amount != null ? Math.round(s.billing_amount) : null, _s: s });
+    } else {
+      const t = d.prepare("SELECT t.*, p.title AS p_title FROM track_tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ? AND t.is_invoiced = 0").get(id);
+      if (!t) { skipped++; continue; }
+      pids.add(t.project_id);
+      lines.push({ kind: "task", id, key: k, project_id: t.project_id, date: t.work_date || null, done: t.status === "Completed", label: taskLineLabel(t, t.p_title), amount: t.total_price > 0 ? t.total_price : null });
+    }
+  }
+  // 같은 날짜 세션이 둘 이상이면 그 세션들 설명에 시작 시간을 붙인다(발행될 청구서에서 구분되게).
+  const perDate = {};
+  for (const l of lines) if (l.kind === "session" && l._s.session_date) perDate[l._s.session_date] = (perDate[l._s.session_date] || 0) + 1;
+  for (const l of lines) {
+    if (l.kind === "session" && perDate[l._s.session_date] > 1) l.label = sessionLineLabel(l._s, l._s.p_artist, { withTime: true });
+    delete l._s;
+  }
+  const ids = [...pids];
+  const projects = ids.length ? d.prepare(`SELECT * FROM projects WHERE id IN (${ids.map(() => "?").join(",")})`).all(...ids) : [];
+  // 세션(날짜순) → 작업(고른 순서) — 발행될 청구서와 같은 순서로 보여 준다.
+  const rank = (l) => (l.kind === "session" ? 0 : 1);
+  lines.sort((a, b) => rank(a) - rank(b) || (rank(a) === 0 ? String(a.date).localeCompare(String(b.date)) : 0));
+  return { lines, projects, skipped };
+}
+
+/**
+ * 청구서 초안 — 라인 배열로부터(개편 3단계: 대기함에서 고른 세션·작업 + 자유 줄, 내용·금액 직접 기입).
+ * @param {object} o payerId(필수)·title·issueDate·discount·discountPct·vatIncluded·lines
+ *   lines = [{ kind:'session'|'task'|'free', id?, description?, amount?, date? }] — amount는 '300,000' 같은 입력 문자열도 받는다.
+ *   빈 줄(자유 줄인데 내용·금액 둘 다 없음)은 무시. 같은 세션·작업이 두 번 오면 거부.
+ */
+function buildInvoiceDraft(user, o = {}) {
+  if (!canBill(user)) return null;
+  const d = db();
+  const raw = Array.isArray(o.lines) ? o.lines : [];
+  const seen = new Set();
+  const items = [];
+  const projectIds = new Set();
+  for (const ln of raw) {
+    const kind = ln.kind === "session" || ln.kind === "task" ? ln.kind : "free";
+    const descIn = String(ln.description == null ? "" : ln.description).replace(/\s+/g, " ").trim();
+    const amtRaw = ln.amount == null ? "" : String(ln.amount).trim();
+    if (kind === "free" && !descIn && !amtRaw) continue; // 비워 둔 자유 줄
+    const amount = amtRaw === "" ? 0 : parseMoney(amtRaw);
+    if (kind === "session") {
+      const id = Number(ln.id);
+      if (!id || seen.has(`s${id}`)) throw new Error("TASK_NOT_BILLABLE");
+      seen.add(`s${id}`);
+      const s = d.prepare(`SELECT s.*, p.artist AS p_artist FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.id = ? AND ${BILLABLE_SESSION_SQL}`).get(id);
+      if (!s) throw new Error("TASK_NOT_BILLABLE");
+      projectIds.add(s.project_id);
+      items.push({ task_id: null, session_id: s.id, track_title: null, task_type: null, description: descIn || sessionLineLabel(s, s.p_artist), quantity: 1, unit_price: amount, amount, item_date: s.session_date || null, _session: s, _autoDesc: !descIn });
+    } else if (kind === "task") {
+      const id = Number(ln.id);
+      if (!id || seen.has(`t${id}`)) throw new Error("TASK_NOT_BILLABLE");
+      seen.add(`t${id}`);
+      const t = d.prepare("SELECT t.*, p.title AS p_title FROM track_tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ? AND t.is_invoiced = 0").get(id);
+      if (!t) throw new Error("TASK_NOT_BILLABLE");
+      projectIds.add(t.project_id);
+      items.push({ task_id: t.id, session_id: null, track_title: t.song_title || t.p_title, task_type: t.task_type, description: descIn || taskLineLabel(t, t.p_title), quantity: 1, unit_price: amount, amount, item_date: t.work_date || kstYmd(t.created_at) || null, _task: t });
+    } else {
+      if (!descIn) throw new Error("LINE_DESC_REQUIRED");
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(ln.date || "")) ? ln.date : null;
+      items.push({ task_id: null, session_id: null, track_title: null, task_type: null, description: descIn, quantity: 1, unit_price: amount, amount, item_date: date });
+    }
+  }
+  if (!items.length) throw new Error("TASK_IDS_REQUIRED");
+  // 설명을 비워 둔(자동) 세션 줄 — 같은 날짜가 둘 이상이면 시작 시간을 붙여 구분.
+  const perDate = {};
+  for (const it of items) if (it._session && it._autoDesc) perDate[it.item_date] = (perDate[it.item_date] || 0) + 1;
+  for (const it of items) {
+    if (it._session && it._autoDesc && perDate[it.item_date] > 1) it.description = sessionLineLabel(it._session, it._session.p_artist, { withTime: true });
+  }
+  const subtotal = items.reduce((sum, it) => sum + it.amount, 0);
+  // 할인: 정액 우선, 없으면 정률(%)을 공급가 기준으로 서버가 산정(JS 미동작 폴백 — 감사 L2).
+  let effDiscount = o.discount || 0;
+  if (!effDiscount) {
+    const pct = Number(o.discountPct);
+    if (pct > 0) effDiscount = Math.round((subtotal * Math.min(100, pct)) / 100);
+  }
+  const vatIncluded = o.vatIncluded !== false;
+  const { discount: discountAmt, tax, total } = invoiceAmountsFromSupply(subtotal, effDiscount, vatIncluded);
+  const issued = o.issueDate || todayYmd();
+  // 청구처 = **항상 명시**(2026-07-15 사용자 결정 — 자동 파생 폐기). 안 고르면 발행 차단.
+  const payerId = o.payerId ? Number(o.payerId) : null;
+  if (!payerId) throw new Error("PAYER_REQUIRED");
+  const payer = getParty(payerId);
+  if (!payer) throw new Error("CLIENT_NOT_FOUND");
+  const pids = [...projectIds];
+  const onlyProject = pids.length === 1 ? d.prepare("SELECT * FROM projects WHERE id = ?").get(pids[0]) : null;
+  // 제목 기본값: 한 프로젝트면 '{프로젝트} 청구', 여러(또는 자유 줄만)면 '{청구처} {M}월 청구'.
+  const title = String(o.title || "").trim()
+    || (onlyProject ? `${onlyProject.title} 청구` : `${payerDisplayName(payer)} ${Number(issued.slice(5, 7))}월 청구`);
+  // 정렬 = 세션(날짜순) → 작업(곡 묶음 순서 = 입력 순서) → 자유 줄(입력 순서). 읽기 경로 ITEM_ORDER_SQL과 같은 유형 우선순위.
+  const rank = (it) => (it.session_id ? 0 : it.task_id ? 1 : 2);
+  const ordered = items
+    .map((it, i) => ({ it, i }))
+    .sort((a, b) => {
+      if (rank(a.it) !== rank(b.it)) return rank(a.it) - rank(b.it);
+      if (rank(a.it) !== 1) { // 세션·자유 줄 = 날짜순(날짜 없는 줄은 뒤) — ITEM_ORDER_SQL과 같은 규칙
+        const ad = a.it.item_date || "", bd = b.it.item_date || "";
+        if (ad !== bd) return !ad ? 1 : !bd ? -1 : ad.localeCompare(bd);
+      }
+      return a.i - b.i;
+    })
+    .map((x) => x.it);
+  return { items: ordered, subtotal, discountAmt, tax, total, issued, title, payerId, payer, projectId: onlyProject ? onlyProject.id : null, projectIds: pids };
+}
+
+/**
+ * 청구서 발행(개편 3단계 — 대기함 경로). 즉시 '발행' 상태. 세션 → '완료', 작업 → Completed·청구됨(금액 확정).
+ * 0원 라인은 confirmZero가 있을 때만(폼이 확인창 후 세팅 — 서버가 최종 보루).
+ */
+function createInvoice(user, opts = {}) {
+  const draft = buildInvoiceDraft(user, opts);
+  if (!draft) return null;
+  if (draft.items.some((it) => !(it.amount > 0)) && !opts.confirmZero) throw new Error("TASK_AMOUNT_REQUIRED");
+  const miss = payerDocMissing(draft.payer); // 회사=사업자번호, 개인=현금영수증/사업자번호 — 폼도 막지만 서버가 최종 보루
+  if (miss) throw new Error(miss);
+  // 발행 이메일(건별, 2026-07-27): 폼이 프리필/직접 입력을 거쳤을 때만(payerEmailSet) 스냅샷에 반영. party는 불변.
+  let payerSnapshot = snapshotPayer(draft.payerId);
   if (opts.payerEmailSet && payerSnapshot) {
     const v = String(opts.payerEmail == null ? "" : opts.payerEmail).trim();
-    if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new Error("PAYER_EMAIL_INVALID"); // mailer.invalidRecipients와 동일 패턴
+    if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new Error("PAYER_EMAIL_INVALID");
     const snap = JSON.parse(payerSnapshot);
     if (v !== String(snap.email == null ? "" : snap.email).trim()) {
       snap.email = v || null;
-      snap.email_overridden = true; // payerSnapshotChanged 이메일 비교 제외·[새로고침] 보존 판정 플래그
+      snap.email_overridden = true;
       payerSnapshot = JSON.stringify(snap);
     }
   }
@@ -533,92 +610,83 @@ function createInvoiceFromTasks(user, opts = {}) {
   const invoiceNumber = nextInvoiceNumber(draft.issued);
   d.exec("BEGIN IMMEDIATE;");
   try {
-    const info = d
-      .prepare(
-        `INSERT INTO invoices
-         (project_id, payer_id, payer_snapshot, title, invoice_number, amount, tax_amount, discount_amount, paid_amount, status, issued_date, due_date, memo)
-         VALUES (@project_id, @payer_id, @payer_snapshot, @title, @invoice_number, @amount, @tax_amount, @discount_amount, 0, '발행', @issued_date, @due_date, @memo)`
-      )
-      .run({
-        project_id: draft.project.id,
-        payer_id: draft.resolvedPayerId,
-        payer_snapshot: payerSnapshot, // 발행 시점 청구처 정보 고정(건별 발행 이메일 반영)
-        title: draft.invoiceTitle,
-        invoice_number: invoiceNumber,
-        amount: draft.total,
-        tax_amount: draft.tax,
-        discount_amount: draft.discountAmt,
-        issued_date: draft.issued,
-        due_date: draft.dueDate,
-        memo: null, // 자동 메모 제거(사용자 요청) — 필요 시 수동 인보이스에서 입력
-      });
-    const invoiceId = info.lastInsertRowid;
+    const invoiceId = d.prepare(
+      `INSERT INTO invoices (project_id, payer_id, payer_snapshot, title, invoice_number, amount, tax_amount, discount_amount, paid_amount, status, issued_date, due_date, memo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, '발행', ?, NULL, NULL)`
+    ).run(draft.projectId, draft.payerId, payerSnapshot, draft.title, invoiceNumber, draft.total, draft.tax, draft.discountAmt, draft.issued).lastInsertRowid;
     const insertItem = d.prepare(
       `INSERT INTO invoice_items (invoice_id, task_id, session_id, track_title, task_type, description, quantity, unit_price, amount, item_date)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    // 청구 시 작업 잠금·확정 금액 반영 + 상태를 '완료'로(청구=완료 처리; 미완료 선택 시 폼에서 확인받음).
-    const markTask = d.prepare("UPDATE track_tasks SET is_invoiced = 1, invoice_id = ?, unit_price = ?, total_price = ?, status = 'Completed' WHERE id = ?");
-    const markSession = d.prepare("UPDATE sessions SET status = '완료' WHERE id = ? AND status <> '취소'"); // 청구 시 녹음 세션도 완료 처리(예정→완료)
-    // 조정 사유(2026-07-26)는 청구 라인 근거로 들어가는 것과 별개로 **원본 행에도 남긴다** —
-    // 그래야 나중에 세션·작업을 열었을 때 왜 그 금액이었는지 알 수 있다(청구서만 보면 라인 텍스트뿐).
-    const memoSession = d.prepare("UPDATE sessions SET billing_memo = ? WHERE id = ?");
-    const memoTask = d.prepare("UPDATE track_tasks SET billing_memo = ? WHERE id = ?");
-    const pickMemo = (map, id) => {
-      const v = map[id] != null ? map[id] : map[String(id)];
-      const t = String(v == null ? "" : v).trim();
-      return t || null;
-    };
-    const seen = new Set();
+    const markTask = d.prepare("UPDATE track_tasks SET is_invoiced = 1, invoice_id = ?, unit_price = ?, total_price = ?, status = 'Completed' WHERE id = ? AND is_invoiced = 0");
+    // 세션: 청구=완료(예정 세션도), 확정액도 청구 금액으로 맞춘다(세션 화면에 '확정 청구액'으로 보이게).
+    const markSession = d.prepare("UPDATE sessions SET status = CASE WHEN status = '취소' THEN status ELSE '완료' END, billing_amount = ? WHERE id = ?");
     for (const it of draft.items) {
       insertItem.run(invoiceId, it.task_id, it.session_id, it.track_title, it.task_type, it.description, it.quantity, it.unit_price, it.amount, it.item_date);
-      if (it.task_id) markTask.run(invoiceId, it.unit_price, it.amount, it.task_id); // 청구 시 확정 금액을 작업에도 반영
-      if (it.session_id) markSession.run(it.session_id); // 청구=완료(예정 세션도 완료로)
-      // 라인이 여러 개(기본가·초과·할증)여도 원본 행 갱신은 한 번만.
-      const key = it.task_id ? `t${it.task_id}` : it.session_id ? `s${it.session_id}` : "";
-      if (key && !seen.has(key)) {
-        seen.add(key);
-        if (it.task_id) { const m = pickMemo(opts.taskMemos || {}, it.task_id); if (m) memoTask.run(m, it.task_id); }
-        if (it.session_id) { const m = pickMemo(opts.sessionMemos || {}, it.session_id); if (m) memoSession.run(m, it.session_id); }
-      }
+      if (it.task_id && !markTask.run(invoiceId, it.amount, it.amount, it.task_id).changes) throw new Error("TASK_NOT_BILLABLE"); // 동시 청구 경합
+      if (it.session_id) markSession.run(it.amount, it.session_id);
     }
     d.exec("COMMIT;");
     return getInvoiceForUser(user, invoiceId);
   } catch (e) {
     d.exec("ROLLBACK;");
+    if (/UNIQUE constraint failed: invoice_items/.test(String(e && e.message))) throw new Error("TASK_NOT_BILLABLE");
     throw e;
   }
 }
 
-/**
- * 청구서 생성 전 미리보기 PDF용 데이터(견적서·내역서·거래명세서) — 쓰기 없음. 선택 항목·금액을 그대로 문서화.
- * 반환: { client, invoice(미발행·번호 없음), items } 또는 null.
- */
-function invoiceDraftForPdf(user, opts = {}) {
-  const draft = computeInvoiceDraft(user, opts);
+/** 미리보기 PDF용 초안(쓰기 없음) — 다음 번호를 peek해 문서에 표기. */
+function invoicePreviewDraft(user, opts = {}) {
+  const draft = buildInvoiceDraft(user, opts);
   if (!draft) return null;
-  const client = draft.resolvedPayerId ? getParty(draft.resolvedPayerId) : null;
   const invoice = {
-    title: draft.invoiceTitle,
-    invoice_number: nextInvoiceNumber(draft.issued), // 미리보기(청구 생성 전)도 다음 번호를 표기(peek — 소비 안 함). PDF에서 유형 코드 삽입.
+    title: draft.title,
+    invoice_number: nextInvoiceNumber(draft.issued), // peek — 소비 안 함
     amount: draft.total,
     tax_amount: draft.tax,
     discount_amount: draft.discountAmt,
     paid_amount: 0,
     status: "미발행",
     issued_date: draft.issued,
-    due_date: draft.dueDate,
-    client_id: draft.resolvedPayerId,
-    client_name: client ? payerDisplayName(client) : "", // 화면 표시 = 본명 (활동명)
+    due_date: null,
+    client_id: draft.payerId,
+    client_name: payerDisplayName(draft.payer),
   };
-  return { project: draft.project, client: client || { name: "" }, invoice, items: draft.items };
+  return { client: draft.payer, invoice, items: draft.items };
 }
 
 /**
- * '확정 진행'된 청구서인가 — 계산서가 홈택스로 나갔거나 입금이 들어온 건.
- * 삭제하면 payments가 FK CASCADE로 함께 사라져 매출·미수가 소급 변하고, 이미 신고한
- * 세금계산서와의 대사가 깨진다. 그래서 이 상태만 삭제 권한을 치프·대표로 올린다.
+ * (호환) 한 프로젝트의 세션·작업 id로 청구 — 기존 테스트·호출부용 어댑터. 새 경로는 createInvoice(라인 배열).
+ * 금액: taskAmounts/sessionAmounts 입력 > 작업 금액·세션 확정액 > 0. 설명은 기본 라벨(+ 조정 사유).
  */
+function legacyLines(user, { projectId, taskIds, sessionIds, taskAmounts = {}, sessionAmounts = {}, taskMemos = {}, sessionMemos = {} } = {}) {
+  const project = getProjectForUser(user, projectId);
+  if (!project) return null;
+  const pick = (map, id) => (map[id] != null ? map[id] : map[String(id)]);
+  const lines = [];
+  for (const sid of (Array.isArray(sessionIds) ? sessionIds : []).map(Number).filter(Boolean)) {
+    const s = db().prepare("SELECT * FROM sessions WHERE id = ? AND project_id = ?").get(sid, project.id);
+    if (!s) throw new Error("TASK_NOT_BILLABLE");
+    const a = pick(sessionAmounts, sid);
+    const memo = String(pick(sessionMemos, sid) || "").trim();
+    lines.push({ kind: "session", id: sid, amount: a != null && String(a).trim() !== "" ? a : s.billing_amount, description: memo ? `${sessionLineLabel(s, project.artist)} · ${memo}` : "" });
+  }
+  for (const tid of (Array.isArray(taskIds) ? taskIds : []).map(Number).filter(Boolean)) {
+    const t = db().prepare("SELECT * FROM track_tasks WHERE id = ? AND project_id = ?").get(tid, project.id);
+    if (!t) throw new Error("TASK_NOT_BILLABLE");
+    const a = pick(taskAmounts, tid);
+    const memo = String(pick(taskMemos, tid) || "").trim();
+    lines.push({ kind: "task", id: tid, amount: a != null && String(a).trim() !== "" ? a : t.total_price, description: memo ? `${taskLineLabel(t, project.title)} · ${memo}` : "" });
+  }
+  if (!lines.length) throw new Error("TASK_IDS_REQUIRED");
+  return lines;
+}
+function createInvoiceFromTasks(user, opts = {}) {
+  const lines = legacyLines(user, opts);
+  if (!lines) return null;
+  return createInvoice(user, { ...opts, payerId: opts.clientId, lines });
+}
+
 function invoiceIsSettled(inv) {
   if (!inv) return false;
   return Number(inv.paid_amount) > 0 || (Boolean(inv.tax_status) && inv.tax_status !== "계산서 미발행");
@@ -682,7 +750,7 @@ function listInvoices(_user, { status, clientId } = {}) {
   }
   // (목록 이메일 파생 payer_email·contact_email은 2026-07-08 목록 이메일 줄 폐지와 함께 제거 — 발행 이메일은 상세 청구처 카드에서.)
   const sql = `
-    SELECT i.*, p.title AS project_title, p.production_company AS project_production, p.artist AS project_artist,
+    SELECT i.*, COALESCE(p.title, CASE WHEN (SELECT COUNT(DISTINCT COALESCE(s2.project_id, t2.project_id)) FROM invoice_items ii2 LEFT JOIN sessions s2 ON s2.id = ii2.session_id LEFT JOIN track_tasks t2 ON t2.id = ii2.task_id WHERE ii2.invoice_id = i.id) > 1 THEN '여러 프로젝트 (' || (SELECT COUNT(DISTINCT COALESCE(s2.project_id, t2.project_id)) FROM invoice_items ii2 LEFT JOIN sessions s2 ON s2.id = ii2.session_id LEFT JOIN track_tasks t2 ON t2.id = ii2.task_id WHERE ii2.invoice_id = i.id) || ')' END) AS project_title, p.production_company AS project_production, p.artist AS project_artist,
            ${PAYER_DISPLAY_SQL} AS client_name, c.kind AS payer_kind, c.is_artist AS payer_is_artist
     FROM invoices i
     LEFT JOIN projects p ON p.id = i.project_id
@@ -701,7 +769,7 @@ function searchInvoices(_user, q, limit = 5) {
   if (!ql) return [];
   const like = `%${ql}%`;
   const sql = `
-    SELECT i.*, p.title AS project_title, p.production_company AS project_production, p.artist AS project_artist,
+    SELECT i.*, COALESCE(p.title, CASE WHEN (SELECT COUNT(DISTINCT COALESCE(s2.project_id, t2.project_id)) FROM invoice_items ii2 LEFT JOIN sessions s2 ON s2.id = ii2.session_id LEFT JOIN track_tasks t2 ON t2.id = ii2.task_id WHERE ii2.invoice_id = i.id) > 1 THEN '여러 프로젝트 (' || (SELECT COUNT(DISTINCT COALESCE(s2.project_id, t2.project_id)) FROM invoice_items ii2 LEFT JOIN sessions s2 ON s2.id = ii2.session_id LEFT JOIN track_tasks t2 ON t2.id = ii2.task_id WHERE ii2.invoice_id = i.id) || ')' END) AS project_title, p.production_company AS project_production, p.artist AS project_artist,
            ${PAYER_DISPLAY_SQL} AS client_name, c.kind AS payer_kind, c.is_artist AS payer_is_artist
     FROM invoices i
     LEFT JOIN projects p ON p.id = i.project_id
@@ -717,7 +785,7 @@ function searchInvoices(_user, q, limit = 5) {
 function getInvoiceForUser(_user, id) {
   const row = db()
     .prepare(
-      `SELECT i.*, p.title AS project_title, p.artist AS project_artist, ${PAYER_DISPLAY_SQL} AS client_name, c.kind AS payer_kind
+      `SELECT i.*, COALESCE(p.title, CASE WHEN (SELECT COUNT(DISTINCT COALESCE(s2.project_id, t2.project_id)) FROM invoice_items ii2 LEFT JOIN sessions s2 ON s2.id = ii2.session_id LEFT JOIN track_tasks t2 ON t2.id = ii2.task_id WHERE ii2.invoice_id = i.id) > 1 THEN '여러 프로젝트 (' || (SELECT COUNT(DISTINCT COALESCE(s2.project_id, t2.project_id)) FROM invoice_items ii2 LEFT JOIN sessions s2 ON s2.id = ii2.session_id LEFT JOIN track_tasks t2 ON t2.id = ii2.task_id WHERE ii2.invoice_id = i.id) || ')' END) AS project_title, p.artist AS project_artist, ${PAYER_DISPLAY_SQL} AS client_name, c.kind AS payer_kind
        FROM invoices i
        LEFT JOIN projects p ON p.id = i.project_id
        LEFT JOIN parties c ON c.id = i.payer_id WHERE i.id = ?`
@@ -744,6 +812,17 @@ function invoiceStats(_user) {
 }
 
 /** 프로젝트의 인보이스 목록(권한 검사). 권한 없으면 null. */
+/** 청구서에 라인이 걸린 프로젝트들(여러 프로젝트 청구서 상세 표시용). */
+function projectsForInvoice(invoiceId) {
+  return db().prepare(
+    `SELECT DISTINCT p.id, p.title FROM invoice_items ii
+       LEFT JOIN sessions s ON s.id = ii.session_id
+       LEFT JOIN track_tasks t ON t.id = ii.task_id
+       JOIN projects p ON p.id = COALESCE(s.project_id, t.project_id)
+      WHERE ii.invoice_id = ? ORDER BY p.title`
+  ).all(Number(invoiceId));
+}
+
 function listInvoicesForProject(user, projectId) {
   const project = getProjectForUser(user, projectId);
   if (!project) return null;
@@ -751,9 +830,14 @@ function listInvoicesForProject(user, projectId) {
     .prepare(
       `SELECT i.*, ${PAYER_DISPLAY_SQL} AS client_name, c.kind AS payer_kind FROM invoices i
        LEFT JOIN parties c ON c.id = i.payer_id
-       WHERE i.project_id = ? ORDER BY i.created_at DESC, i.id DESC`
+       WHERE i.project_id = @pid
+          OR i.id IN (SELECT ii.invoice_id FROM invoice_items ii
+                        LEFT JOIN sessions s ON s.id = ii.session_id
+                        LEFT JOIN track_tasks t ON t.id = ii.task_id
+                       WHERE COALESCE(s.project_id, t.project_id) = @pid)
+       ORDER BY i.created_at DESC, i.id DESC`
     )
-    .all(projectId);
+    .all({ pid: Number(projectId) }); // 여러 프로젝트를 섞은 청구서(project_id NULL)도 라인으로 찾는다(개편 3단계)
   return { project, rows };
 }
 
@@ -772,12 +856,18 @@ module.exports = {
   peekInvoiceNumber: nextInvoiceNumber, // 청구 생성 전 미리보기 PDF 파일명(다음 번호 peek — 소비 안 함)
   invoiceAmountsFromSupply,
   createInvoiceFromTasks,
+  createInvoice,
+  buildInvoiceDraft,
+  invoicePreviewDraft,
+  listBillableItems,
+  composeLinesForKeys,
+  sessionLineLabel,
+  taskLineLabel,
   snapshotPayer,
   payerSnapshotChanged,
   refreshedPayerSnapshot,
   payerDocMeta,
   payerDocMissing,
-  invoiceDraftForPdf,
   invoiceIsSettled,
   deleteInvoice,
   listInvoices,
@@ -785,6 +875,7 @@ module.exports = {
   searchInvoices,
   invoiceStats,
   listInvoicesForProject,
+  projectsForInvoice,
   listPayments,
   addPayment,
   deletePayment,

@@ -6,7 +6,7 @@
  * data.js에서 분리한 모듈(도메인 모듈화). data.js가 재export하므로 소비자 무변경.
  *
  * cross-domain: getProjectForUser(projects)·createContact(contacts)·listRooms(rooms)·
- * computeRatePrice(rate-items)는 직접 require(무순환). isSessionInvoiced(invoices)는
+ * (단가표 산정은 개편 3단계에서 제거 — 금액 = 확정액). isSessionInvoiced(invoices)는
  * sessions↔invoices 상호의존이라 함수 내부 지연 require("../data")로 해소.
  * 다수 헬퍼(sessionFields·resolveDirectorIds·findSessionConflict 등)는 내부 전용(공개 미노출).
  */
@@ -20,7 +20,6 @@ const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES, SESS
 const { getProjectForUser } = require("./projects"); // 무순환
 const { resolvePersonByName } = require("./parties"); // 무순환 — 디렉터=parties.id(사람)
 const { listRooms } = require("./rooms"); // 무순환
-const { computeRatePrice, computeCharge } = require("./rate-items"); // 무순환
 
 /** 프로젝트의 세션 목록(날짜순). 권한 없으면 null. */
 function listSessionsForProject(user, projectId) {
@@ -387,42 +386,12 @@ function listSessionDirectors(sessionId) {
  */
 
 /** 녹음 세션의 진행시간 → 단가표 자동 산정. 시간제 대상(녹음+단가+시간)이 아니면 null. */
-function sessionRateAmount(session, itemOverride, batch = {}) {
+function sessionRateAmount(session, _itemOverride, batch = {}) {
   if (!session || !RENTAL_SESSION_TYPES.includes(session.session_type)) return null;
-  // 확정 청구액(billing_amount)이 있으면 단가표 산정 대신 그 값을 쓴다(2026-07-14 — 청구 폼에서 고친 세션
-  // 금액이 폼 안에서만 살아 있다가 새로고침하면 사라지던 문제. 작업 total_price 즉시 저장과 대칭).
+  // 단가표 제거(개편 3단계, 2026-10-13) — 금액은 사람이 적은 확정액(billing_amount)뿐, 없으면 0(청구서에서 입력).
+  // 함수 이름·반환 모양은 그대로 둬 뷰(예상/확정 청구액 표시)가 분기 없이 쓴다.
   const fixed = session.billing_amount != null ? Math.round(session.billing_amount) : null;
-  // itemOverride: 목록 조회가 rate_items를 한 번만 로드해 넘기는 배치 경로(2026-07-09 감사 — 행당 단건 조회 N+1 제거).
-  const item = session.rate_item_id
-    ? itemOverride || db().prepare("SELECT * FROM rate_items WHERE id = ?").get(session.rate_item_id)
-    : null;
-  // 단가 항목 없음 = **수동 금액**(개편 1단계, 2026-10-13). 빠른 생성은 단가 항목을 접힌 상세로 옮기므로
-  // 단가 없는 세션이 흔해진다 — 예전처럼 null(청구 불가)로 두면 그 세션은 청구서에 넣을 길이 없다.
-  // 금액은 청구 폼에서 직접 입력(확정액이 있으면 그것). 단가표 자체는 3단계에서 제거된다.
-  if (!item) return manualSessionAmount(session, fixed, batch);
-  // batch.segments: 목록 조회가 1회 로드해 넘기는 배치 경로(행당 단건 조회 N+1 제거 — withBilling 참조).
-  // 종일 세션은 시간이 없어 시간제 산정 불가 → 1 기준 블록으로 취급(정액 항목=base_price, 시간제 항목=1Pro). 금액은 청구 시 조정.
-  // 다일 종일(end_date 있음)은 일수만큼 기준 블록을 곱한다(2026-08-26) — 안 곱하면 4일 대관도 1일치로만 청구된다.
-  // 촬영은 구간(반입·설치/촬영/철수) 합산이 요금 시간이다 — 구간이 없으면 시작~종료 span으로 폴백.
-  const allDay = !!session.all_day;
-  const minutes = allDay
-    ? (item.base_minutes || 0) * daysSpan(session.session_date, session.end_date)
-    : sessionBillableMinutes(session, batch.segments ? batch.segments.get(session.id) || [] : undefined);
-  if (!allDay && minutes <= 0) return null;
-  const charge = computeCharge(item, minutes);
-  // 금액을 사람이 조정했으면 근거 라인을 쪼개지 않는다 — 조정된 총액을 기본가·초과로 되쪼개면 거짓 근거가 된다.
-  const lines = fixed != null
-    ? [{ label: item.name, amount: fixed, detail: "조정 금액", quantity: 1, unit_price: fixed }]
-    : charge.lines;
-  return {
-    item,
-    minutes,
-    amount: fixed != null ? fixed : charge.total,
-    computed: charge.total, // 산정치(조정 여부 판정·청구 폼 되돌리기 안내용)
-    lines,
-    fixed: fixed != null,
-    ...(allDay ? { allDay: true } : {}),
-  };
+  return manualSessionAmount(session, fixed, batch);
 }
 
 /**
@@ -685,30 +654,15 @@ function deleteSession(user, sessionId) {
  * 촬영 구간 도입이 행당 `listSessionSegments` 단건 조회를 되살려 놨다: 실측 행당 1.5쿼리).
  * ids 없이 쓰면 종전처럼 행당 조회로 폴백(단건 경로).
  */
-function withBilling(ids) {
-  const items = rateItemsById();
-  let segments;
-  if (Array.isArray(ids) && ids.length) {
-    segments = new Map();
-    const ph = ids.map(() => "?").join(",");
-    for (const r of db().prepare(`SELECT * FROM session_segments WHERE session_id IN (${ph}) ORDER BY sort_order, id`).all(...ids)) {
-      if (!segments.has(r.session_id)) segments.set(r.session_id, []);
-      segments.get(r.session_id).push(r);
-    }
-  }
-  return (row) => ({ ...row, billing: sessionRateAmount(row, items.get(row.rate_item_id), { segments }) });
+function withBilling(_ids) {
+  // 단가표·촬영 구간 제거(개편 3단계) — 소요 시간은 시작~종료 span, 금액은 확정액뿐이라 추가 조회가 없다.
+  const noSegments = new Map();
+  return (row) => ({ ...row, billing: sessionRateAmount(row, null, { segments: noSegments }) });
 }
 
-/** 행 배열에 billing 부착 — 그 목록의 id로 구간까지 배치 로드. 목록 조회 공용. */
+/** 행 배열에 billing 부착 — 목록 조회 공용. */
 function attachBilling(rows) {
   return rows.map(withBilling(rows.map((r) => r.id)));
-}
-
-/** rate_items 전체를 id Map으로 1회 로드(소형 테이블). */
-function rateItemsById() {
-  const m = new Map();
-  for (const r of db().prepare("SELECT * FROM rate_items").all()) m.set(r.id, r);
-  return m;
 }
 
 /** 다가오는 세션(오늘 이후, 취소 제외) — 전역 일정/대시보드. */

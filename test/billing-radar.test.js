@@ -115,16 +115,6 @@ test("'청구 안 함'(무료 처리)이 탈출구 — 미청구 집계에서 �
   assert.strictEqual(rows[0].waived, 1);
 });
 
-test("단가가 있는 세션은 종전대로 산정액이 붙는다(회귀)", () => {
-  const pid = seedProject("단가있음");
-  seedSession(pid, { date: "2026-11-18", rateItemId: rateItem });
-
-  const { rows } = listBillableSessionsForProject(CHIEF, pid);
-  assert.strictEqual(rows.length, 1);
-  assert.ok(rows[0].billing, "단가 항목이 있으면 billing 산정");
-  assert.strictEqual(rows[0].billing.amount, 400000, "240분 = 1Pro(210분) 30만 + 자투리 30분(60분 단위 올림) 10만");
-});
-
 test("비대관 세션(믹싱)은 여전히 청구 후보가 아니다 — 후반작업은 곡·콘텐츠로 청구(회귀)", () => {
   const pid = seedProject("믹싱세션");
   const s = createSession(CHIEF, pid, { session_type: "믹싱", session_date: "2026-11-23", start_time: "14:00", end_time: "18:00", room_id: roomA });
@@ -155,7 +145,7 @@ test("다가오는 세션이 있어도 완료 세션의 미청구는 unbilled_cn
 });
 
 // ── 뷰 계약 ──
-const { projectListRow, unbilledInvoiceForm } = require("../src/views.projects");
+const { projectListRow } = require("../src/views.projects");
 
 const listRow = (over) => projectListRow(
   { id: 1, title: "장기앨범", artist: "루나", client_name: "뮤직팜", manager_name: "김엔지니어", created_at: "2026-07-01 10:00:00", task_total: 0, session_amount_total: 0, ...over },
@@ -168,70 +158,10 @@ test("projectListRow: 진행 중 탭에서도 '청구 필요 N' 배지가 뜬다
   assert.doesNotMatch(listRow({ unbilled_cnt: 0 }), /청구 필요/, "미청구 0이면 배지 없음");
 });
 
-test("unbilledInvoiceForm: 산정 불가 세션(billing=null)은 체크박스 없이 사유 + '청구 안 함'만", () => {
-  const project = { id: 7, artist: "루나" };
-  const s = { id: 42, session_date: "2026-11-03", session_type: "녹음", status: "완료", waived: 0, billing: null };
-  const html = unbilledInvoiceForm(project, [], [s]);
-
-  assert.match(html, /시작·종료 시간을 확인해야 청구할 수 있습니다/, "왜 청구가 안 되는지 그 자리에서 알려준다");
-  assert.doesNotMatch(html, /name="session_id" value="42"/, "체크박스가 없어야 실수로 발행되지 않는다");
-  assert.doesNotMatch(html, /session_amount_42/, "금액칸도 없다");
-  assert.match(html, /\/sessions\/42\/waive/, "'청구 안 함' 탈출구는 남긴다");
-});
-
-test("unbilledInvoiceForm: 수동 금액 세션(단가 없음)은 체크박스 + 빈 금액칸 + 세션 종류 라벨", () => {
-  const project = { id: 7, artist: "루나" };
-  const s = {
-    id: 44, session_date: "2026-11-03", session_type: "녹음", status: "완료", waived: 0,
-    start_time: "14:00", end_time: "18:00",
-    billing: { item: { name: "녹음", base_minutes: 0 }, minutes: 240, amount: 0, fixed: false, manual: true },
-  };
-  const html = unbilledInvoiceForm(project, [], [s]);
-  assert.match(html, /name="session_id" value="44"/, "바로 청구할 수 있다");
-  assert.match(html, /name="session_amount_44"[^>]*value=""/, "금액칸은 비워 둔다(0을 미리 채우면 그대로 발행되기 쉽다)");
-  assert.match(html, /루나 · 녹음/, "라벨 = 날짜 · 아티스트 · 세션 종류");
-});
-
-test("unbilledInvoiceForm: 단가가 있는 세션은 종전대로 체크박스·금액칸(회귀)", () => {
-  const project = { id: 7, artist: "루나" };
-  const s = {
-    id: 43, session_date: "2026-11-03", session_type: "녹음", status: "완료", waived: 0,
-    start_time: "14:00", end_time: "18:00",
-    billing: { item: { name: "보컬녹음" }, minutes: 240, amount: 400000, fixed: false },
-  };
-  const html = unbilledInvoiceForm(project, [], [s]);
-  assert.match(html, /name="session_id" value="43"/);
-  assert.match(html, /session_amount_43/);
-  assert.match(html, /보컬녹음/);
-});
-
 // ── 모바일 레이아웃 계약(2026-07-23 사용자 리포트 — 실측 후 수정) ──
 // 한 줄 flex에 [체크박스·라벨·'청구 안 함'·금액칸 112px]를 다 넣으면 390px에서 라벨에 42px만 남고,
 // 한글은 음절 단위로 줄바꿈돼 행 높이가 221px로 부풀었다(실측). 구조가 되돌아가면 같은 증상이 재발한다.
 // ⚠️ jsdom엔 레이아웃이 없어 폭은 못 잰다 — 여기선 **마크업 계약**만 잠그고, 실제 폭은 브라우저 실측으로 확인했다.
-test("청구 항목 행: 컨트롤을 한 덩어리로 묶어 모바일에서 둘째 줄로 내린다(라벨 짜부라짐 방지)", () => {
-  const project = { id: 7, artist: "루나" };
-  const s = {
-    id: 43, session_date: "2026-11-03", session_type: "녹음", status: "완료", waived: 0,
-    start_time: "14:00", end_time: "18:00",
-    billing: { item: { name: "보컬녹음" }, minutes: 240, amount: 400000, fixed: false },
-  };
-  const html = unbilledInvoiceForm(project, [], [s]);
-
-  assert.match(html, /flex flex-wrap items-start[^"]*/, "행이 래핑 가능해야 컨트롤이 둘째 줄로 내려간다");
-  assert.match(html, /class="flex w-full items-center justify-between gap-2 sm:w-auto/, "'청구 안 함'+금액칸이 한 컨테이너(모바일 전폭·sm+ 인라인)");
-  assert.match(html, /min-w-0 flex-1 break-keep/, "라벨 break-keep — 한글이 음절 단위로 쪼개지지 않게(공백에서만 줄바꿈)");
-  // 금액칸이 라벨과 같은 flex 레벨에 직접 놓이면 다시 라벨을 짜부라뜨린다
-  assert.doesNotMatch(html, /break-keep[^>]*>[\s\S]{0,400}?<button[^>]*data-waive-btn[\s\S]{0,80}?<div class="relative w-28 shrink-0">(?![\s\S]*<\/div>\s*<\/div>)/, "금액칸은 컨트롤 컨테이너 안에");
-});
-
-test("하단 액션: 넘칠 때만 접히고 라벨은 안 쪼개진다", () => {
-  const html = unbilledInvoiceForm({ id: 7, artist: "루나" }, [], [{ id: 1, session_date: "2026-11-03", session_type: "녹음", status: "완료", waived: 0, billing: null }]);
-  assert.match(html, /flex flex-wrap items-center justify-end gap-2">\s*<button class="btn-ghost btn-sm whitespace-nowrap"/, "임시저장이 '임시저\\n장'으로 깨지지 않게 nowrap");
-  assert.match(html, /data-invoice-submit>청구 생성 /, "라벨을 줄여 390px 한 줄에 들어간다");
-  assert.match(html, /grid grid-cols-3 gap-2/, "문서 발행 3버튼은 모바일에서도 3열(전폭 3스택은 148px를 먹었다)");
-});
-
 // ── ③ 후반작업(믹싱/마스터링) 세션 청구 레이더 (2026-07-24) ──
 
 /** 믹싱 세션 1건. done=true면 완료 처리. */
@@ -321,13 +251,17 @@ test("hasPostprodSessionNeedingBilling: 완료 아닌 세션(미래·지난 예�
   assert.equal(hasPostprodSessionNeedingBilling(past), false, "지난 예정 세션도 완료 아니라 제외(날짜 게이트 제거 후)");
 });
 
-test("unbilledInvoiceForm: 후보 0 + 후반작업 플래그 → 안내 문구 렌더", () => {
-  const proj = { id: 1, artist: "허영생" };
-  const withFlag = unbilledInvoiceForm(proj, [], [], { hasPostprodSession: true });
-  assert.ok(withFlag.includes("곡·콘텐츠 탭에서 작업을 만들어"), "안내 문구 있어야");
-  const noFlag = unbilledInvoiceForm(proj, [], [], { hasPostprodSession: false });
-  assert.ok(noFlag.includes("청구할 작업·세션이 없습니다"), "플래그 없으면 기존 문구");
-  assert.ok(!noFlag.includes("곡·콘텐츠 탭에서 작업을 만들어"), "플래그 없으면 안내 없음");
+test("projectBillingSummary(개편 3단계 — 프로젝트 청구 탭): 후보 0 + 후반작업 플래그 → 안내 문구, 대기함 링크", () => {
+  const { projectBillingSummary } = require("../src/views.billing");
+  const proj = { id: 77, title: "x", internal_support: 0 };
+  const withFlag = projectBillingSummary({ project: proj, items: [], postprod: true });
+  assert.match(withFlag, /작업을 만들어야 청구할 수 있습니다/);
+  const noFlag = projectBillingSummary({ project: proj, items: [], postprod: false });
+  assert.doesNotMatch(noFlag, /작업을 만들어야/);
+  const withItems = projectBillingSummary({ project: proj, items: [{ kind: "session", label: "10월 2일 · 녹음", done: true, amount: null, waived: false }] });
+  assert.match(withItems, /href="\/invoices\/inbox\?project=77"/, "청구서는 대기함에서 — 이 프로젝트로 걸러 연다");
+  assert.match(withItems, /금액 미정/);
+  assert.match(projectBillingSummary({ project: { ...proj, internal_support: 1 } }), /내부 지원/);
 });
 
 // ── ⑤ 내부 지원 프로젝트(청구 대상 아님, 2026-08-26) ──

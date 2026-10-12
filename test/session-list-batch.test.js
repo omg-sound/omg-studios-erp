@@ -98,18 +98,19 @@ test("전역 다가오는 세션 목록도 상수 쿼리", () => {
   assert.ok(b.runs <= 8, `쿼리 ${b.runs}회 — 상한 8 초과`);
 });
 
-test("배치 경로가 단건 경로와 같은 금액을 낸다(구간 합산 반영)", () => {
-  // 배치로 주입한 구간·할증이 단건 조회 결과와 어긋나면 목록 금액만 조용히 틀려진다.
+test("배치 경로가 단건 경로와 같은 금액을 낸다(확정액 · 개편 3단계 — 단가표 산정 없음)", () => {
+  // 배치로 붙인 billing이 단건 조회 결과와 어긋나면 목록 금액만 조용히 틀려진다.
   const pj = seedProject(4);
+  db().prepare("UPDATE sessions SET billing_amount = 250000 WHERE project_id = ? AND session_type = '촬영 대관'").run(pj);
   const rows = listSessionsForProject(CHIEF, pj).rows;
   const { sessionRateAmount } = require("../src/data");
   for (const row of rows) {
     const single = sessionRateAmount(db().prepare("SELECT * FROM sessions WHERE id = ?").get(row.id));
+    if (!single) { assert.equal(row.billing, null); continue; }
     assert.equal(row.billing.amount, single.amount, `세션 ${row.id} 금액 불일치(배치 ${row.billing.amount} vs 단건 ${single.amount})`);
-    assert.equal(row.billing.minutes, single.minutes, `세션 ${row.id} 요금 시간 불일치`);
+    assert.equal(row.billing.minutes, single.minutes, `세션 ${row.id} 시간 불일치`);
   }
-  // 촬영 행은 구간 합산(600분)이 실제로 반영돼야 이 테스트가 의미가 있다.
   const filming = rows.find((r) => r.session_type === "촬영 대관");
-  assert.equal(filming.billing.minutes, 600, "구간 합산이 배치 경로에서도 동작");
-  assert.equal(filming.billing.amount, 1000000, "600분 = 기본 이내 → 기본가");
+  assert.equal(filming.billing.amount, 250000, "확정액 그대로");
+  assert.equal(filming.billing.fixed, true);
 });

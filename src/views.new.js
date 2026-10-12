@@ -84,7 +84,7 @@ function taskFields({ values, managers, projectInfoHtml, projectSummary }) {
     <div class="grid gap-3 sm:grid-cols-3">
       <div><label class="label mb-0">작업 종류<select class="input mt-1 block" name="task_type">${taskTypeOptions(values.task_type || defaultTaskType())}</select></label></div>
       <div><label class="label mb-0">곡명 <span class="font-normal text-muted">(선택 · 여러 곡은 줄바꿈)</span><textarea class="input mt-1 block" name="song_title" rows="1" placeholder="비우면 프로젝트 이름" autocomplete="off">${esc(values.song_title || "")}</textarea></label></div>
-      <div><span class="label mb-0">작업일 <span class="font-normal text-muted">(선택)</span></span><div class="mt-1">${dateCombo("work_date", values.work_date || "", { label: "작업일", inputCls: "input w-full" })}</div></div>
+      <div><span class="label mb-0">작업일 <span class="font-normal text-muted">(선택)</span></span><div class="mt-1">${dateCombo("work_date", values.work_date || "", { label: "작업일", inputCls: "input w-full", placeholder: "비우면 미정" })}</div></div>
     </div>
     <details class="group rounded-lg border border-border bg-bg/40" data-detail-section>
       <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm">

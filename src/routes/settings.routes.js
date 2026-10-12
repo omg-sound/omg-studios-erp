@@ -75,7 +75,7 @@ const router = express.Router();
 
 router.get("/", requireStaff, asyncHandler(async (req, res) => {
   // 옛 ?tab= 링크 호환(리다이렉트·북마크·코드 잔재) — 새 키로 302.
-  const TAB_MAP = { settings: "rooms", content: "rates", people: "users", system: "system" };
+  const TAB_MAP = { settings: "rooms", content: "tasks", people: "users", system: "system" }; // content=옛 요금표+작업 종류 → 작업 종류(요금표 삭제)
   if (req.query.tab && TAB_MAP[req.query.tab]) {
     const q = new URLSearchParams(req.query); q.delete("tab"); q.set("s", TAB_MAP[req.query.tab]);
     return res.redirect(`/settings?${q.toString()}`);
@@ -94,7 +94,6 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
   const card = (html) => `<section class="card space-y-4">${html}</section>`;
   let pane;
   if (cur === "rooms") pane = card(roomsSection());
-  else if (cur === "rates") pane = ratesPane();
   else if (cur === "tasks") pane = taskTypesPane();
   else if (cur === "booking") pane = bookingDefaultsSection();
   else if (cur === "users") pane = peopleTab(req.user);

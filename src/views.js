@@ -117,7 +117,7 @@ const NAV = [
   { href: "/projects", label: "프로젝트", key: "projects", navKey: "p", access: "all", group: "ops" },
   { href: "/sessions", label: "일정", key: "sessions", navKey: "s", access: "all", group: "ops" },
   { href: "/deliverables", label: "자료 전달", key: "deliverables", navKey: "d", access: "staff", group: "ops" },
-  { href: "/invoices", label: "청구", key: "invoices", navKey: "i", access: "billing", group: "billing" },
+  { href: "/invoices/inbox", label: "청구", key: "invoices", navKey: "i", access: "billing", group: "billing" }, // 첫 화면 = 청구 대기함(개편 3단계)
   { href: "/contacts", label: "연락처", key: "contacts", navKey: "c", access: "editor", group: "manage" },
   { href: "/clients", label: "업체·그룹", key: "clients", navKey: "o", access: "editor", group: "manage" },
   { href: "/equipment", label: "장비", key: "equipment", navKey: "q", access: "editor", group: "manage" },
@@ -820,13 +820,13 @@ function fileViewerPage({ title, rawUrl, pdf = false }) {
  * 팝오버(월 그리드·‹ ›·화살표키)는 app.js `[data-date-combo]`가 생성. 보이는 입력엔 name 없음(함정 #19).
  * @param {string} name 제출 필드명
  * @param {string} value YYYY-MM-DD(빈 값 허용)
- * @param {{label?:string, required?:boolean, marker?:string, cls?:string, inputCls?:string}} opts marker=hidden에 붙일 data-* 속성
+ * @param {{label?:string, required?:boolean, marker?:string, cls?:string, inputCls?:string, placeholder?:string}} opts marker=hidden에 붙일 data-* 속성. placeholder=빈 칸 안내(필터처럼 비어 있는 게 정상인 칸은 예시 날짜가 값처럼 보이니 바꾼다)
  */
-function dateCombo(name, value, { label = "날짜", required = false, marker = "", cls = "", inputCls = "input w-[9.5rem] py-1.5 text-sm" } = {}) {
+function dateCombo(name, value, { label = "날짜", required = false, marker = "", cls = "", inputCls = "input w-[9.5rem] py-1.5 text-sm", placeholder = "2026. 3. 17." } = {}) {
   const { formatYmdCombo } = require("./lib/date"); // 지연 require(순환 회피)
   return `<div class="relative ${cls}" data-date-combo>
       <input type="hidden" name="${esc(name)}" value="${esc(value || "")}" data-date-hidden ${marker} ${required ? "required" : ""} />
-      <input class="${inputCls}" type="text" value="${esc(formatYmdCombo(value))}" placeholder="2026. 3. 17." autocomplete="off" data-date-input aria-label="${esc(label)}" role="combobox" aria-expanded="false" />
+      <input class="${inputCls}" type="text" value="${esc(formatYmdCombo(value))}" placeholder="${esc(placeholder)}" autocomplete="off" data-date-input aria-label="${esc(label)}" role="combobox" aria-expanded="false" />
       <div class="absolute left-0 z-30 mt-1 hidden w-64 rounded-lg border border-border bg-surface p-2 shadow-lg" data-date-pop role="dialog"></div>
     </div>`;
 }

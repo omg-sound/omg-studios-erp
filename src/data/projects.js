@@ -4,14 +4,13 @@
  * 프로젝트 도메인 — 목록·단건 조회·자동완성 필드. (생성/수정은 라우트에서 직접 처리, 삭제는 tracks 도메인.)
  * data.js에서 분리한 모듈(도메인 모듈화). data.js가 재export하므로 소비자 무변경.
  *
- * cross-domain: sessionAmountsByProject가 computeRatePrice(rate-items)를 호출한다.
+ * (세션 예상액은 확정액만 — 단가표 산정은 개편 3단계에서 제거.)
  * rate-items는 projects를 호출하지 않으므로(무순환) ./rate-items를 직접 require한다.
  * sessionAmountsByProject는 내부 헬퍼(공개 API 미노출). getProjectForUser는 다수 도메인이 공유.
  */
 
 const { db } = require("../db");
-const { minutesBetween, daysSpan, todayYmd } = require("../lib/date");
-const { computeRatePrice } = require("./rate-items"); // 무순환(rate-items는 projects를 호출하지 않음)
+const { todayYmd } = require("../lib/date");
 const { RENTAL_SESSION_TYPES, POSTPROD_SESSION_TYPES } = require("../config");
 const { songOrderSql, songTitlesSql } = require("../lib/task-order");
 const RENTAL_IN = RENTAL_SESSION_TYPES.map((t) => `'${t}'`).join(", "); // SQL IN절(정적 config 값 — 인젝션 무관)
@@ -47,40 +46,55 @@ function sessionAmountsByProject(projectIds) {
     invoicedSids.add(r.sid);
     sums[r.pid] = (sums[r.pid] || 0) + (r.amt || 0);
   }
-  // ② 미청구 녹음 세션 = 예상 청구액(단가표 자동 산정).
+  // ② 미청구 대관 세션 = 사람이 적어 둔 확정액만(단가표 제거 — 개편 3단계). 없으면 아직 금액 미정이라 0.
   const rows = db()
     .prepare(
-      // 종일(all_day) 세션은 시간이 없지만 청구 후보이고 확정액도 가질 수 있다(sessionRateAmount와 동일 규칙:
-      // 1 기준 블록으로 산정). 시간 필수 조건만 걸어 두면 종일 세션 금액이 프로젝트 예산에서 통째로 빠진다.
-      `SELECT s.id, s.project_id, s.all_day, s.session_date, s.end_date, s.start_time, s.end_time, s.billing_amount,
-              ri.base_minutes, ri.base_price, ri.extra_minutes, ri.extra_price
+      `SELECT s.id, s.project_id, s.billing_amount
        FROM sessions s
-       LEFT JOIN rate_items ri ON ri.id = s.rate_item_id
        WHERE s.project_id IN (${placeholders})
          AND s.session_type IN (${RENTAL_IN})
          AND (s.all_day = 1 OR (s.start_time IS NOT NULL AND s.end_time IS NOT NULL))
          AND s.status <> '취소'
          AND s.waived = 0
+         AND s.billing_amount IS NOT NULL
          AND NOT EXISTS (SELECT 1 FROM track_tasks tt WHERE tt.session_id = s.id)`
     )
     .all(...projectIds);
   for (const row of rows) {
     if (invoicedSids.has(row.id)) continue; // 청구 확정분은 ①에서 확정액으로 반영
-    // 확정 청구액(청구 폼에서 고쳐 저장한 값)이 있으면 그것을, 없으면 단가표 산정치를 쓴다(2026-07-14).
-    if (row.billing_amount != null) {
-      sums[row.project_id] = (sums[row.project_id] || 0) + Math.round(row.billing_amount);
-      continue;
-    }
-    // 단가 항목 없음(수동 금액 — 개편 1단계) + 확정액 없음 = 아직 금액 미정이라 합계에 보탤 것이 없다.
-    if (row.base_price == null) continue;
-    // 다일 종일(end_date 있음)은 일수만큼 기준 블록을 곱한다 — sessionRateAmount와 동일 규칙(2026-08-26).
-    const mins = row.all_day
-      ? (row.base_minutes || 0) * daysSpan(row.session_date, row.end_date)
-      : minutesBetween(row.start_time, row.end_time);
-    if (!row.all_day && mins <= 0) continue;
-    sums[row.project_id] = (sums[row.project_id] || 0) + computeRatePrice(row, mins);
+    sums[row.project_id] = (sums[row.project_id] || 0) + Math.round(row.billing_amount);
   }
   return sums;
+}
+
+/**
+ * 프로젝트별 청구서 할인 합계(개편 3단계) — 청구서 할인을 **그 프로젝트 라인 금액 비례**로 배분한다.
+ * 한 프로젝트 청구서(자유 줄 없음)는 비율 1이라 종전(그 청구서 할인 전액)과 같고, 여러 프로젝트를 섞은 청구서는
+ * 매출 화면(ATTR_SUPPLY)과 같은 규칙으로 나뉜다. 자유 줄(계약금 등)은 어느 프로젝트에도 속하지 않는다.
+ * 세션·작업 라인이 없는 청구서는 예산과 무관하므로 빠진다(종전 EXISTS 조건과 같은 결과).
+ */
+function invoiceDiscountByProject(projectIds) {
+  const ids = (projectIds || []).map(Number).filter(Boolean);
+  if (!ids.length) return {};
+  const ph = ids.map(() => "?").join(",");
+  const rows = db().prepare(
+    `SELECT x.pid, x.invoice_id, x.amt, i.discount_amount AS disc,
+            (SELECT SUM(a.amount) FROM invoice_items a WHERE a.invoice_id = x.invoice_id) AS total
+       FROM (SELECT COALESCE(s.project_id, t.project_id) AS pid, ii.invoice_id, SUM(ii.amount) AS amt
+               FROM invoice_items ii
+               LEFT JOIN sessions s ON s.id = ii.session_id
+               LEFT JOIN track_tasks t ON t.id = ii.task_id
+              WHERE COALESCE(s.project_id, t.project_id) IN (${ph})
+              GROUP BY pid, ii.invoice_id) x
+       JOIN invoices i ON i.id = x.invoice_id
+      WHERE i.discount_amount > 0`
+  ).all(...ids);
+  const out = {};
+  for (const r of rows) {
+    const share = r.total > 0 ? Math.round((r.disc * r.amt) / r.total) : 0;
+    out[r.pid] = (out[r.pid] || 0) + share;
+  }
+  return out;
 }
 
 // 라우트는 filters 객체(service/clientId/q)를 넘기지만 목록 UI는 검색(q)만 사용 → q만 처리(나머지 인자는 무시).
@@ -106,9 +120,8 @@ function listProjects(_user, { q } = {}) {
   const sql = `
     SELECT p.*, c.name AS client_name, m.name AS manager_name,
       ${songTitlesSql("p")} AS track_titles,
-      (SELECT COALESCE(SUM(COALESCE(NULLIF(t.total_price, 0), tt.unit_price, 0)), 0)
+      (SELECT COALESCE(SUM(t.total_price), 0)
        FROM track_tasks t
-       LEFT JOIN task_types tt ON tt.key = t.task_type
        WHERE t.project_id = p.id AND t.waived = 0) AS task_total,
       (SELECT COUNT(*) FROM sessions s
        WHERE s.project_id = p.id AND s.session_date >= @today AND s.status = '예정') AS upcoming_cnt,
@@ -158,10 +171,7 @@ function listProjects(_user, { q } = {}) {
       ) END) AS unbilled_cnt,
       -- 청구서 단위 할인 합계 — 작업·세션이 연결된(from-tasks) 청구서만. 수동 청구서 라인은 프로젝트 버짓에
       -- 안 잡히므로 그 할인을 빼면 이중 차감이 된다. 목록·상세 금액 표시에서 확정 라인 합계에서 차감(2026-07-05).
-      (SELECT COALESCE(SUM(i.discount_amount), 0) FROM invoices i
-        WHERE i.project_id = p.id
-          AND EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = i.id
-                        AND (ii.task_id IS NOT NULL OR ii.session_id IS NOT NULL))) AS invoice_discount_total
+      0 AS invoice_discount_total /* 아래 invoiceDiscountByProject가 채운다(여러 프로젝트 청구서 배분) */
     FROM projects p
     LEFT JOIN parties c ON c.id = COALESCE(p.production_id, p.agency_id, p.artist_id)
     LEFT JOIN project_managers m ON m.id = p.manager_id
@@ -172,8 +182,10 @@ function listProjects(_user, { q } = {}) {
   const rows = db().prepare(sql).all(params);
   if (!rows.length) return rows;
   const sessionAmounts = sessionAmountsByProject(rows.map((r) => r.id));
+  const discounts = invoiceDiscountByProject(rows.map((r) => r.id));
   return rows.map((r) => ({
     ...r,
+    invoice_discount_total: discounts[r.id] || 0,
     session_amount_total: sessionAmounts[r.id] || 0,
     // 완료 = 실제 활동이 있었고(content_cnt>0) 예정 세션 없음(전부 완료/취소) + 미완료 작업 없음.
     // ⚠️ 세션도 작업(open_tasks)과 대칭 — 완료 안 누른 예정 세션이 있으면(미래든 지난이든) 진행 중(2026-07-25).
@@ -187,18 +199,14 @@ function getProjectForUser(user, id) {
   const row = db()
     .prepare(
       `SELECT p.*, c.name AS client_name, m.name AS manager_name, ct.name AS contact_name, ct.phone AS contact_phone, ${songTitlesSql("p")} AS track_titles, task_sum.task_total,
-         (SELECT COALESCE(SUM(i.discount_amount), 0) FROM invoices i
-           WHERE i.project_id = p.id
-             AND EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = i.id
-                           AND (ii.task_id IS NOT NULL OR ii.session_id IS NOT NULL))) AS invoice_discount_total
+         0 AS invoice_discount_total /* 아래 invoiceDiscountByProject가 채운다(여러 프로젝트 청구서 배분) */
        FROM projects p
        LEFT JOIN parties c ON c.id = COALESCE(p.production_id, p.agency_id, p.artist_id)
        LEFT JOIN project_managers m ON m.id = p.manager_id
        LEFT JOIN parties ct ON ct.id = p.contact_party_id
        LEFT JOIN (
-         SELECT t.project_id, COALESCE(SUM(COALESCE(NULLIF(t.total_price, 0), tt.unit_price, 0)), 0) AS task_total
+         SELECT t.project_id, COALESCE(SUM(t.total_price), 0) AS task_total
          FROM track_tasks t
-         LEFT JOIN task_types tt ON tt.key = t.task_type
          WHERE t.waived = 0
          GROUP BY t.project_id
        ) task_sum ON task_sum.project_id = p.id
@@ -207,7 +215,7 @@ function getProjectForUser(user, id) {
     .get(id);
   if (!row) return null;
   const sessionAmounts = sessionAmountsByProject([row.id]);
-  return { ...row, session_amount_total: sessionAmounts[row.id] || 0 };
+  return { ...row, invoice_discount_total: invoiceDiscountByProject([row.id])[row.id] || 0, session_amount_total: sessionAmounts[row.id] || 0 };
 }
 
 /**

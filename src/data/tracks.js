@@ -6,7 +6,7 @@
  * 곡명(song_title)·곡 아티스트(song_artist) 칸이다. 화면의 '곡 묶음'은 같은 곡명끼리 **보기로만** 묶은 것.
  * 테이블 이름은 track_tasks 그대로(이름만 바꾸는 비용이 커서 — docs/redesign/02-flatten-tasks.md §3).
  *
- * cross-domain: getProjectForUser(projects)·getManagerByUserId(parties)·normalizeTaskTypeDb/taskTypeUnitPrice
+ * cross-domain: getProjectForUser(projects)·getManagerByUserId(parties)·normalizeTaskTypeDb
  * (task-types)를 호출한다. 이 도메인들은 tracks를 호출하지 않으므로(무순환) 형제 모듈을 직접 require한다.
  */
 
@@ -15,7 +15,7 @@ const { normalizeTaskStatus } = require("../config");
 const { parseMoney, cleanYmd } = require("../lib/forms");
 const { getProjectForUser } = require("./projects"); // 무순환
 const { getManagerByUserId } = require("./parties"); // 무순환
-const { normalizeTaskTypeDb, taskTypeUnitPrice } = require("./task-types"); // 무순환
+const { normalizeTaskTypeDb } = require("./task-types"); // 무순환
 const { songOrderSql } = require("../lib/task-order");
 
 const parseWon = parseMoney; // 내부 호출명 parseWon 유지
@@ -120,7 +120,7 @@ function updateTask(user, taskId, input = {}) {
   // 금액은 청구 탭에서 확정 — 곡·콘텐츠 탭엔 금액 칸 없음. 입력값 있으면 우선, 없으면 확정 금액(total_price>0) 보존, 그것도 0이면 종류 기본단가.
   const taskType = normalizeTaskTypeDb(input.task_type);
   const hasPrice = input.unit_price != null && String(input.unit_price).trim() !== "";
-  const unitPrice = hasPrice ? parseWon(input.unit_price) : (task.total_price > 0 ? task.total_price : taskTypeUnitPrice(taskType)); // 자동저장(상태·담당만 변경) 시 확정 금액 리셋 방지
+  const unitPrice = hasPrice ? parseWon(input.unit_price) : task.total_price || 0; // 입력 없으면 기존 금액 보존(작업 종류 기본 단가 폐기 — 개편 3단계)
   const eng = resolveTaskEngineer(input);
   // 상태는 완료 토글(POST /tasks/:id/status)이 전담 — 이 폼엔 상태 필드가 없다. 미전송이면 기존값 보존(리셋 방지, 2026-07-05).
   const status = input.status != null ? normalizeTaskStatus(input.status) : task.status;
@@ -189,7 +189,7 @@ function createTask(user, projectId, input = {}) {
   // 후반작업은 트랙/콘텐츠 고정(billing_type·quantity). 금액은 청구 탭에서 확정 — 생성 시엔 종류 기본단가 자동(입력값 있으면 우선).
   const taskType = normalizeTaskTypeDb(input.task_type);
   const hasPrice = input.unit_price != null && String(input.unit_price).trim() !== "";
-  const unitPrice = hasPrice ? parseWon(input.unit_price) : taskTypeUnitPrice(taskType);
+  const unitPrice = hasPrice ? parseWon(input.unit_price) : 0; // 금액은 청구서에서 직접(작업 종류 기본 단가 폐기 — 개편 3단계)
   const eng = resolveTaskEngineer(input);
   // 담당 엔지니어 미지정 시 로그인한 계정(하우스 엔지니어)을 기본값으로(빠른 추가 시 본인 자동 선택).
   if (!eng.engineer_id && !eng.engineer_name) {

@@ -9,7 +9,7 @@ process.env.DB_PATH = tempDbPath();
 const test = require("node:test");
 const assert = require("node:assert");
 
-test("견적서 미리보기: 항목 미선택으로 요청하면 400 + 이 창 닫기/청구 탭 이동 버튼(큰 코드 숫자 없이)", async () => {
+test("견적서 미리보기: 줄 없이 요청하면 400 + 이 창 닫기/대기함 버튼(큰 코드 숫자 없이)", async () => {
   const { db, init } = require("../src/db");
   init();
   db().prepare("INSERT INTO users (email, role, name, active) VALUES ('preview-chief@t.t','chief','미리보기치프',1)").run();
@@ -30,16 +30,20 @@ test("견적서 미리보기: 항목 미선택으로 요청하면 400 + 이 창 
   const cookie = setCookies.filter(Boolean).map((c) => String(c).split(";")[0]).join("; ");
 
   try {
-    // task_id/session_id를 아예 안 실어 TASK_IDS_REQUIRED를 유발(클라이언트 가드를 우회한 것과 동일 — 서버 안전망 확인).
-    const res = await fetch(`${base}/projects/${projectId}/invoices/preview/견적서/x.pdf`, {
+    // 줄 없이 요청(클라이언트 가드를 우회한 것과 같음) — 서버 안전망 확인. 미리보기는 청구서 작성 화면(개편 3단계)에서 연다.
+    const res = await fetch(`${base}/invoices/preview/견적서/x.pdf`, {
       headers: { cookie, "sec-fetch-site": "same-origin" },
     });
-    assert.equal(res.status, 400, "항목 없이 요청하면 400");
+    assert.equal(res.status, 400, "줄 없이 요청하면 400");
     const html = await res.text();
-    assert.match(html, /문서로 만들 작업·세션을 선택하세요\./, "원인 메시지 포함");
+    assert.match(html, /청구할 줄이 없습니다\./, "원인 메시지 포함");
     assert.match(html, /data-close-tab/, "이 창 닫기 버튼 포함");
-    assert.match(html, new RegExp(`/projects/${projectId}\\?tab=invoice`), "청구 탭 이동 링크 포함");
+    assert.match(html, /href="\/invoices\/inbox"/, "청구 대기함 링크 포함");
     assert.doesNotMatch(html, />400</, "큰 400 코드 숫자 없음(공용 errorPage 미사용)");
+    // 옛 프로젝트 미리보기 주소는 대기함으로 보낸다(북마크·옛 탭).
+    const old = await fetch(`${base}/projects/${projectId}/invoices/preview/견적서/x.pdf`, { headers: { cookie }, redirect: "manual" });
+    assert.equal(old.status, 303);
+    assert.match(old.headers.get("location"), new RegExp(`^/invoices/inbox\\?project=${projectId}`));
   } finally {
     server.close();
   }

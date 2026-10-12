@@ -229,8 +229,8 @@ test("청구 항목 정렬: 세션은 날짜순으로 먼저, 작업은 뒤에 �
   // 유형 우선순위(세션 먼저)가 날짜 순서를 뒤집는다는 것을 이 케이스로 증명한다.
   const sess = db()
     .prepare(
-      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)
-       VALUES (?, '녹음', '2026-08-10', '10:00', '13:30', '완료', ?)`
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id, billing_amount)
+       VALUES (?, '녹음', '2026-08-10', '10:00', '13:30', '완료', ?, 300000)`
     )
     .run(pid, rateId);
   const sessionId = Number(sess.lastInsertRowid);
@@ -277,14 +277,14 @@ test("청구 항목: 같은 날짜에 세션이 둘이면 설명에 시작 시�
   const rateId = Number(rate.lastInsertRowid);
   const s1 = db()
     .prepare(
-      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)
-       VALUES (?, '녹음', '2026-08-16', '10:00', '13:30', '완료', ?)`
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id, billing_amount)
+       VALUES (?, '녹음', '2026-08-16', '10:00', '13:30', '완료', ?, 300000)`
     )
     .run(pid, rateId);
   const s2 = db()
     .prepare(
-      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)
-       VALUES (?, '녹음', '2026-08-16', '15:00', '18:30', '완료', ?)`
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id, billing_amount)
+       VALUES (?, '녹음', '2026-08-16', '15:00', '18:30', '완료', ?, 300000)`
     )
     .run(pid, rateId);
   const s1Id = Number(s1.lastInsertRowid), s2Id = Number(s2.lastInsertRowid);

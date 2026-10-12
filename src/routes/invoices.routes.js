@@ -23,7 +23,16 @@ const {
   payerSnapshotChanged,
   ensureInvoiceNumber,
   recomputePaid,
+  listBillableItems,
+  composeLinesForKeys,
+  createInvoice,
+  invoicePreviewDraft,
+  getProjectForUser,
+  projectsForInvoice,
 } = require("../data");
+const { inboxPage, composePage, billingTabs, invoicePreviewErrorPage } = require("../views.billing");
+const { parseMoney } = require("../lib/forms");
+const { notifyInvoiceIssued } = require("../notify");
 const { layout, pageHeader, esc, formatKRW, flashBanner, errorPage, emptyState, capList, filterChips, searchBox, copyable } = require("../views");
 const { invoiceTable, invoiceBulkBar, payerInfoCard, taxToggleButtons } = require("../views.invoices");
 const { formatYmdShort, todayYmd } = require("../lib/date"); // ddayLabel 미사용(마감일 개념 삭제, 2026-07-05)
@@ -120,6 +129,125 @@ router.get("/export.csv", requireInvoice, (req, res) => {
   res.setHeader("Cache-Control", "no-store"); // 거래처 사업자번호·금액 = 민감
   res.send(invoiceCsv(rows));
 });
+
+// ── 청구 대기함(개편 3단계, 2026-10-13 — docs/redesign/03-billing-inbox.md) ──
+// 모든 프로젝트의 미청구 세션·작업 → 골라서(GET /invoices/new?items=…) → 작성 → 발행(POST /invoices).
+function inboxFilters(q) {
+  return {
+    q: String(q.q || "").trim(),
+    from: cleanYmd(q.from),
+    to: cleanYmd(q.to),
+    doneOnly: q.done === "1",
+    showWaived: q.waived === "1",
+    projectId: Number(q.project) || null,
+  };
+}
+router.get("/inbox", requireBilling, (req, res) => {
+  const filters = inboxFilters(req.query);
+  const r = listBillableItems(req.user, filters);
+  const ret = safePath(req.originalUrl) || "/invoices/inbox";
+  res.send(layout({ title: "청구 대기", user: req.user, current: "/invoices/inbox", body: flashBanner(req.query) + inboxPage({ ...r, filters, ret }) }));
+});
+
+/** 작성 화면 제출값 → 라인 배열(인덱스 페어링: line_kind·line_id·line_date·line_desc·line_amount). */
+function linesFromBody(b) {
+  const arr = (v) => (Array.isArray(v) ? v : v == null ? [] : [v]);
+  const kinds = arr(b.line_kind), ids = arr(b.line_id), dates = arr(b.line_date), descs = arr(b.line_desc), amts = arr(b.line_amount);
+  return kinds.map((k, i) => ({ kind: k, id: ids[i], date: String(dates[i] || "").trim(), description: descs[i], amount: amts[i] }));
+}
+/** 자유 줄 날짜 입력("10/3"·"2026-10-03" 등) → YYYY-MM-DD(올해 기준). 못 읽으면 빈 값. */
+function normalizeLineDate(v, issued) {
+  const s = String(v || "").trim();
+  if (!s) return "";
+  if (cleanYmd(s)) return s;
+  const m = /^(\d{1,2})[./-](\d{1,2})$/.exec(s);
+  if (!m) return "";
+  const y = String(issued || todayYmd()).slice(0, 4);
+  return cleanYmd(`${y}-${String(m[1]).padStart(2, "0")}-${String(m[2]).padStart(2, "0")}`) || "";
+}
+function composeOpts(b) {
+  const issueDate = cleanYmd(b.issued_date);
+  return {
+    payerId: (b.client_id ? Number(b.client_id) : null) || (b.payer_contact_id ? Number(b.payer_contact_id) : null),
+    title: b.title,
+    issueDate,
+    discount: parseMoney(b.discount_amount),
+    discountPct: b.discount_pct,
+    vatIncluded: b.vat_included != null,
+    lines: linesFromBody(b).map((l) => ({ ...l, date: normalizeLineDate(l.date, issueDate) })),
+    confirmZero: b.confirm_zero_amount === "1",
+    payerEmail: b.payer_email,
+    payerEmailSet: b.payer_email_set === "1",
+  };
+}
+const COMPOSE_ERRORS = {
+  PAYER_REQUIRED: "청구처를 선택하세요. (제작/운영이 결제한다고 가정하지 않습니다 — 실제 결제하는 곳·사람을 고르세요.)",
+  TASK_IDS_REQUIRED: "청구할 줄이 없습니다.",
+  TASK_NOT_BILLABLE: "이미 청구됐거나 청구할 수 없는 항목이 있습니다. 청구 대기함에서 다시 고르세요.",
+  CLIENT_NOT_FOUND: "선택한 청구처를 찾을 수 없습니다.",
+  LINE_DESC_REQUIRED: "내용이 빈 줄이 있습니다. 내용을 적거나 그 줄을 빼세요.",
+  TASK_AMOUNT_REQUIRED: "금액이 비었거나 0원인 줄이 있습니다. 그대로 발행하려면 확인 후 다시 시도하세요.",
+  PAYER_TAX_INFO_REQUIRED: "청구처(회사)에 세금계산서 정보(사업자등록번호)가 없습니다. 업체 상세에서 입력한 뒤 발행하세요.",
+  PAYER_CASH_RECEIPT_REQUIRED: "청구처(개인)에 세무 증빙 정보(현금영수증 번호 또는 사업자등록번호)가 없습니다. 청구처 상세에서 입력한 뒤 발행하세요.",
+  PAYER_EMAIL_INVALID: "세금계산서 발행 이메일 형식이 올바르지 않습니다. (예: name@example.com)",
+};
+/** 작성 화면 렌더 — 처음(대기함에서 고른 키) 또는 오류로 되돌릴 때(제출한 줄·값 그대로). */
+function renderCompose(req, res, { lines, projects, values = {}, error = "", skipped = 0, status = 200 }) {
+  res.status(status).send(layout({ title: "청구서 작성", user: req.user, current: "/invoices/inbox", body: composePage({ lines, projects, values, error, skipped }) }));
+}
+
+router.get("/new", requireBilling, (req, res) => {
+  const { lines, projects, skipped } = composeLinesForKeys(req.query.items);
+  if (!lines.length) return res.redirect("/invoices/inbox?notice=" + encodeURIComponent("청구할 항목을 하나 이상 고르세요.") + "&notice_warn=1");
+  renderCompose(req, res, { lines, projects, skipped });
+});
+
+router.post("/", requireBilling, (req, res) => {
+  const b = req.body;
+  const opts = composeOpts(b);
+  try {
+    const inv = createInvoice(req.user, opts);
+    if (!inv) return res.status(403).send(errorPage({ code: 403, title: "권한이 없습니다", message: "청구서를 만들 권한이 없습니다.", user: req.user }));
+    notifyInvoiceIssued(inv); // 발행 알림(fail-safe·비차단)
+    logAudit(req.user, "invoice.create", `#${inv.id} ${inv.title || ""} ${formatKRW(inv.amount || 0)}`);
+    res.redirect(`/invoices/${inv.id}?flash=created`);
+  } catch (e) {
+    if (!COMPOSE_ERRORS[e.message]) throw e; // 알 수 없는 오류는 전역 핸들러로(검증 실패로 위장 방지)
+    // 입력을 잃지 않게 같은 화면으로 되돌린다 — 대기함 항목 줄은 프로젝트(추천 칩)를 다시 찾는다.
+    const keys = opts.lines.filter((l) => l.kind === "session" || l.kind === "task").map((l) => (l.kind === "session" ? "s" : "t") + Number(l.id));
+    const ref = composeLinesForKeys(keys);
+    const byKey = new Map(ref.lines.map((l) => [l.key, l]));
+    const lines = opts.lines
+      .filter((l) => l.kind === "free" ? String(l.description || "").trim() || String(l.amount || "").trim() : true)
+      .map((l) => {
+        if (l.kind === "free") return { kind: "free", description: l.description, amount: l.amount, date: l.date };
+        const r = byKey.get((l.kind === "session" ? "s" : "t") + Number(l.id));
+        return r ? { ...r, description: l.description, amount: l.amount } : null;
+      })
+      .filter(Boolean);
+    renderCompose(req, res, { lines, projects: ref.projects, values: b, error: COMPOSE_ERRORS[e.message], status: 400 });
+  }
+});
+
+// 발행 전 미리보기 PDF(견적서·내역서·거래명세서) — 쓰기 없음. GET(폼 formmethod=get): Chrome PDF 뷰어의 '다운로드'가
+// 같은 URL을 GET 재요청하므로. 유형·번호는 경로(:type/:name), 줄은 쿼리.
+router.get("/preview/:type/:name", requireBilling, asyncHandler(async (req, res) => {
+  let draft;
+  try {
+    draft = invoicePreviewDraft(req.user, composeOpts(req.query));
+  } catch (e) {
+    if (!COMPOSE_ERRORS[e.message]) throw e;
+    return res.status(400).send(invoicePreviewErrorPage(req.user, COMPOSE_ERRORS[e.message]));
+  }
+  if (!draft) return res.status(403).send(errorPage({ code: 403, title: "권한이 없습니다", message: "", user: req.user }));
+  const docType = normalizeDocType(req.params.type);
+  const pdf = await renderInvoicePdf({ studio: getStudioInfo(), logo: getStudioLogo(), client: draft.client, invoice: draft.invoice, items: draft.items, docType });
+  res.setHeader("Content-Type", "application/pdf");
+  const fname = (docNumberWithType(draft.invoice.invoice_number, docType) || docType) + ".pdf";
+  res.setHeader("Content-Disposition", `inline; filename="${fname}"; filename*=UTF-8''${encodeURIComponent(fname)}`);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.send(pdf);
+}));
 
 router.get("/", requireBilling, (req, res) => {
   const user = req.user;
@@ -230,13 +358,14 @@ router.get("/", requireBilling, (req, res) => {
       desc: admin ? "발행·입금" : "내 청구 내역",
       action: invoicer ? `<a href="/invoices/export.csv?filter=${filter}${qQ}${periodQ}" class="btn-ghost btn-sm">청구 CSV</a>` : "",
     })}
+    ${billingTabs("list")}
     ${overview}
     ${periodBar}
     ${chips}
     ${searchBar}
     ${resultNote}
     ${list}`;
-  res.send(layout({ title: "청구", user, current: "/invoices", body, wide: true })); // 넓은 표 — 데스크톱 넓게(2026-07-16)
+  res.send(layout({ title: "청구", user, current: "/invoices/inbox", body, wide: true })); // 넓은 표 — 데스크톱 넓게(2026-07-16)
 });
 
 // (GET /new·POST / 수동 청구 라우트는 2026-07-08 폐지 — 청구 생성은 프로젝트 청구 탭 from-tasks 경로만.)
@@ -313,7 +442,9 @@ router.get("/:id", requireBilling, (req, res) => {
       <div class="border-b border-border pb-1">
         ${inv.invoice_number ? row("청구번호", esc(inv.invoice_number)) : ""}
         ${row("발행일", inv.issued_date ? esc(formatYmdShort(inv.issued_date)) : "<span class='text-muted'>미정</span>")}
-        ${inv.project_title ? row("프로젝트", `<a href="/projects/${inv.project_id}" class="text-primary hover:underline">${esc(inv.project_title)}</a>`) : ""}
+        ${inv.project_id
+          ? (inv.project_title ? row("프로젝트", `<a href="/projects/${inv.project_id}" class="text-primary hover:underline">${esc(inv.project_title)}</a>`) : "")
+          : (() => { const ps = projectsForInvoice(inv.id); return ps.length ? row("프로젝트", ps.map((x) => `<a href="/projects/${x.id}" class="text-primary hover:underline">${esc(x.title)}</a>`).join(", ")) : ""; })()}
       </div>
       ${invoiceItemsSection(items)}
       <div${items.length ? ' class="border-t border-border pt-1"' : ' class="pt-1"'}>
@@ -326,7 +457,7 @@ router.get("/:id", requireBilling, (req, res) => {
     </div>
     ${inv.memo ? `<div class="card mt-3"><div class="mb-1 text-sm text-muted">메모</div><div class="whitespace-pre-wrap text-sm">${esc(inv.memo)}</div></div>` : ""}
     ${deleteBlock}`;
-  res.send(layout({ title: inv.title, user: req.user, current: "/invoices", body, recent: { cat: "청구", label: inv.invoice_number || inv.title, href: `/invoices/${inv.id}` } }));
+  res.send(layout({ title: inv.title, user: req.user, current: "/invoices/inbox", body, recent: { cat: "청구", label: inv.invoice_number || inv.title, href: `/invoices/${inv.id}` } }));
 });
 
 // ── 거래명세서 PDF (발행/입금완료 또는 견적서 타입은 미발행도 허용. PII → 인증 필수·no-store·즉석 스트리밍) ──

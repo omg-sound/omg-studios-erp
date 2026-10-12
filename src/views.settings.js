@@ -272,7 +272,7 @@ function taskTypesPane() {
   return `
       <section class="card space-y-4" id="task-types-section">
         <div>
-          <h2 class="font-display text-lg font-semibold">작업 종류 <span class="text-sm font-normal text-muted">(곡·콘텐츠 후반작업)</span>${settingHint(`곡·콘텐츠의 작업 종류(보컬튠·믹싱·마스터링 등)와 기본 단가를 관리합니다. '빠른추가'를 켜면 곡·콘텐츠 화면의 빠른 추가 버튼에 노출됩니다. 시간이 아니라 작업량으로 산정하는 항목이라 요금표(대관 세션)와 카탈로그가 분리돼 있습니다. 기본 단가는 작업을 만들 때 자동으로 채워지는 값이고, 실제 금액은 청구 화면에서 확정합니다.`, "작업 종류 설정 설명")}</h2>
+          <h2 class="font-display text-lg font-semibold">작업 종류 <span class="text-sm font-normal text-muted">(후반작업)</span>${settingHint(`후반작업 종류(보컬튠·믹싱·마스터링 등)를 관리합니다. '빠른추가'를 켜면 프로젝트 작업 탭의 빠른 추가 버튼에 노출됩니다. 금액은 종류마다 정해 두지 않고 청구서에서 직접 적습니다.`, "작업 종류 설정 설명")}</h2>
         </div>
         ${(() => {
           // 단가표와 같은 규칙 — 추가 폼은 목록의 첫 행이고 편집 행과 같은 2줄 모양이다(열 제목 줄 없음).
@@ -697,15 +697,11 @@ function taskTypeRow(t) {
 }
 
 /**
- * 작업 종류의 단가·빠른추가 묶음 — 요금표와 같은 인라인 단위 방식이되 **한 줄**이다(2026-07-29 사용자 결정).
- * 요금표는 기준/초과 네 칸이라 둘째 줄로 내렸지만 작업 종류는 단가 한 칸뿐이라 한 줄에 들어간다.
+ * 작업 종류의 빠른추가 토글. '기본 단가' 칸은 개편 3단계(2026-10-13)에서 삭제 — 작업 금액은 청구서에서 직접 쓴다
+ * (사용자 결정: 금액은 항상 직접 기입). task_types.unit_price 컬럼은 읽지 않는다(4단계 정리).
  */
 function taskPriceInline(names, vals = {}, formAttr = "") {
   return `
-      <span class="flex items-center gap-1.5 text-xs text-muted">기본 단가
-        <input class="input w-28 py-1 text-right text-sm" ${formAttr} name="${names.unitPrice}" inputmode="numeric" value="${esc(String(vals.unitPrice == null ? "" : vals.unitPrice))}" aria-label="기본 단가(원)" placeholder="200000" />
-        원
-      </span>
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-xs text-muted">
         <input type="checkbox" ${formAttr} name="${names.isQuick}" value="1" ${vals.isQuick ? "checked" : ""} /> 빠른추가
       </label>`;
@@ -907,7 +903,7 @@ function systemTab(chief) {
 const SETTINGS_NAV = [
   { group: "자주 쓰는 것", items: [
     { key: "rooms", label: "장소", desc: "룸·외부 장소" },
-    { key: "rates", label: "요금표", desc: "녹음·대관 단가 + 분류" },
+    // '요금표'(단가표)는 개편 3단계에서 삭제 — 금액은 청구서에서 직접(홈페이지 공개 가격표는 별개, 동기화 안 함).
     { key: "tasks", label: "작업 종류", desc: "믹싱·보컬튠 등" },
     { key: "booking", label: "예약 기본값", desc: "기본 세션 시간·예약 담당자·기본 장소" },
   ] },

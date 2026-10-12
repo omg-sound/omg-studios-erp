@@ -24,34 +24,20 @@ function formSegment(html, formId) {
   return html.slice(i, j);
 }
 
-test("단가표·작업 종류: 인라인 필드 + bulk 폼, 접이식 '수정' 제거, 액션은 form= 형제 폼(중첩 없음)", () => {
-  const a = D.createRateItem({ rate_name: "뷰검사녹음", category: "스튜디오 녹음", base_hours: "3.5", base_price: "300000", extra_price: "100000" });
-  D.createTaskType({ label: "뷰검사작업", billing_type: "Fixed_Per_Track", unit_price: "100000" });
+test("작업 종류: 인라인 필드 + bulk 폼, 기본 단가 칸 없음(개편 3단계), 액션은 form= 형제 폼(중첩 없음)", () => {
+  D.createTaskType({ label: "뷰검사작업", billing_type: "Fixed_Per_Track" });
   const t = db().prepare("SELECT * FROM task_types WHERE label='뷰검사작업'").get();
-  // 2026-07-28 화면 분리 — 요금표(ratesPane)·작업 종류(taskTypesPane)는 이제 별도 화면.
-  const html = V.ratesPane() + V.taskTypesPane();
-
-  assert.ok(html.includes('id="rates-section"'), "단가표 섹션 앵커");
+  const html = V.taskTypesPane();
   assert.ok(html.includes('id="task-types-section"'), "작업 종류 섹션 앵커");
-  // 2026-07-29 트리 전환 — 요금표는 분류 행과 항목 행을 **한 폼**(/settings/rates/bulk)에서 함께 저장한다.
-  assert.ok(html.includes('action="/settings/rates/bulk"'), "요금표 트리 통합 저장 폼");
   assert.ok(html.includes('action="/settings/task-types/bulk"'), "작업 종류 bulk 폼");
-  assert.ok(html.includes(`name="rate_name_${a.id}"`) && html.includes(`name="base_price_${a.id}"`), "단가표 행 = <필드>_<id> 인라인 입력");
-  assert.ok(html.includes(`name="label_${t.id}"`) && html.includes(`name="unit_price_${t.id}"`), "작업 종류 행 인라인 입력");
-  assert.ok(!html.includes(">수정 "), "접이식 '수정' 토글 제거");
-
-  // 중첩 폼 금지: bulk 폼 구간 안에 다른 <form 없음
-  assert.ok(!formSegment(html, 'id="rates-bulk-form"').slice(1).includes("<form"), "단가표 bulk 폼 안에 중첩 폼 없음");
+  assert.ok(html.includes(`name="label_${t.id}"`), "작업 종류 행 인라인 입력");
+  assert.ok(!html.includes(`name="unit_price_${t.id}"`) && !html.includes("기본 단가"), "기본 단가 칸 없음 — 작업 금액은 청구서에서 직접");
+  assert.ok(html.includes(`name="is_quick_${t.id}"`), "빠른추가 토글은 유지");
   assert.ok(!formSegment(html, 'id="task-types-bulk-form"').slice(1).includes("<form"), "작업 종류 bulk 폼 안에 중첩 폼 없음");
-
-  // 행 액션: 버튼 form= ↔ hidden 형제 폼 id 짝
-  for (const fid of [`rate-mv-u-${a.id}`, `rate-mv-d-${a.id}`, `rate-act-${a.id}`, `rate-del-${a.id}`, `tt-mv-u-${t.id}`, `tt-del-${t.id}`]) {
+  for (const fid of [`tt-mv-u-${t.id}`, `tt-del-${t.id}`]) {
     assert.ok(html.includes(`form="${fid}"`), `버튼이 ${fid} 참조`);
     assert.ok(html.includes(`id="${fid}"`), `hidden 폼 ${fid} 존재`);
   }
-  assert.ok(formSegment(html, `id="rate-del-${a.id}"`).includes("data-confirm"), "삭제 확인 문구 유지");
-  // 통합 저장 dirty 패턴
-  assert.ok(formSegment(html, 'id="rates-bulk-form"').includes("data-dirty-save"), "통합 저장 버튼 dirty 패턴");
 });
 
 test("룸: 인라인 필드 + bulk 폼, 계층 UI 없음, 중첩 폼 없음", () => {

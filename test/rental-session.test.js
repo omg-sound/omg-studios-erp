@@ -39,11 +39,12 @@ test("config: 대관 종류·kind 매핑 정합", () => {
   for (const c of PERFORMANCE_CATEGORIES) assert.equal(rateCategoryKind(c), "performance");
 });
 
-test("sessionRateAmount: 대관 계열은 산정, 그 외 종류는 null", () => {
+test("sessionRateAmount: 대관 계열은 청구 대상(금액 = 확정액, 없으면 0), 그 외 종류는 null", () => {
   for (const t of RENTAL_SESSION_TYPES) {
     const b = sessionRateAmount({ ...baseSession, session_type: t });
-    assert.ok(b, `${t} 세션은 청구 산정`);
-    assert.equal(b.amount, 400000, `${t} 240분=1Pro 기본가`);
+    assert.ok(b, `${t} 세션은 청구 대상`);
+    assert.equal(b.amount, 0, `${t} 확정액 없으면 0(단가표 산정 없음 — 개편 3단계)`);
+    assert.equal(sessionRateAmount({ ...baseSession, session_type: t, billing_amount: 400000 }).amount, 400000);
   }
   for (const t of SESSION_TYPES.filter((t) => !RENTAL_SESSION_TYPES.includes(t))) {
     assert.equal(sessionRateAmount({ ...baseSession, session_type: t }), null, `${t} 세션은 세션 청구 아님(후반작업 청구)`);
@@ -64,25 +65,12 @@ test("정액(회당)·가격 미정 항목: 산정 0원이지만 청구 후보 �
   assert.equal(b.amount, 0, "산정액 0 = 금액 미정(발행은 TASK_AMOUNT_REQUIRED 가드)");
 });
 
-test("종일(all_day): 시간 없어도 대관 세션 청구 가능(1 기준 블록·정액=base_price)", () => {
-  // 정액(회당) 항목 — base_minutes=0, base_price=500000.
-  const flatId = Number(
-    db()
-      .prepare(`INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active) VALUES ('종일 정액', '공연', 0, 500000, 60, 0, 1)`)
-      .run().lastInsertRowid
-  );
-  const b = sessionRateAmount({ session_type: "공연", rate_item_id: flatId, all_day: 1, start_time: null, end_time: null });
+test("종일(all_day): 시간 없어도 대관 세션 청구 대상, 다일이면 일수를 싣는다", () => {
+  const b = sessionRateAmount({ session_type: "공연", all_day: 1, start_time: null, end_time: null, session_date: "2026-09-01", end_date: "2026-09-03", billing_amount: 500000 });
   assert.ok(b, "종일 세션도 billing 객체(청구 후보)");
   assert.equal(b.allDay, true, "allDay 플래그");
-  assert.equal(b.amount, 500000, "정액 회당 = base_price(시간 무관)");
-  // 시간제 항목(base_minutes=210)이면 종일 = 1Pro.
-  const proId = Number(
-    db()
-      .prepare(`INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active) VALUES ('종일 시간제', '공연', 210, 300000, 60, 100000, 1)`)
-      .run().lastInsertRowid
-  );
-  const b2 = sessionRateAmount({ session_type: "공연", rate_item_id: proId, all_day: 1, start_time: null, end_time: null });
-  assert.equal(b2.amount, 300000, "시간제 항목 종일 = 1Pro base_price");
+  assert.equal(b.days, 3, "다일 일수(청구 폼·목록 표기)");
+  assert.equal(b.amount, 500000, "금액 = 확정액");
 });
 
 test("종일 다일(end_date): 종료>시작일 때만 저장·시간 NULL·시간세션은 무시(createSession 경로)", () => {

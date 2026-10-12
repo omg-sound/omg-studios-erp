@@ -595,7 +595,7 @@ function sortCellValue(cell) {
 
   function initSessionForm(form) {
   var dateInput = form.querySelector("[data-session-date]");
-  var rateSel = form.querySelector("[data-rate-select]");
+  var rateSel = null; // 단가 항목 칸은 개편 3단계에서 삭제 — 1Pro 기준은 예약 기본값의 기본 세션 시간(proDefaultMinutes)
   var startInput = form.querySelector("[data-start-input]"); // 구글식 시작 시간 타이핑 박스(name=start_time, 2026-07-04 그리드 폐지)
   var endInput = form.querySelector("[data-end-input]"); // 종료 시간 박스(name=end_time) — 슬라이더와 양방향 동기
   var endDate = form.querySelector("[data-end-date]"); // 종료 날짜(자동 표시 — 자정 넘김이면 +1일, 저장 필드 아님)
@@ -609,12 +609,13 @@ function sortCellValue(cell) {
   var roomSel = form.querySelector('select[name="room_id"]');
   var externalLoc = form.querySelector("[data-external-loc]"); // 외부 장소 주소 입력(장소=외부일 때만 노출)
   var showWhenRec = form.querySelectorAll('[data-show-when="rec"]');
-  // 세션 종류별 노출/숨김(2026-07-26 촬영 구간) — data-when-type="촬영"에 해당하면
+  // (세션 종류별 노출/숨김 — 촬영 구간용이었고 개편 3단계에서 삭제)
   // data-show-when-type 요소는 보이고 data-hide-when-type 요소는 숨는다(반대로도).
-  var showWhenType = form.querySelectorAll("[data-show-when-type]");
-  var hideWhenType = form.querySelectorAll("[data-hide-when-type]");
-  var segBlock = form.querySelector("[data-segments]"); // 촬영 구간(반입·설치/촬영/철수)
-  var segTimes = segBlock ? segBlock.querySelectorAll("[data-seg-time]") : []; // 보이는 입력(DOM 순서 = 시작,종료 × 3구간)
+  // 촬영 구간(반입·설치/촬영/철수) 입력은 개편 3단계에서 삭제(운영 사용 0건) — 관련 분기는 빈 값으로 무동작.
+  var showWhenType = [];
+  var hideWhenType = [];
+  var segBlock = null;
+  var segTimes = [];
   var conflictWarn = form.querySelector("[data-conflict-warn]");
   var overrideField = form.querySelector("[data-override-conflict]");
   var SLIDER_MAX = slider ? parseInt(slider.max, 10) || 960 : 960;
@@ -735,19 +736,9 @@ function sortCellValue(cell) {
     conflictWarn.hidden = !hit;
     if (hit && hit.label) conflictWarn.textContent = "⚠ 같은 룸에 예약이 있습니다 — " + hit.label; // 어느 세션인지 명시
   }
-  // 세션 종류 kind(녹음→recording·촬영→filming) — 세션 종류 select data-rate-kinds="녹음:recording,촬영:filming"
-  function rateKindOf(type) {
-    var raw = sessionTypeSel ? (sessionTypeSel.getAttribute("data-rate-kinds") || "") : "";
-    var map = {};
-    raw.split(",").forEach(function (p) { var kv = p.split(":"); if (kv[0]) map[kv[0].trim()] = (kv[1] || "").trim(); });
-    return map[type] || "recording";
-  }
+
   // 세션 종류에 맞춰 단가 select 옵션을 녹음/촬영 템플릿으로 교체 — 촬영 고르면 촬영 단가만 보이게.
-  function swapRateOptions() {
-    if (!rateSel || !sessionTypeSel) return;
-    var tpl = form.querySelector("[data-rate-opts-" + rateKindOf(sessionTypeSel.value) + "]");
-    if (tpl && rateSel.innerHTML !== tpl.innerHTML) rateSel.innerHTML = tpl.innerHTML;
-  }
+  function swapRateOptions() { /* 단가 항목 칸 삭제(개편 3단계) — 교체할 옵션이 없다 */ }
   // 대관 세션(녹음·촬영)일 때만 [data-show-when="rec"] 요소 표시 + 종류에 맞는 단가 옵션으로 교체.
   function syncRecFields() {
     swapRateOptions();
@@ -755,7 +746,6 @@ function sortCellValue(cell) {
     Array.prototype.forEach.call(showWhenRec, function (el) { el.hidden = !isRec; });
     syncTypeScoped();
   }
-  // 세션 종류가 data-when-type 목록에 들면 show 요소를 켜고 hide 요소를 끈다(촬영 = 구간 입력 ↔ 시작·종료+소요).
   // ⚠️`hidden` 속성만으로는 안 숨는다 — 시작·종료 줄이 `class="flex …"`라 [hidden]{display:none}이 Tailwind
   //   display 유틸에 밀린다(함정 #26). 그래서 인라인 display도 함께 세팅한다. **hidden 속성은 유지**한다 —
   //   segSpanMin()·applyAllDay 등이 `el.hidden`으로 상태를 읽으므로 지우면 그쪽 판정이 깨진다.
@@ -763,15 +753,8 @@ function sortCellValue(cell) {
     el.hidden = on;
     el.style.display = on ? "none" : "";
   }
-  function syncTypeScoped() {
-    var cur = sessionTypeSel ? sessionTypeSel.value : "";
-    var match = function (el) {
-      var raw = el.getAttribute("data-when-type") || "";
-      return raw.split(",").indexOf(cur) !== -1;
-    };
-    Array.prototype.forEach.call(showWhenType, function (el) { setTypeHidden(el, !match(el)); });
-    Array.prototype.forEach.call(hideWhenType, function (el) { setTypeHidden(el, match(el)); });
-  }
+  function syncTypeScoped() { /* 촬영 구간 입력 삭제(개편 3단계) — 종류별로 켜고 끌 요소가 없다 */ }
+
   // 1Pro~4Pro 프리셋: 녹음 단가 기준시간이 있으면 그걸, 없으면 스튜디오 기본 블록(proDefault)을 기준으로 항상 활성.
   // positionTicks도 같은 폴백으로 위치를 잡으므로 일관. 세션 종류·룸 예약과 무관하게 프리셋 클릭 가능(사용자 요청).
   function updateProAvailability() {
@@ -1063,7 +1046,7 @@ function sortCellValue(cell) {
 (function () {
   "use strict";
   // 천단위 콤마 대상 금액칸: 청구 총액·입금·할인, 단가표, 외주 지급단가, 작업·세션별 청구 금액(task_amount_<id>·session_amount_<id> 동적 name).
-  var MONEY = /^(unit_price|base_price|extra_price|amount|paid_amount|discount_amount|worker_rate|engineer_rates|purchase_price|task_amount_\d+|session_amount_\d+|unit_price_\d+|base_price_\d+|extra_price_\d+)$/;
+  var MONEY = /^(unit_price|base_price|extra_price|amount|paid_amount|discount_amount|worker_rate|engineer_rates|purchase_price|line_amount|task_amount_\d+|session_amount_\d+|unit_price_\d+|base_price_\d+|extra_price_\d+)$/; // line_amount = 청구서 작성 줄(개편 3단계)
   function fmt(v) {
     var d = String(v == null ? "" : v).replace(/[^\d]/g, "");
     return d ? Number(d).toLocaleString("en-US") : "";
@@ -1237,138 +1220,7 @@ function sortCellValue(cell) {
   if (auto) auto.click();
 })();
 
-// 할인 폼([data-discount-form]): 정률(%) → 정액(원) 자동변환 + 공급가/할인/과세표준/VAT/총액 미리보기 갱신.
-// 공급가는 체크된 항목(input[data-line-amount])의 합으로 동적 계산(항목 체크 변경 시 갱신). 체크박스가 없으면 data-supply 폴백.
-(function () {
-  "use strict";
-  var form = document.querySelector("[data-discount-form]");
-  if (!form) return;
-  var amtInput = form.querySelector("[data-discount-amount]");
-  var pctInput = form.querySelector("[data-discount-pct]");
-  if (!amtInput || !pctInput) return;
-  var boxes = form.querySelectorAll('input[type="checkbox"][data-line-amount]');
-  var vatToggle = form.querySelector("[data-vat-toggle]");
-  var supplyEl = form.querySelector("[data-amt-supply]");
-  var discountRow = form.querySelector("[data-amt-discount-row]");
-  var discountEl = form.querySelector("[data-amt-discount]");
-  var vatEl = form.querySelector("[data-amt-vat]");
-  var totalEl = form.querySelector("[data-amt-total]");
-
-  function lineAmount(cb) {
-    // 작업 행은 연결된 금액 input(data-line-input) 값으로, 세션 행은 고정 금액(data-line-amount)으로 합산.
-    var row = cb.closest && cb.closest("[data-line-row]");
-    var input = row && row.querySelector("[data-line-input]");
-    if (input) return parseInt(String(input.value).replace(/[^\d]/g, "") || "0", 10) || 0;
-    return parseInt(cb.getAttribute("data-line-amount") || "0", 10) || 0;
-  }
-  function supply() {
-    if (!boxes.length) return parseInt(form.getAttribute("data-supply") || "0", 10) || 0;
-    var s = 0;
-    Array.prototype.forEach.call(boxes, function (cb) {
-      if (cb.checked) s += lineAmount(cb);
-    });
-    return s;
-  }
-  function won(n) {
-    return "₩" + String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  }
-  function clamp(n) { return Math.min(Math.max(0, Math.round(n)), supply()); }
-  function updatePreview() {
-    var sup = supply();
-    var discount = clamp(parseInt(String(amtInput.value).replace(/[^\d]/g, "") || "0", 10));
-    var vatOn = !vatToggle || vatToggle.checked; // 부가세 포함 토글(기본 체크). 해제 시 VAT 0(현금).
-    var taxable = sup - discount;
-    var tax = vatOn ? Math.round(taxable * 0.1) : 0;
-    if (supplyEl) supplyEl.textContent = won(sup);
-    if (discountRow) discountRow.hidden = !(discount > 0);
-    if (discountEl) discountEl.textContent = "-" + won(discount);
-    if (vatEl) vatEl.textContent = won(tax);
-    if (totalEl) totalEl.textContent = won(taxable + tax);
-  }
-  function applyPct() {
-    var pct = parseFloat(pctInput.value) || 0;
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
-    // 천단위 콤마 유지(프로그램 .value 대입은 input 이벤트가 안 떠 콤마 포맷터가 안 돎 → 직접 포맷).
-    amtInput.value = clamp(Math.round(supply() * pct / 100)).toLocaleString("en-US");
-    updatePreview();
-  }
-
-  amtInput.addEventListener("input", function () {
-    pctInput.value = ""; // 정액 바뀌면 정률 초기화
-    updatePreview();
-  });
-  pctInput.addEventListener("input", applyPct);
-  if (vatToggle) vatToggle.addEventListener("change", updatePreview);
-  Array.prototype.forEach.call(boxes, function (cb) {
-    cb.addEventListener("change", function () {
-      // 항목 선택이 바뀌면 공급가 변동 → 정률이면 재계산, 아니면 미리보기만 갱신(정액은 clamp).
-      if (parseFloat(pctInput.value) > 0) applyPct(); else updatePreview();
-    });
-  });
-  // 작업 금액 input(data-line-input) 변경 시 공급가·VAT·총액 즉시 갱신(금액은 청구 시 확정).
-  Array.prototype.forEach.call(form.querySelectorAll("[data-line-input]"), function (inp) {
-    inp.addEventListener("input", function () {
-      if (parseFloat(pctInput.value) > 0) applyPct(); else updatePreview();
-    });
-    // (옛 최소가 하한 되올림은 2026-07-29 가격 유형 폐기와 함께 제거 — 금액은 언제나 자유롭게 고친다.)
-    // Tab/Shift+Tab = 금액칸끼리 이동(행 DOM 순서상 기본 Tab은 다음 행 체크박스로 가던 것). 처음/마지막은 기본 동작(할인/이전 버튼) 유지.
-    inp.addEventListener("keydown", function (e) {
-      if (e.isComposing || e.keyCode === 229) return; // 한글 조합 중 무시(함정 #18)
-      if (e.key !== "Tab") return;
-      var all = Array.prototype.slice.call(form.querySelectorAll("[data-line-input]"));
-      var target = all[all.indexOf(inp) + (e.shiftKey ? -1 : 1)];
-      if (!target) return;
-      e.preventDefault();
-      target.focus();
-      if (target.select) target.select(); // 전체 선택 → 타이핑만으로 교체
-    });
-  });
-  updatePreview();
-})();
-
-// 청구 생성 폼([data-discount-form]) 0원 항목 제출 확인.
-// ⚠️ 옛 localStorage 금액 초안(omgdraft:inv:*)은 폐기(2026-07-14): 작업·세션 금액이 이제 change 즉시 DB에 저장되므로
-// (아래 '청구 폼 금액 즉시 저장' IIFE) 초안 복원이 **서버 확정값을 옛 기기 값으로 덮어써** 옛 금액으로 청구될 수 있었다.
-// 진실원천은 DB 하나. 남아 있는 옛 초안 키는 첫 로드에서 정리한다.
-(function () {
-  "use strict";
-  var form = document.querySelector("[data-discount-form]");
-  if (!form) return;
-  var m = (form.getAttribute("action") || "").match(/\/projects\/(\d+)\//);
-  var prefix = m ? "omgdraft:inv:" + m[1] + ":" : null;
-  if (prefix) {
-    try {
-      for (var i = localStorage.length - 1; i >= 0; i--) {
-        var k = localStorage.key(i);
-        if (k && k.indexOf(prefix) === 0) localStorage.removeItem(k);
-      }
-    } catch (_e) {}
-  }
-  function lineVal(cb) {
-    var row = cb.closest && cb.closest("[data-line-row]");
-    var inp = row && row.querySelector("[data-line-input]");
-    if (inp) return parseInt(String(inp.value).replace(/[^\d]/g, "") || "0", 10) || 0;
-    return parseInt(cb.getAttribute("data-line-amount") || "0", 10) || 0;
-  }
-  // 제출: 0원 항목 확인 → 통과 시 hidden confirm_zero_amount=1 세팅(서버가 이 값 없으면 여전히 차단).
-  // (2026-07-05 버그수정: 이전엔 확인창만 띄우고 서버에 알리지 않아 '확인'을 눌러도 서버가 그대로 TASK_AMOUNT_REQUIRED로 되돌리던 것.)
-  var zeroFlag = form.querySelector("[data-confirm-zero-amount]");
-  form.addEventListener("submit", function (e) {
-    if (e.submitter && e.submitter.getAttribute("formtarget") === "_blank") return; // 미리보기 PDF 제출은 확인 건너뜀
-    if (e.submitter && e.submitter.hasAttribute("data-waive-btn")) return; // 청구 안 함/되돌리기는 별도 라우트(2026-07-06)
-    var hasZero = false;
-    Array.prototype.forEach.call(form.querySelectorAll('input[type="checkbox"][data-line-amount]'), function (cb) {
-      if (cb.checked && !(lineVal(cb) > 0)) hasZero = true;
-    });
-    if (hasZero) {
-      if (!window.confirm("금액이 0원인 청구 항목이 있습니다. 0원으로 청구할까요?")) { e.preventDefault(); return; }
-      if (zeroFlag) zeroFlag.value = "1";
-    } else if (zeroFlag) {
-      zeroFlag.value = "0";
-    }
-  });
-})();
+// (옛 프로젝트 청구 생성 폼의 할인·0원 확인·금액 즉시 저장·임시저장 스크립트는 개편 3단계에서 제거 — 청구서 작성은 [data-compose-form].)
 
 // 사업자등록번호 입력칸([name="biz_no"]): 숫자만 입력해도 ###-##-##### 서식 자동 삽입.
 (function () {
@@ -1414,32 +1266,6 @@ function sortCellValue(cell) {
     if (isPhoneField(e.target)) e.target.value = fmtPhone(e.target.value);
   });
   Array.prototype.forEach.call(document.querySelectorAll('input[name="phone"],input[name="studio_tel"],input[data-pc-phone],input[data-am-phone]'), function (el) { if (el.value) el.value = fmtPhone(el.value); });
-})();
-
-// 청구 폼 금액 즉시 저장(포커스 이탈=change 시 DB 반영 → 초안 아님. 새로고침·다른 기기·다른 사람에게도 그대로).
-//  · task_amount_<id>    → 작업 total_price (POST /projects/tasks/:id/amount)
-//  · session_amount_<id> → 세션 billing_amount(확정 청구액, 2026-07-14 — 이전엔 폼 안에서만 살아 있다가 사라졌다).
-//    빈 값으로 지우면 NULL → 단가표 자동 산정으로 되돌아간다.
-(function () {
-  "use strict";
-  document.addEventListener("change", function (e) {
-    var el = e.target;
-    if (!el || !el.name) return;
-    var t = /^task_amount_(\d+)$/.exec(el.name);
-    var s = /^session_amount_(\d+)$/.exec(el.name);
-    if (!t && !s) return;
-    var digits = String(el.value).replace(/[^\d]/g, "");
-    var body = new URLSearchParams();
-    var url;
-    if (t) {
-      body.append("amount", digits);
-      url = "/projects/tasks/" + t[1] + "/amount";
-    } else {
-      body.append("amount", String(el.value).trim() === "" ? "" : digits); // 빈 칸 = 단가표 산정으로 복귀
-      url = "/sessions/" + s[1] + "/amount";
-    }
-    fetch(url, { method: "POST", body: body, headers: { "X-Requested-With": "fetch" }, credentials: "same-origin" }).catch(function () {});
-  });
 })();
 
 // 소속 그룹 콤보([data-group-combo], 2026-07-05 — 아티스트 폼): 타이핑=기존 그룹 검색, 빈 입력=[＋새 그룹 등록].
@@ -2934,24 +2760,9 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
       // 청구 항목 미선택 제출 차단(2026-08-13) — 견적서 등 미리보기 버튼(formtarget=_blank)이 그대로 열려
       // 빈 새 탭에 서버 오류 화면만 뜨던 문제(사용자 리포트 "404 페이지 같다"). 항목 검사를 청구처 검사보다
       // 먼저 해서 둘 다 비어 있을 때 토스트 두 개가 같은 자리에 겹쳐 뜨는 것을 막는다.
-      function flashHighlight(el) {
-        if (!el) return;
-        if (el.__flashTimer) clearTimeout(el.__flashTimer);
-        el.style.transition = "box-shadow .2s";
-        el.style.boxShadow = "0 0 0 3px rgb(var(--color-danger))";
-        el.__flashTimer = setTimeout(function () { el.style.boxShadow = ""; el.__flashTimer = null; }, 1600);
-      }
       // 청구처 미선택 제출 차단(서버도 PAYER_REQUIRED로 막지만, 여기서 바로 알려 준다).
       form.addEventListener("submit", function (e) {
         if (e.submitter && e.submitter.hasAttribute && e.submitter.hasAttribute("data-waive-btn")) return; // 청구 안 함 토글
-        var itemsBox = form.querySelector("[data-invoice-items-box]");
-        if (itemsBox && !form.querySelector('input[type="checkbox"][data-line-amount]:checked')) {
-          e.preventDefault();
-          if (window.__toast) window.__toast("청구할 항목을 하나 이상 선택하세요.");
-          flashHighlight(itemsBox);
-          itemsBox.scrollIntoView({ behavior: "smooth", block: "center" });
-          return;
-        }
         if (!cid.value && !pid.value) {
           e.preventDefault(); // 서버도 PAYER_REQUIRED로 막지만, 여기서 즉시 알려 준다(제출 자체를 안 보냄)
           if (window.__toast) window.__toast("청구처를 선택하세요 — 실제 결제하는 곳·사람을 고릅니다.");
@@ -2962,80 +2773,6 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
 
     // 초기 문서 라벨·경고(선택값이 있을 때만 — 새 폼은 비어 있음)
     applyDoc(items.filter(function (it) { return (cid.value && String(it.cid) === String(cid.value)) || (pid.value && String(it.pid) === String(pid.value)); })[0]);
-  });
-})();
-
-// 청구 생성 폼 임시저장(초안): '임시저장' 버튼을 누를 때만 폼 필드(청구처·할인·VAT·제목)를 localStorage에 보관 → 로드 시 복원, 발행 시 삭제.
-// ⚠️ 금액(task_amount/session_amount)·항목 체크·발행일은 초안에 넣지 않는다: 금액은 즉시 DB 저장(진실원천)이라 옛 초안이 확정 금액을 덮던 버그 회피(2026-07-14), 발행일은 '발행하는 날'이라 항상 오늘(옛 초안이 과거 일자로 발행시키던 위험 제거, 2026-07-15). 초안은 다시 타이핑하기 번거로운 '발행 직전 결정' 필드만 담는다.
-(function () {
-  "use strict";
-  var form = document.querySelector("[data-discount-form]");
-  if (!form) return;
-  var m = (form.getAttribute("action") || "").match(/\/projects\/(\d+)\//);
-  if (!m) return;
-  var KEY = "invdraft:" + m[1];
-  var payer = form.querySelector("[data-picker-combo]");
-  var discAmt = form.querySelector("[data-discount-amount]");
-  var discPct = form.querySelector("[data-discount-pct]");
-  var vat = form.querySelector("[data-vat-toggle]");
-  var title = form.querySelector('input[name="title"]');
-  var pemail = form.querySelector("[data-payer-email]");
-  var pemailSet = form.querySelector("[data-payer-email-set]");
-  // 발행일(issued_date)은 초안에 저장하지 않는다 — 발행일은 '발행하는 날'이라 항상 서버 기본값(오늘)이 맞고,
-  // 며칠 전 초안의 옛 '오늘'이 되살아나 과거 일자로 발행되던 위험만 있었다(사용자 결정 2026-07-15).
-  function pget() {
-    if (!payer) return null;
-    var c = payer.querySelector("[data-pk-cid]"), p = payer.querySelector("[data-pk-pid]"), i = payer.querySelector("[data-pk-input]");
-    return { cid: c ? c.value : "", pid: p ? p.value : "", label: i ? i.value : "" };
-  }
-  function read() {
-    return {
-      p: pget(),
-      da: discAmt ? discAmt.value : "",
-      dp: discPct ? discPct.value : "",
-      vat: vat ? !!vat.checked : true,
-      t: title ? title.value : "",
-      pe: pemail ? pemail.value : "",
-      pes: pemailSet ? pemailSet.value : "0"
-    };
-  }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(read())); return true; } catch (e) { return false; } }
-  function clear() { try { localStorage.removeItem(KEY); } catch (e) {} }
-
-  // 복원(로드 시) — __pkSet은 payerCombo 초기화 IIFE가 먼저 노출. 금액·항목 체크·발행일은 초안 아님.
-  var raw = null; try { raw = localStorage.getItem(KEY); } catch (e) {}
-  var s = null; if (raw) { try { s = JSON.parse(raw); } catch (e) { s = null; } }
-  if (s) {
-    if (s.p && payer && payer.__pkSet) payer.__pkSet(s.p);
-    if (discAmt && s.da != null) discAmt.value = s.da;
-    if (discPct && s.dp != null) discPct.value = s.dp;
-    if (vat) vat.checked = !!s.vat;
-    if (title && s.t) title.value = s.t;
-    // 발행 이메일은 __pkSet(프리필) 뒤에 복원 — 저장해 둔 입력값이 프리필에 덮이지 않게(구 초안엔 pe 없음 → 프리필 유지).
-    if (s.pe != null && pemail) { pemail.value = s.pe; if (pemailSet) pemailSet.value = s.pes === "1" ? "1" : "0"; }
-    // 미리보기(공급가·할인·VAT·총액) 갱신
-    if (discPct && s.dp) discPct.dispatchEvent(new Event("input", { bubbles: true }));
-    else if (discAmt) discAmt.dispatchEvent(new Event("input", { bubbles: true }));
-    if (vat) vat.dispatchEvent(new Event("change", { bubbles: true }));
-  }
-
-  // 명시적 '임시저장' 버튼 — 누를 때만 저장(자동저장 폐지, 사용자 요청 2026-07-15 — 앱 전반의 명시적 저장 패턴과 통일).
-  // 조용히 저장돼 값이 나중에 되살아나던 놀람 클래스 제거. 저장 후 1.5초 '임시저장됨 ✓' 피드백.
-  var saveBtn = form.querySelector("[data-invoice-draft-save]");
-  if (saveBtn) {
-    var origLabel = saveBtn.textContent, revertT = null;
-    saveBtn.addEventListener("click", function () {
-      var ok = save();
-      if (revertT) clearTimeout(revertT);
-      saveBtn.textContent = ok ? "임시저장됨 ✓" : "저장 실패";
-      revertT = setTimeout(function () { saveBtn.textContent = origLabel; }, 1500);
-    });
-  }
-
-  // 청구 생성(발행) 제출 시 초안 삭제 — 막힌 제출(청구처 미선택·발행정보 없음·0원 취소)은 유지, PDF 프리뷰는 대상 아님.
-  form.addEventListener("submit", function (e) {
-    if (e.defaultPrevented) return;
-    if (e.submitter && e.submitter.hasAttribute && e.submitter.hasAttribute("data-invoice-submit")) clear();
   });
 })();
 
@@ -3855,4 +3592,120 @@ document.addEventListener("click", function (e) {
     panel.hidden = false;
     if (panel.scrollIntoView) panel.scrollIntoView({ block: "center", behavior: "smooth" });
   });
+})();
+
+// 청구 대기함(개편 3단계, 2026-10-13): 선택 개수 표시 + 프로젝트별 '모두 선택' + 아무것도 안 고르고 제출 막기.
+(function () {
+  "use strict";
+  var form = document.querySelector("[data-inbox-form]");
+  if (!form) return;
+  var countEl = form.querySelector("[data-inbox-count]");
+  function boxes() { return form.querySelectorAll("[data-inbox-item]"); }
+  function refresh() {
+    var n = 0;
+    Array.prototype.forEach.call(boxes(), function (cb) { if (cb.checked) n++; });
+    if (countEl) countEl.textContent = n ? "선택 " + n + "건" : "항목을 고르세요";
+    return n;
+  }
+  form.addEventListener("change", function (e) { if (e.target && e.target.hasAttribute && e.target.hasAttribute("data-inbox-item")) refresh(); });
+  Array.prototype.forEach.call(form.querySelectorAll("[data-inbox-select-all]"), function (btn) {
+    btn.addEventListener("click", function () {
+      var group = btn.closest("[data-inbox-group]");
+      if (!group) return;
+      var items = group.querySelectorAll("[data-inbox-item]");
+      var all = Array.prototype.every.call(items, function (cb) { return cb.checked; });
+      // '모두 선택'은 예정·대기 항목의 '완료로 바꿀까?' 확인을 건너뛴다 — 묶어서 고르는 건 의도가 분명하다. 완료 처리는 발행 때.
+      Array.prototype.forEach.call(items, function (cb) { cb.checked = !all; });
+      btn.textContent = all ? "모두 선택" : "선택 해제";
+      refresh();
+    });
+  });
+  form.addEventListener("submit", function (e) {
+    if (e.submitter && e.submitter.hasAttribute && e.submitter.hasAttribute("data-waive-btn")) return; // 청구 안 함 토글
+    if (e.submitter && e.submitter.getAttribute && e.submitter.getAttribute("formaction")) return; // 되돌리기 등 다른 동작
+    if (!refresh()) { e.preventDefault(); if (window.__toast) window.__toast("청구할 항목을 하나 이상 고르세요."); }
+  });
+  refresh();
+})();
+
+// 청구서 작성(개편 3단계): 줄 추가·빼기 + 공급가·할인·VAT·총액 실시간 + 0원(빈 금액) 줄 확인.
+// 서버가 같은 규칙으로 다시 계산·검증한다(이 화면은 미리보기일 뿐 — JS가 꺼져도 발행은 정확하다).
+(function () {
+  "use strict";
+  var form = document.querySelector("[data-compose-form]");
+  if (!form) return;
+  var box = form.querySelector("[data-compose-lines]");
+  var tpl = form.querySelector("[data-compose-free-template]");
+  var disc = form.querySelector("[data-compose-discount]");
+  var pct = form.querySelector("[data-compose-pct]");
+  var vat = form.querySelector("[data-compose-vat]");
+  var zero = form.querySelector("[data-compose-zero]");
+  function num(v) { return parseInt(String(v || "").replace(/[^\d]/g, "") || "0", 10) || 0; }
+  function won(n) { return "₩" + String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+  function lines() { return box ? box.querySelectorAll("[data-compose-line]") : []; }
+  function isBlankFree(row) {
+    var k = row.querySelector('input[name="line_kind"]');
+    var d = row.querySelector('input[name="line_desc"]');
+    var a = row.querySelector('input[name="line_amount"]');
+    return k && k.value === "free" && !(d && d.value.trim()) && !(a && a.value.trim());
+  }
+  function supply() {
+    var s = 0;
+    Array.prototype.forEach.call(lines(), function (row) {
+      var a = row.querySelector("[data-compose-amount]");
+      if (a) s += num(a.value);
+    });
+    return s;
+  }
+  function set(sel, txt) { var el = form.querySelector(sel); if (el) el.textContent = txt; }
+  function update() {
+    var sup = supply();
+    if (pct && parseFloat(pct.value) > 0 && disc) disc.value = Math.round(sup * Math.min(100, parseFloat(pct.value)) / 100).toLocaleString("en-US");
+    var d = Math.min(num(disc && disc.value), sup);
+    var taxable = sup - d;
+    var tax = !vat || vat.checked ? Math.round(taxable * 0.1) : 0;
+    set("[data-compose-supply]", won(sup));
+    var row = form.querySelector("[data-compose-discount-row]");
+    if (row) row.hidden = !(d > 0);
+    set("[data-compose-discount-amt]", "-" + won(d));
+    set("[data-compose-tax]", won(tax));
+    set("[data-compose-total]", won(taxable + tax));
+  }
+  form.addEventListener("input", function (e) {
+    if (e.target === disc && pct) pct.value = ""; // 정액을 고치면 정률은 비운다
+    update();
+  });
+  form.addEventListener("change", update);
+  form.addEventListener("click", function (e) {
+    var rm = e.target.closest && e.target.closest("[data-compose-remove]");
+    if (rm) {
+      var row = rm.closest("[data-compose-line]");
+      if (row && row.parentNode) row.parentNode.removeChild(row);
+      update();
+      return;
+    }
+    if (e.target.closest && e.target.closest("[data-compose-add]") && tpl && box) {
+      var wrap = document.createElement("div");
+      wrap.innerHTML = tpl.innerHTML;
+      var line = wrap.firstElementChild;
+      if (line) { box.appendChild(line); var d = line.querySelector('input[name="line_desc"]'); if (d) d.focus(); }
+    }
+  });
+  form.addEventListener("submit", function (e) {
+    if (e.submitter && e.submitter.getAttribute("formtarget") === "_blank") return; // 미리보기 PDF는 확인 없이
+    var hasZero = false;
+    var hasLine = false;
+    Array.prototype.forEach.call(lines(), function (row) {
+      if (isBlankFree(row)) return; // 비워 둔 자유 줄은 서버도 무시
+      hasLine = true;
+      var a = row.querySelector("[data-compose-amount]");
+      if (!(num(a && a.value) > 0)) hasZero = true;
+    });
+    if (!hasLine) { e.preventDefault(); if (window.__toast) window.__toast("청구할 줄이 없습니다."); return; }
+    if (hasZero) {
+      if (!window.confirm("금액이 비었거나 0원인 줄이 있습니다. 0원으로 발행할까요?")) { e.preventDefault(); return; }
+      if (zero) zero.value = "1";
+    } else if (zero) zero.value = "0";
+  });
+  update();
 })();

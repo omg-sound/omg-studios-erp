@@ -96,15 +96,6 @@ test("세션 담당 엔지니어: 비활성 담당자 배정이 보존된다(PAY
   assert.match(html, new RegExp(`<option value="${goneId}" selected[^>]*>퇴사엔지 \\(목록에 없음\\)`));
 });
 
-test("세션 단가 항목: 비활성 단가가 보존된다(청구 근거·기준시간까지)", () => {
-  const cat = D.prepare("SELECT name FROM rate_categories LIMIT 1").get();
-  const goneRate = D.prepare("INSERT INTO rate_items (name, category, base_minutes, base_price, active, sort_order) VALUES ('폐지단가', ?, 210, 500000, 0, 99)").run(cat ? cat.name : null).lastInsertRowid;
-  const sess = D.prepare("INSERT INTO sessions (project_id, session_type, session_date, status, start_time, end_time, rate_item_id) VALUES (?, '녹음', '2099-02-02', '예정', '14:00', '18:00', ?)").run(projId, goneRate).lastInsertRowid;
-  const s = D.prepare("SELECT * FROM sessions WHERE id = ?").get(sess);
-  const sel = selNamed(sessionBookingFields(s, listProjectManagers(), listRateItems(), listRooms()), "rate_item_id");
-  assert.match(sel, new RegExp(`<option value="${goneRate}" data-minutes="210" selected>폐지단가 \\(사용 안 함\\)`), "이름 + 기준시간(1Pro 계산)까지 살린다");
-});
-
 test("예약 기본값: 비활성 담당자 설정이 보존된다(설정 저장만으로 비워지지 않게)", () => {
   D.prepare("INSERT OR REPLACE INTO admin_state (key, value) VALUES ('default_booker', '퇴사엔지')").run();
   const sel = selNamed(bookingDefaultsSection(), "default_booker");

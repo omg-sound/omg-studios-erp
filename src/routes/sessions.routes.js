@@ -420,7 +420,7 @@ router.post("/sessions/:id/waive", requireEditor, (req, res) => {
     throw e;
   }
   if (!r) return res.status(404).send("세션을 찾을 수 없습니다.");
-  res.redirect(`/projects/${r.project_id}?tab=invoice`);
+  res.redirect(safePath(req.body.return) || `/projects/${r.project_id}?tab=invoice`); // 청구 대기함에서 누르면 대기함으로(개편 3단계)
 });
 
 // ── 세션 삭제 ──

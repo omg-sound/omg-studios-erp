@@ -3,12 +3,7 @@
 const express = require("express");
 const { db } = require("../db");
 const { requireAuth, requireEditor, requireBilling, requireChief, canEdit, canBill, isChief, isOwner, isStaffOrChief } = require("../auth");
-const {
-  normalizeDocType,
-  docNumberWithType,
-} = require("../config");
 const { config } = require("../config");
-const { renderInvoicePdf } = require("../invoice-pdf");
 const { asyncHandler } = require("../lib/async");
 const { logAudit } = require("../lib/audit"); // 파괴적·재무 액션 기록(fail-safe)
 const { safePath } = require("../lib/nav");
@@ -27,8 +22,6 @@ const {
   listInvoicesForProject,
   listInvoiceItemsForInvoice,
   listTaskGroupsForProject,
-  listUnbilledTasksForProject,
-  listBillableSessionsForProject,
   listSessionsForProject,
   createTasks,
   renameSong,
@@ -37,19 +30,17 @@ const {
   setTaskStatus,
   setTaskWaived,
   deleteTask,
-  createInvoiceFromTasks,
-  invoiceDraftForPdf,
   getClientFile,
   listOrgContacts,
-  getStudioInfo,
-  getStudioLogo,
   hasPostprodSessionNeedingBilling,
+  listBillableItems,
   createProjectRecord,
   updateProjectRecord,
 } = require("../data");
 const { layout, pageHeader, esc, formatKRW, flashBanner, errorPage, emptyState, capList, tabBar: renderTabs, searchBox } = require("../views");
 const { deliverablesSection } = require("../views.deliverables");
 const { invoicesSection, payerInfoCard } = require("../views.invoices");
+const { projectBillingSummary } = require("../views.billing");
 const { sessionsSection } = require("../views.sessions");
 const {
   newProjectMenu,
@@ -59,13 +50,10 @@ const {
   projectMetaCard,
   projectMetaReadonly,
   tracksSection,
-  unbilledInvoiceForm,
   sessionInvoicedModal,
-  invoicePreviewErrorPage,
 } = require("../views.projects");
 const { kstHms, utcStampFromKst } = require("../lib/date");
 const { parseMoney, formatBizNo, cleanYmd } = require("../lib/forms");
-const { notifyInvoiceIssued } = require("../notify");
 
 const router = express.Router();
 
@@ -84,10 +72,6 @@ function payoutLockedPage(user, what) {
 
 // 프로젝트 당사자 해석·생성·수정은 data/project-write.js(개편 1단계 — /new와 공용).
 
-function toArray(value) {
-  if (value == null || value === "") return [];
-  return Array.isArray(value) ? value : [value];
-}
 
 
 // ── 목록(URL = 필터; 플레이북2 §3.7) ──
@@ -321,15 +305,13 @@ function renderProjectDetail(req, res, p, formState = null, err = "") {
           };
         })
       : [];
-    const unbilled = listUnbilledTasksForProject(req.user, p.id);
-    const unbilledRows = unbilled ? unbilled.rows : [];
-    const billable = listBillableSessionsForProject(req.user, p.id);
-    const sessionRows = billable ? billable.rows : [];
+    // 청구서 만들기는 청구 대기함 하나로(개편 3단계) — 여기선 미청구 요약 + 대기함 링크만.
+    const pending = listBillableItems(req.user, { projectId: p.id });
+    const items = pending.groups.length ? pending.groups[0].items : [];
     const needsPostprodBilling = p.internal_support ? false : hasPostprodSessionNeedingBilling(p.id);
-    const unbilledForm = (unbilledRows.length || sessionRows.length || needsPostprodBilling)
-      ? unbilledInvoiceForm(p, unbilledRows, sessionRows, { hasPostprodSession: needsPostprodBilling })
-      : "";
-    tabContent = invoicesSection({ project: p, rows: invoiceRows, isAdmin: showInvoice, collapsed: false, unbilledForm, unbilledCount: unbilledRows.length + sessionRows.length + (needsPostprodBilling ? 1 : 0), openId: Number(req.query.open) || null });
+    const unbilledForm = projectBillingSummary({ project: p, items, postprod: needsPostprodBilling });
+    const liveCount = items.filter((i) => !i.waived).length;
+    tabContent = invoicesSection({ project: p, rows: invoiceRows, isAdmin: showInvoice, collapsed: false, unbilledForm, unbilledCount: liveCount + (needsPostprodBilling ? 1 : 0), openId: Number(req.query.open) || null });
   } else {
     const rateItems = editable ? listRateItems() : [];
     const sessionBundle2 = listSessionsForProject(req.user, p.id);
@@ -444,7 +426,7 @@ router.post("/tasks/:taskId/waive", requireEditor, (req, res) => {
   try {
     const task = setTaskWaived(req.user, Number(req.params.taskId));
     if (!task) return res.status(404).send(errorPage({ code: 404, title: "작업을 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-    res.redirect(`/projects/${task.project_id}?tab=invoice`);
+    res.redirect(safePath(req.body.return) || `/projects/${task.project_id}?tab=invoice`); // 청구 대기함에서 누르면 대기함으로(개편 3단계)
   } catch (e) {
     if (e.message === "TASK_LOCKED") return res.status(400).send(errorPage({ code: 400, title: "처리 불가", message: "이미 청구된 작업은 청구 안 함으로 바꿀 수 없습니다.", user: req.user }));
     throw e;
@@ -478,87 +460,14 @@ router.post("/tasks/:taskId/delete", requireEditor, (req, res) => {
 
 /** req.body에서 `${prefix}_<id>` 금액 필드를 {id: 금액} 맵으로 추출(청구 폼에서 작업·세션별로 입력/조정한 금액). */
 // `<prefix>_<id>` 형태 폼 필드를 { id: 값 } 맵으로. 금액·조정 사유 모두 같은 이름 규칙을 쓴다.
-function extractAmountMap(body, prefix) {
-  const out = {};
-  const re = new RegExp(`^${prefix}_(\\d+)$`);
-  for (const k of Object.keys(body || {})) {
-    const m = re.exec(k);
-    if (m) out[m[1]] = body[k];
-  }
-  return out;
-}
 
+// 옛 프로젝트 청구 생성·미리보기(개편 3단계에서 청구 대기함으로 일원화). 옛 탭·북마크가 남아 있어도 대기함으로 보낸다.
 router.post("/:id/invoices/from-tasks", requireBilling, (req, res) => {
-  try {
-    const inv = createInvoiceFromTasks(req.user, {
-      projectId: Number(req.params.id),
-      taskIds: toArray(req.body.task_id),
-      sessionIds: toArray(req.body.session_id),
-      clientId: (req.body.client_id ? Number(req.body.client_id) : null) || (req.body.payer_contact_id ? Number(req.body.payer_contact_id) : null), // 청구처=party id(콤보 어느 hidden이든 동일 의미)
-      title: req.body.title,
-      issueDate: cleanYmd(req.body.issued_date),
-      dueDate: cleanYmd(req.body.due_date),
-      discount: parseMoney(req.body.discount_amount),
-      discountPct: req.body.discount_pct, // 정률(%) — 정액 미입력 시 서버가 공급가 기준 산정(JS-off 폴백)
-      vatIncluded: req.body.vat_included != null, // 부가세 포함 체크박스(기본 체크) — 해제 시 미전송 → false(현금 거래)
-      taskAmounts: extractAmountMap(req.body, "task_amount"), // 금액은 청구 시점 확정 — 작업별 입력/조정 금액
-      sessionAmounts: extractAmountMap(req.body, "session_amount"), // 녹음 세션도 작업처럼 금액 수정 가능
-      // 금액을 산정치와 다르게 조정했을 때의 사유(2026-07-26) — 청구 근거로 스냅샷되고 원본 행에도 남는다.
-      taskMemos: extractAmountMap(req.body, "task_billing_memo"),
-      sessionMemos: extractAmountMap(req.body, "session_billing_memo"),
-      confirmZero: req.body.confirm_zero_amount === "1", // 0원 항목 확인 후 청구(폼이 window.confirm 후 세팅)
-      payerEmail: req.body.payer_email, // 발행 이메일(청구서 건별, 2026-07-27) — 보이는 값 = 이번 청구서의 발행 이메일
-      payerEmailSet: req.body.payer_email_set === "1", // JS가 프리필/직접입력 시 1. 없으면(JS-off) 기존 동작(청구처 이메일)
-    });
-    if (!inv) return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-    // createInvoiceFromTasks는 즉시 '발행' 상태로 생성 → 발행 알림 발송(notify는 fail-safe·비차단, 청구 흐름 비차단).
-    notifyInvoiceIssued(inv);
-    logAudit(req.user, "invoice.create", `#${inv.id} ${inv.title || ""} ${formatKRW(inv.amount || 0)}`);
-    // 청구 메뉴로 이탈하지 않고 프로젝트 청구 탭으로 복귀 + 방금 만든 인보이스를 펼친 채(open) 노출.
-    res.redirect(`/projects/${req.params.id}?tab=invoice&open=${inv.id}&flash=created`);
-  } catch (e) {
-    const known = { PAYER_REQUIRED: "청구처를 선택하세요. (제작/운영이 결제한다고 가정하지 않습니다 — 실제 결제하는 곳·사람을 고르세요.)", TASK_IDS_REQUIRED: "청구할 작업·세션을 선택하세요.", TASK_NOT_BILLABLE: "청구 가능한 작업·세션만 선택할 수 있습니다.", CLIENT_NOT_FOUND: "선택한 청구처를 찾을 수 없습니다.", TASK_AMOUNT_REQUIRED: "0원인 항목이 있습니다. 그대로 청구하려면 확인 후 다시 시도하세요.", PAYER_TAX_INFO_REQUIRED: "청구처(회사)에 세금계산서 정보(사업자등록번호)가 없습니다. 업체 상세에서 입력한 뒤 청구하세요.", PAYER_CASH_RECEIPT_REQUIRED: "청구처(개인)에 세무 증빙 정보(현금영수증 번호 또는 사업자등록번호)가 없습니다. 청구처 상세에서 입력한 뒤 청구하세요.", PAYER_EMAIL_INVALID: "세금계산서 발행 이메일 형식이 올바르지 않습니다. (예: name@example.com)" };
-    if (!known[e.message]) throw e; // 알 수 없는 오류(DB 등)는 전역 핸들러(500+로깅)로 — 검증 실패로 위장 방지
-    return res.status(400).send(errorPage({ code: 400, title: "청구 오류", message: known[e.message], user: req.user }));
-  }
+  res.redirect(303, `/invoices/inbox?project=${Number(req.params.id)}&notice=${encodeURIComponent("청구서는 이제 청구 대기함에서 만듭니다.")}`);
 });
-
-// 청구서 생성 전 미리보기 PDF 발행(견적서·내역서·거래명세서) — 청구서 레코드를 만들지 않고 선택 항목·금액을 그대로 문서화.
-// 계산서(세금계산서) 발행이 필요할 때 '선택 항목으로 청구 생성'을 눌러 인보이스를 만든다(발행=확정).
-// GET(폼 formmethod=get)으로 받는다 — Chrome PDF 뷰어의 '다운로드'는 같은 URL을 GET 재요청하므로, GET이어야
-// 뷰·다운로드가 모두 동작한다(POST면 재요청이 404). 선택은 URL 쿼리로, 문서 유형·번호는 경로(:type/:name)로.
-router.get("/:id/invoices/preview/:type/:name", requireBilling, asyncHandler(async (req, res) => {
-  const b = req.query;
-  let draft;
-  try {
-    draft = invoiceDraftForPdf(req.user, {
-      projectId: Number(req.params.id),
-      taskIds: toArray(b.task_id),
-      sessionIds: toArray(b.session_id),
-      clientId: (b.client_id ? Number(b.client_id) : null) || (b.payer_contact_id ? Number(b.payer_contact_id) : null),
-      title: b.title,
-      issueDate: cleanYmd(b.issued_date),
-      dueDate: cleanYmd(b.due_date),
-      discount: parseMoney(b.discount_amount),
-      discountPct: b.discount_pct, // 정률(%) — 정액 미입력 시 서버 산정(JS-off 폴백·미리보기 PDF도 동일)
-      vatIncluded: b.vat_included != null,
-      taskAmounts: extractAmountMap(b, "task_amount"),
-      sessionAmounts: extractAmountMap(b, "session_amount"),
-    });
-  } catch (e) {
-    const known = { PAYER_REQUIRED: "청구처를 선택하세요. 문서에 들어갈 공급받는자입니다.", TASK_IDS_REQUIRED: "문서로 만들 작업·세션을 선택하세요.", TASK_NOT_BILLABLE: "청구 가능한 작업·세션만 선택할 수 있습니다.", CLIENT_NOT_FOUND: "선택한 청구처를 찾을 수 없습니다." };
-    if (!known[e.message]) throw e;
-    return res.status(400).send(invoicePreviewErrorPage(req.user, { message: known[e.message], projectId: req.params.id }));
-  }
-  if (!draft) return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-  const docType = normalizeDocType(req.params.type);
-  const pdf = await renderInvoicePdf({ studio: getStudioInfo(), logo: getStudioLogo(), client: draft.client, invoice: draft.invoice, items: draft.items, docType });
-  res.setHeader("Content-Type", "application/pdf");
-  const fname = (docNumberWithType(draft.invoice.invoice_number, docType) || docType) + ".pdf"; // 다운로드 파일명 = 문서번호(ASCII)
-  res.setHeader("Content-Disposition", `inline; filename="${fname}"; filename*=UTF-8''${encodeURIComponent(fname)}`);
-  res.setHeader("Cache-Control", "private, no-store");
-  res.send(pdf);
-}));
+router.get("/:id/invoices/preview/:type/:name", requireBilling, (req, res) => {
+  res.redirect(303, `/invoices/inbox?project=${Number(req.params.id)}`);
+});
 
 module.exports = router;
 module.exports.resolveProjectParties = require("../data").resolveProjectParties; // 회귀 테스트(겸직 아티스트의 소속 파생 ≡ 표시 이름) 재사용

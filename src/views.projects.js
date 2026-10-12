@@ -630,7 +630,7 @@ function taskCreateForm(project, managers = []) {
       <div class="grid gap-2 sm:grid-cols-3">
         <div><label class="label mb-0 text-xs">작업 종류<select class="input mt-0.5 block py-1.5 text-sm" name="task_type">${taskTypeOptions(defaultTaskType())}</select></label></div>
         <div><label class="label mb-0 text-xs">담당 엔지니어<select class="input mt-0.5 block py-1.5 text-sm" name="engineer_id">${engineerSelect(managers, {})}</select></label></div>
-        <div><span class="label mb-0 text-xs">작업일 <span class="font-normal text-muted">(선택)</span></span><div class="mt-0.5">${dateCombo("work_date", "", { label: "작업일", inputCls: "input w-full py-1.5 text-sm" })}</div></div>
+        <div><span class="label mb-0 text-xs">작업일 <span class="font-normal text-muted">(선택)</span></span><div class="mt-0.5">${dateCombo("work_date", "", { label: "작업일", inputCls: "input w-full py-1.5 text-sm", placeholder: "비우면 미정" })}</div></div>
       </div>
       <div data-worker-rate><label class="label mb-0 text-xs">외주 지급단가 <span class="font-normal text-muted">(원 · 작업마다 같은 값)</span><input class="input mt-0.5 block py-1.5 text-sm" name="worker_rate" inputmode="numeric" placeholder="0" /></label></div>
       <div>
@@ -796,7 +796,7 @@ function taskEditForm(task, managers = []) {
       </div>
       <div>
         <span class="label mb-0 text-xs">작업일 <span class="font-normal text-muted">(선택)</span></span>
-        <div class="mt-0.5">${dateCombo("work_date", task.work_date || "", { label: "작업일" })}</div>
+        <div class="mt-0.5">${dateCombo("work_date", task.work_date || "", { label: "작업일", placeholder: "비우면 미정" })}</div>
       </div>
       <div>
         <label class="label mb-0 text-xs">곡명 <span class="font-normal text-muted">(비우면 프로젝트 이름)</span><input class="input mt-0.5 block py-1.5 text-sm" name="song_title" value="${esc(task.song_title || "")}" autocomplete="off" /></label>
@@ -848,266 +848,6 @@ function taskQuickAdd(project, group) {
 }
 
 
-/**
- * 청구처 추천 칩(2026-07-15 사용자 결정 — '청구처는 항상 직접 지정').
- * 기본 선택값·서버 자동 파생을 폐기하면서(제작/운영=결제자 가정이 실무와 어긋남 — 음악감독이 턴키로 받아 결제하는 경우),
- * 흔한 경우(제작사가 결제)를 1클릭으로 넣을 수 있게 이 프로젝트의 당사자를 칩으로 제시한다. 누르면 콤보에 채워질 뿐,
- * 아무것도 미리 선택되지 않는다(안 고르면 서버가 PAYER_REQUIRED로 차단).
- */
-function payerSuggestChips(project) {
-  const cand = [
-    { id: project.production_id, role: "제작/운영", name: project.production_company },
-    { id: project.agency_id, role: "소속/레이블", name: project.artist_company },
-    { id: project.artist_id, role: "아티스트", name: String(project.artist || "").split(",")[0].trim() },
-  ].filter((c) => c.id && c.name);
-  const seen = new Set();
-  const chips = cand.filter((c) => (seen.has(Number(c.id)) ? false : seen.add(Number(c.id))));
-  if (!chips.length) return "";
-  return `<div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-      <span class="text-xs text-muted">이 프로젝트의 당사자:</span>
-      ${chips
-        .map(
-          (c) => `<button type="button" class="rounded-full border border-border px-2.5 py-1 text-xs hover:border-primary hover:text-primary"
-             data-payer-suggest="${Number(c.id)}" data-payer-suggest-name="${esc(c.name)}">${esc(c.role)} ${esc(c.name)}</button>`
-        )
-        .join("")}
-    </div>`;
-}
-
-/**
- * 청구 항목 행 레이아웃 — 모바일 2단 스택(2026-07-23 사용자 리포트).
- *
- * ⚠️ 한 줄 flex에 [체크박스 · 라벨 · '청구 안 함' · 금액칸 112px]를 다 넣으면, 390px 화면에서 고정 폭들이
- * 자리를 다 먹고 **라벨에 42px만 남는다**(실측). 한글은 기본(`word-break: normal`)이 **음절 단위 줄바꿈**이라
- * 그 폭에서 글자별로 쪼개져 행 높이가 221px로 부푼다("7월/20일/·/프로미/스나인…").
- * → 컨트롤을 한 덩어리로 묶어 모바일에선 **둘째 줄 전폭**(w-full)으로 내리고, sm+에선 종전처럼 인라인.
- * 라벨엔 `break-keep`(word-break:keep-all) — 공백에서만 줄바꿈해 단어가 안 쪼개진다.
- */
-const LINE_ROW = "flex flex-wrap items-start gap-x-2 gap-y-1.5 border-b border-border py-2 last:border-0";
-const LINE_LABEL = "min-w-0 flex-1 break-keep text-sm";
-const LINE_CTRL = "flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end";
-
-function unbilledInvoiceForm(project, taskRows, sessionRows = [], opts = {}) {
-  const tasks = taskRows || [];
-  if (!tasks.length && !sessionRows.length) {
-    if (opts.hasPostprodSession) {
-      return `<div class="rounded-lg border border-border bg-bg px-3 py-4 text-sm text-muted">믹싱/마스터링 세션이 있습니다. <span class="font-medium text-fg">곡·콘텐츠 탭에서 작업을 만들어</span> 청구하세요.<span class="mt-1 block text-xs">무료로 처리할 거면 작업을 만든 뒤 '청구 안 함'을 누르세요.</span></div>`;
-    }
-    return `<div class="rounded-lg border border-border bg-bg px-3 py-4 text-center text-sm text-muted">청구할 작업·세션이 없습니다.</div>`;
-  }
-  // 세션 '완료 강제'와 규칙 통일: 완료 상태 작업만 기본 체크. 미완료(대기)는 체크 해제·흐리게(선택은 가능).
-  const isDone = (t) => t.status === "Completed";
-  // 무료 처리(waived)한 항목은 청구 후보 계산·체크에서 제외 — 이 폼에서만 되돌리기 위해 계속 노출(2026-07-06 사용자 요청).
-  const hasPending = tasks.some((t) => !t.waived && !isDone(t)) || sessionRows.some((s) => !s.waived && s.status !== "완료"); // 미완료 작업(대기) 또는 예정 세션
-  // 작업 예상 금액 = 확정 total_price(>0) 우선, 없으면 종류 기본단가(taskTypeUnitPrice). 프로젝트 목록 합산과 동일 규칙.
-  const taskAmt = (t) => (t.total_price > 0 ? t.total_price : taskTypeUnitPrice(t.task_type));
-  const subtotal =
-    tasks.filter((t) => !t.waived && isDone(t)).reduce((sum, task) => sum + taskAmt(task), 0) +
-    sessionRows.filter((s) => !s.waived && s.status === "완료").reduce((sum, s) => sum + (s.billing ? s.billing.amount : 0), 0); // 완료 세션만 기본 집계(예정은 체크 시 합산)
-  const tax = Math.round(subtotal * 0.1);
-  /**
-   * 금액칸 렌더 — 단가표가 산정한 금액을 넣어 주고 **항상 고칠 수 있다**(2026-07-29 사용자 결정).
-   * 옛 '가격 유형'(고정=잠금 / 기준가 / 최소가=상향만)은 폐지했다: 실제로는 협의 감액이 늘 생기는데
-   * 잠긴 칸은 그때마다 카탈로그를 고치러 가게 만들었고, 같은 감액을 '금액 수정'과 '청구서 할인' 두 경로로
-   * 할 수 있어 어느 쪽으로 잡았는지에 따라 기록이 갈렸다. 조정 사유 메모는 항상 받는다(청구 생성 시 근거로 스냅샷).
-   */
-  const amountCell = (name, value, label, { memoName = "", memo = "" } = {}) => {
-    const memoField = memoName
-      ? `<input class="input mt-1 w-full py-1 text-xs" type="text" name="${memoName}" value="${esc(memo || "")}" placeholder="조정 사유(선택)" aria-label="${esc(label)} 조정 사유" />`
-      : "";
-    return `<div class="w-28 shrink-0">
-              <div class="relative">
-                <input class="input py-1 pr-7 text-right text-sm tabular" type="text" inputmode="numeric" name="${name}" value="${value === "" || value == null ? "" : value}" data-line-input placeholder="0" aria-label="${esc(label)} 금액" />
-                <span class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted">원</span>
-              </div>
-              ${memoField}
-            </div>`;
-  };
-  // 무료 처리된 행 — 체크박스·금액칸 없이 배지 + 되돌리기 버튼만(2026-07-06). formaction으로 같은 폼에서 다른 라우트 제출(중첩 폼 회피).
-  const waivedRow = (label, waiveAction) => `
-    <div class="${LINE_ROW} opacity-60" data-line-row>
-      <span class="${LINE_LABEL}">${label} <span class="badge bg-bg text-muted">무료 처리됨</span></span>
-      <button type="submit" formaction="${waiveAction}" formmethod="post" data-waive-btn class="btn-ghost btn-xs shrink-0 whitespace-nowrap">되돌리기</button>
-    </div>`;
-  const taskList = tasks
-    .map((task) => {
-      const label = taskTypeLabel(task.task_type);
-      const waiveAction = `/projects/tasks/${task.id}/waive`;
-      if (task.waived) return waivedRow(`${esc(task.track_title)} · ${esc(label)}`, waiveAction);
-      const done = isDone(task);
-      const amt = taskAmt(task);
-      const statusTag = done ? "" : ` <span class="text-xs font-normal text-warning">${esc(TASK_STATUS_LABELS[task.status] || task.status)}</span>`;
-      return `
-        <div class="${LINE_ROW} ${done ? "" : "opacity-60"}" data-line-row>
-          <input class="mt-0.5 shrink-0" type="checkbox" name="task_id" value="${task.id}" data-line-amount="${amt}" ${done ? "checked" : "data-confirm-pending"} id="task-cb-${task.id}" />
-          <label for="task-cb-${task.id}" class="${LINE_LABEL} cursor-pointer font-medium">${esc(task.track_title)} · ${esc(label)}${statusTag}</label>
-          <div class="${LINE_CTRL}">
-            <button type="submit" formaction="${waiveAction}" formmethod="post" data-waive-btn class="btn-ghost btn-xs shrink-0 whitespace-nowrap text-muted">청구 안 함</button>
-            ${amountCell(`task_amount_${task.id}`, amt || "", label, { memoName: `task_billing_memo_${task.id}`, memo: task.billing_memo })}
-          </div>
-        </div>`;
-    })
-    .join("");
-  // 녹음 세션 직접 청구 후보(곡·콘텐츠/버튼 없이 자동 노출). 완료 세션은 기본 체크, 예정은 흐리게·체크 시 완료 확인(작업과 동일 규칙).
-  const sessionList = sessionRows
-    .map((s) => {
-      // 다일 종일(end_date 있음)은 "9월 1일~9월 4일"로 기간 표기(2026-08-26) — 실제 발행될 청구 항목 설명과 동일 형식.
-      const dateLabel = s.all_day && s.end_date && s.end_date !== s.session_date
-        ? `${formatYmdShort(s.session_date)}~${formatYmdShort(s.end_date)}`
-        : formatYmdShort(s.session_date);
-      const label = [dateLabel, project.artist, s.billing ? s.billing.item.name : s.session_type].filter(Boolean).join(" · "); // 청구 항목 스냅샷과 동일 형식 "7월 8일 · 아티스트 · 보컬녹음"(2026-07-08 — 접두 제거·· 구분)
-      const waiveAction = `/sessions/${s.id}/waive`;
-      if (s.waived) return waivedRow(esc(label), waiveAction);
-      // 산정 불가(소요 시간 0 이하) — 체크박스·금액칸 없이 사유만 보여주고 '청구 안 함' 탈출구는 남긴다(2026-07-23).
-      // 예전엔 이런 세션이 후보 목록에서 통째로 빠져 매출이 소리 없이 샜다(프로젝트가 조용히 '완료'로 이동).
-      // 단가 항목 미선택은 더 이상 여기 오지 않는다 — 수동 금액(billing.manual)으로 바로 청구한다(개편 1단계).
-      if (!s.billing) {
-        return `
-        <div class="${LINE_ROW} opacity-60" data-line-row>
-          <span class="${LINE_LABEL}">
-            <span class="block font-medium">${esc(label)}</span>
-            <span class="block text-xs text-warning">시작·종료 시간을 확인해야 청구할 수 있습니다 — 세션 일정 탭에서 고치세요</span>
-          </span>
-          <button type="submit" formaction="${waiveAction}" formmethod="post" data-waive-btn class="btn-ghost btn-xs shrink-0 whitespace-nowrap text-muted">청구 안 함</button>
-        </div>`;
-      }
-      const done = s.status === "완료";
-      const mins = s.billing.minutes;
-      // 다일 종일은 시간 대신 일수로 보여준다(2026-08-26) — "14시간"처럼 하루짜리 세션으로 오인되는 표기 방지.
-      const multiDayCount = s.all_day && s.end_date && s.end_date !== s.session_date && s.billing.item.base_minutes > 0
-        ? Math.round(mins / s.billing.item.base_minutes) : null;
-      const manualAllDay = s.billing.manual && s.billing.allDay;
-      const dur = manualAllDay
-        ? (s.billing.days > 1 ? `${s.billing.days}일` : "종일")
-        : multiDayCount
-        ? `${multiDayCount}일`
-        : `${Math.floor(mins / 60)}시간${mins % 60 ? " " + (mins % 60) + "분" : ""}`;
-      const time = [s.start_time, s.end_time].filter(Boolean).join("–");
-      const statusTag = done ? "" : ` <span class="text-xs font-normal text-warning">${esc(s.status)}</span>`;
-      return `
-        <div class="${LINE_ROW} ${done ? "" : "opacity-60"}" data-line-row>
-          <input class="mt-0.5 shrink-0" type="checkbox" name="session_id" value="${s.id}" data-line-amount="${s.billing.amount}" ${done ? "checked" : "data-confirm-pending"} id="session-cb-${s.id}" />
-          <label for="session-cb-${s.id}" class="${LINE_LABEL} cursor-pointer">
-            <span class="block font-medium">${esc(label)}${statusTag}</span>
-            <span class="block text-xs text-muted">${esc(dur)}${time ? " · " + esc(time) : ""}${s.billing.fixed ? ` · <span class="text-success">확정 금액</span>` : ""}</span>
-          </label>
-          <div class="${LINE_CTRL}">
-            <button type="submit" formaction="${waiveAction}" formmethod="post" data-waive-btn class="btn-ghost btn-xs shrink-0 whitespace-nowrap text-muted">청구 안 함</button>
-            ${amountCell(`session_amount_${s.id}`, s.billing.amount == null || (s.billing.manual && !s.billing.fixed) ? "" : s.billing.amount, label, { memoName: `session_billing_memo_${s.id}`, memo: s.billing_memo })}
-          </div>
-        </div>`;
-    })
-    .join("");
-  const total = subtotal + tax;
-  return `
-    <form method="post" action="/projects/${project.id}/invoices/from-tasks" class="rounded-lg border border-border bg-bg p-3" data-discount-form data-supply="${subtotal}">
-      <button type="submit" disabled hidden aria-hidden="true"></button><!-- 기본(첫) submit 버튼을 비활성 sentinel로: 필드에서 엔터=암묵 제출이 견적서 미리보기(첫 버튼)를 열던 것 차단 — 표준상 기본 버튼 disabled면 엔터 무동작 -->
-      <input type="hidden" name="confirm_zero_amount" value="0" data-confirm-zero-amount /><!-- 체크한 항목 중 0원이 있으면 app.js가 제출 전 확인(window.confirm) 후 1로 세팅 — 서버는 이 값 없으면 여전히 차단(JS 미동작 안전망) -->
-      <div class="mb-2">
-        <h3 class="text-sm font-semibold">청구 생성</h3>
-      </div>
-      <div class="mb-2">
-        <label class="label mb-0 text-xs">청구 제목<input class="input mt-1 block" name="title" value="${esc(project.title)} 청구" /></label>
-      </div>
-      <div class="mb-2">
-        <label class="label mb-1 text-xs">청구처 <span class="font-normal text-danger">*</span></label>
-        ${payerCombo({ selectedId: null, clientOptions: clientOptions(), contactOptions: contactOptions(), ...payerDocMeta() })}
-        ${payerSuggestChips(project)}
-        <div data-payer-fix class="mt-1.5 hidden rounded-lg bg-warning/10 px-3 py-2">
-          <p data-payer-warn class="text-sm text-warning"></p>
-          <div data-payer-tax-toggle class="mt-2 hidden flex gap-4">
-            <label class="flex items-center gap-1 text-sm"><input type="radio" name="inline_tax_type" value="cash" checked> 현금영수증 (개인)</label>
-            <label class="flex items-center gap-1 text-sm"><input type="radio" name="inline_tax_type" value="biz"> 세금계산서 (사업자)</label>
-          </div>
-          <div class="mt-2 flex gap-2">
-            <input type="text" data-payer-fix-input class="input flex-1 py-1.5 text-sm" autocomplete="off" />
-            <button type="button" data-payer-fix-btn class="btn-primary btn-sm shrink-0">입력</button>
-          </div>
-          <p class="mt-1 text-xs text-muted">여기에 입력하면 청구처 정보에 저장됩니다.</p>
-        </div>
-        <div data-payer-email-row class="mt-1.5 hidden">
-          <label class="label mb-0 text-xs">세금계산서 발행 이메일<input class="input mt-1 block py-1.5 text-sm" type="text" name="payer_email" inputmode="email" autocomplete="off" data-payer-email /></label>
-          <input type="hidden" name="payer_email_set" value="0" data-payer-email-set />
-          ${explain("이번 청구서에만 적용됩니다 — 청구처 정보는 바뀌지 않습니다. 비우면 이 청구서는 발행 이메일 없이 기록됩니다.")}
-        </div>
-      </div>
-      <div class="label mb-1 text-xs">청구 항목</div>
-      <div class="rounded-lg border border-border bg-surface px-3" data-invoice-items-box>${sessionList}${taskList}</div>
-      ${hasPending ? explain(`미완료 항목(대기 작업·예정 세션)은 기본 선택에서 제외됩니다. 체크하면 완료로 바꿀지 확인 후 청구·완료 처리됩니다.`) : ""}
-      <div class="mt-3 space-y-2">
-        <div>
-          <label class="label mb-1 text-xs">할인</label>
-          <div class="flex gap-2">
-            <div class="relative flex-1">
-              <input class="input py-1.5 text-sm pr-8" inputmode="numeric" name="discount_amount" placeholder="0" data-discount-amount />
-              <span class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted">원</span>
-            </div>
-            <div class="relative w-24">
-              <input class="input py-1.5 text-sm pr-6" inputmode="decimal" name="discount_pct" placeholder="0" data-discount-pct />
-              <span class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted">%</span>
-            </div>
-          </div>
-        </div>
-        <div class="rounded-lg border border-border bg-surface p-3">
-          <div class="flex items-center justify-between text-sm"><span class="text-muted">공급가</span><span class="font-medium tabular" data-amt-supply>${formatKRW(subtotal)}</span></div>
-          <div class="mt-1 flex items-center justify-between text-sm" data-amt-discount-row hidden><span class="text-muted">할인</span><span class="font-medium tabular text-danger" data-amt-discount></span></div>
-          <label class="mt-1.5 flex cursor-pointer items-center justify-between text-sm">
-            <span class="flex items-center gap-1.5"><input type="checkbox" name="vat_included" value="1" checked data-vat-toggle /> 부가세(VAT 10%) 포함</span>
-            <span class="font-medium tabular" data-amt-vat>${formatKRW(tax)}</span>
-          </label>
-          <div class="mt-1.5 flex items-center justify-between border-t border-border pt-1.5 text-base font-bold"><span>총 금액</span><span class="tabular" data-amt-total>${formatKRW(total)}</span></div>
-        </div>
-        <div class="grid gap-2 sm:grid-cols-2">
-          <div>
-            <label class="label mb-1 text-xs">발행일</label>
-            ${dateCombo("issued_date", todayYmd(), { label: "발행일", inputCls: "input w-full py-1.5 text-sm" })}
-          </div>
-        </div>
-        <div class="mb-2">
-          <div class="mb-1 text-xs text-muted">문서 발행</div>
-          ${(() => {
-            // 미리보기 PDF: 다운로드 파일명 = 문서번호(견적서=OMG-EST-…). Chrome는 inline PDF에서 URL 마지막 경로를
-            // 파일명으로 쓰고 '다운로드'는 같은 URL을 GET 재요청하므로, formmethod=get으로 폼을 GET 제출(선택은 쿼리로).
-            // 유형·번호는 경로(:type/:name)에 — GET은 formaction의 쿼리를 폼 데이터로 대체하므로 유형을 경로에 둔다.
-            const base = peekInvoiceNumber(todayYmd());
-            const act = (t) => `/projects/${project.id}/invoices/preview/${encodeURIComponent(t)}/${encodeURIComponent(docNumberWithType(base, t))}.pdf`;
-            return `<div class="grid grid-cols-3 gap-2">
-            <button class="btn-ghost btn-sm" type="submit" formmethod="get" formaction="${act("견적서")}" formtarget="_blank">견적서</button>
-            <button class="btn-ghost btn-sm" type="submit" formmethod="get" formaction="${act("내역서")}" formtarget="_blank">내역서</button>
-            <button class="btn-ghost btn-sm" type="submit" formmethod="get" formaction="${act("거래명세서")}" formtarget="_blank">거래명세서</button>
-          </div>`;
-          })()}
-        </div>
-        ${explain(`<span class="font-medium text-fg">계산서 발행</span>이 필요할 때 아래 '청구 생성'을 누르면 청구서가 만들어지고 바로 발행됩니다(발행 후 청구처 변경 불가).`, { cls: "mb-2" })}
-        <div class="flex flex-wrap items-center justify-end gap-2">
-          <button class="btn-ghost btn-sm whitespace-nowrap" type="button" data-invoice-draft-save>임시저장</button>
-          <button class="btn-primary btn-sm whitespace-nowrap" type="submit" data-invoice-submit>청구 생성 <span data-inv-doc>(계산서 발행)</span></button>
-        </div>
-      </div>
-    </form>`;
-}
-
-/**
- * 견적서/내역서/거래명세서 미리보기 라우트 전용 오류 화면(2026-08-13) — 항목 미선택은 클라이언트에서
- * 이미 막지만(app.js), 동시편집 경합(TASK_NOT_BILLABLE·CLIENT_NOT_FOUND 등)은 새 탭이 그대로 열려
- * 여기 도달한다. 공용 errorPage()는 큰 코드 숫자 + "홈으로"뿐이라 팝업 탭에서 404처럼 보였다 — 이 화면은
- * 그 대신 원인 메시지 + [이 창 닫기]/[청구 탭으로 이동]을 보여준다. 프로젝트 자체가 없는 404는 여전히
- * 공용 errorPage()를 쓴다(진짜 "이 문서가 없다"는 상황이라 기존 화면이 맞다).
- */
-function invoicePreviewErrorPage(user, { message, projectId }) {
-  const body = `
-    <div class="mx-auto max-w-md py-16 text-center">
-      <svg class="mx-auto h-10 w-10 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>
-      <h1 class="mt-4 text-base font-medium">${esc(message)}</h1>
-      <p class="mt-1 text-sm text-muted">이 창을 닫고 원래 화면에서 다시 시도하세요.</p>
-      <div class="mt-6 flex justify-center gap-2">
-        <button type="button" class="btn-primary" data-close-tab>이 창 닫기</button>
-        <a href="/projects/${esc(projectId)}?tab=invoice" class="btn-ghost">청구 탭으로 이동</a>
-      </div>
-    </div>`;
-  return layout({ title: "문서를 만들 수 없습니다", user, body });
-}
-
 module.exports = { artistCombo,
   newProjectMenu,
   projectListRow,
@@ -1122,9 +862,7 @@ module.exports = { artistCombo,
   projectMetaCard,
   projectMetaReadonly,
   tracksSection,
-  unbilledInvoiceForm,
   sessionInvoicedModal,
-  invoicePreviewErrorPage,
   projectInfoFields,
   projectInfoSummary,
   engineerSelect,

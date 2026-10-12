@@ -14,7 +14,7 @@ init();
 const { createCompany } = require("../src/data");
 const { personCombo, companyCombo, searchBox, listGroup } = require("../src/views");
 const { sessionBookingFields } = require("../src/views.sessions");
-const { unbilledInvoiceForm, invoicePreviewErrorPage } = require("../src/views.projects");
+const { invoicePreviewErrorPage } = require("../src/views.billing");
 
 /**
  * UI 상호작용 테스트(jsdom) — 실제 views 렌더 + 실제 app.js 실행.
@@ -124,30 +124,6 @@ const RATE_ROWS = [
 for (const [name, cat] of RATE_ROWS) {
   db().prepare("INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active) VALUES (?, ?, 210, 300000, 60, 100000, 1)").run(name, cat);
 }
-test("세션 폼: 종류(녹음↔촬영 대관↔공연↔믹싱)에 따라 단가 옵션 스왑·노출 토글", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({}, [], rateItems, [], "")}</form>`;
-  const { win, doc } = mountDom(html);
-  const typeSel = doc.querySelector('select[name="session_type"]');
-  const rateSel = doc.querySelector("[data-rate-select]");
-  const recBlock = doc.querySelector('[data-show-when="rec"]');
-  const optionNames = () => [...rateSel.querySelectorAll("option")].map((o) => o.textContent);
-  // 초기(녹음): 녹음 단가만
-  assert.ok(optionNames().some((t) => t.includes("보컬 녹음 UI")));
-  assert.ok(!optionNames().some((t) => t.includes("뮤직비디오")));
-  // 촬영으로 전환 → 촬영 단가만
-  typeSel.value = "촬영 대관"; fire(win, typeSel, "change");
-  assert.ok(optionNames().some((t) => t.includes("뮤직비디오 촬영 UI")), "촬영 옵션으로 교체");
-  assert.ok(!optionNames().some((t) => t.includes("보컬 녹음 UI")), "녹음 옵션 제거");
-  assert.equal(recBlock.hidden, false, "대관 종류라 단가 블록 노출");
-  // 공연 → 공연 단가
-  typeSel.value = "공연"; fire(win, typeSel, "change");
-  assert.ok(optionNames().some((t) => t.includes("플레이백 세션 UI")), "공연 옵션으로 교체");
-  // 믹싱(비대관) → 단가 블록 숨김
-  typeSel.value = "믹싱"; fire(win, typeSel, "change");
-  assert.equal(recBlock.hidden, true, "비대관 종류는 단가 블록 숨김");
-});
-
 // ── ③b 구글식 시간 입력(2026-07-04 그리드 폐지): 시작/종료 타이핑 ↔ 슬라이더 양방향 + 종일 ──
 test("세션 폼(구글식): 시간 콤보(전체선택·30분 목록)·양방향 역산·종료날짜 편집·종일(하루 종일·복원)", () => {
   const rateItems = db().prepare("SELECT * FROM rate_items").all();
@@ -314,24 +290,6 @@ test("세션 폼: 날짜·시간 콤보 팝오버 버튼은 tabindex=-1(Tab이 �
 });
 
 // ── ③b2 단가 항목 선택은 소요시간을 바꾸지 않는다(시간 흐름 우선 — 2026-07-05 사용자 요청) ──
-test("세션 폼: 단가 항목을 골라도 사용자가 잡은 소요시간이 유지됨", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({}, [], rateItems, [], "")}</form>`;
-  const { win, doc } = mountDom(html);
-  const start = doc.querySelector("[data-start-input]");
-  const end = doc.querySelector("[data-end-input]");
-  const rateSel = doc.querySelector("[data-rate-select]");
-  // 사용자가 시간 먼저 잡음: 14:00~16:00(2시간)
-  start.value = "1400"; fire(win, start, "input");
-  end.value = "1600"; fire(win, end, "input");
-  assert.equal(doc.querySelector("[data-custom-hours]").value, "2", "사용자 소요 2시간");
-  // 단가 항목(1Pro=210분=3.5h) 선택 → 소요는 그대로 2시간, 종료도 16:00 유지
-  const opt = [...rateSel.querySelectorAll("option")].find((o) => o.value && o.textContent.includes("보컬 녹음 UI"));
-  rateSel.value = opt.value; fire(win, rateSel, "change");
-  assert.equal(doc.querySelector("[data-custom-hours]").value, "2", "단가 항목 선택해도 소요 불변");
-  assert.equal(end.value, "16:00", "종료 시간도 그대로");
-});
-
 // ── ③f 장소=외부 선택 시 주소 입력 노출(2026-07-05) ──
 test("세션 폼: 장소가 외부(is_external)면 주소 입력 노출, 스튜디오 룸이면 숨김", () => {
   const rooms = [{ id: 1, name: "A룸", is_external: 0 }, { id: 2, name: "외부일정", is_external: 1 }];
@@ -1403,35 +1361,6 @@ test("data-confirm: 이미 preventDefault된 제출엔 확인창 미표시", () 
 });
 
 // ── 청구 생성 폼: 금액칸 Tab = 다음 금액칸으로(행 DOM 순서상 기본 Tab은 다음 행 체크박스로 가던 것) ──
-test("청구 금액칸: Tab/Shift+Tab이 금액칸끼리 이동, 처음/마지막은 기본 동작·IME 무시", () => {
-  const row = (n, amt) =>
-    `<div data-line-row><input type="checkbox" name="task_id" value="${n}" data-line-amount="${amt}" checked /><button type="submit" data-waive-btn>청구 안 함</button><input type="text" name="task_amount_${n}" value="${amt}" data-line-input id="amt${n}" /></div>`;
-  const html = `<form data-discount-form data-supply="0" action="/projects/1/invoices/from-tasks">
-    ${row(1, 100)}${row(2, 200)}${row(3, 300)}
-    <input name="discount_amount" value="0" data-discount-amount /><input name="discount_pct" data-discount-pct />
-    <span data-amt-supply></span><span data-amt-discount-row hidden><span data-amt-discount></span></span><span data-amt-vat></span><span data-amt-total></span>
-    <input type="checkbox" data-vat-toggle checked /></form>`;
-  const { win, doc } = mountDom(html);
-  const [a1, a2, a3] = [1, 2, 3].map((n) => doc.getElementById("amt" + n));
-
-  a1.focus();
-  let e = fire(win, a1, "keydown", { key: "Tab" });
-  assert.equal(doc.activeElement, a2, "Tab: amt1 → amt2");
-  assert.equal(e.defaultPrevented, true, "Tab: 기본 동작(다음 체크박스) 차단");
-
-  a3.focus();
-  e = fire(win, a3, "keydown", { key: "Tab" });
-  assert.equal(e.defaultPrevented, false, "마지막 금액칸은 기본 Tab(할인으로) 유지");
-
-  a2.focus();
-  fire(win, a2, "keydown", { key: "Tab", shiftKey: true });
-  assert.equal(doc.activeElement, a1, "Shift+Tab: amt2 → amt1");
-
-  a1.focus();
-  fire(win, a1, "keydown", { key: "Tab", isComposing: true });
-  assert.equal(doc.activeElement, a1, "IME 조합 중 Tab 무시(함정 #18)");
-});
-
 // ── 전화 입력 자동 서식(휴대전화 양식): name="phone"·studio_tel·모달(data-pc/am-phone) 라이브 하이픈 ──
 test("전화칸: 숫자 입력 시 휴대전화 양식 하이픈 자동(name=phone·studio_tel·모달), 비-전화 필드는 무변경", () => {
   const { win, doc } = mountDom(`<form>
@@ -1451,61 +1380,7 @@ test("전화칸: 숫자 입력 시 휴대전화 양식 하이픈 자동(name=pho
 });
 
 // ── 청구 생성 폼 임시저장(초안): '임시저장' 버튼을 눌러야 저장(자동저장 폐지). 금액·항목체크·발행일은 초안 제외. ──
-test("청구 초안: '임시저장' 버튼 클릭 시에만 저장(자동저장 아님), 금액·발행일 제외, 발행 시 삭제", () => {
-  const project = { id: 7, title: "테스트 프로젝트" };
-  const tasks = [{ id: 1, task_type: "vocal_tune", track_title: "곡A", status: "Completed", total_price: 100000, waived: 0 }];
-  const formHtml = unbilledInvoiceForm(project, tasks, []);
-
-  const { win, doc } = mountDom(formHtml);
-  const disc = doc.querySelector("[data-discount-amount]");
-  disc.value = "10000"; fire(win, disc, "input");
-  assert.equal(win.localStorage.getItem("invdraft:7"), null, "값만 바꾸고 버튼 안 누르면 저장 안 됨(자동저장 폐지)");
-
-  const saveBtn = doc.querySelector("[data-invoice-draft-save]");
-  assert.ok(saveBtn && saveBtn.type === "button", "'임시저장' 버튼 존재(type=button — 폼 제출 아님)");
-  saveBtn.click();
-  let draft = JSON.parse(win.localStorage.getItem("invdraft:7") || "null");
-  assert.ok(draft && String(draft.da).replace(/\D/g, "") === "10000", "버튼 클릭 → 초안 저장(할인 반영)");
-  assert.equal(Object.keys(draft).sort().join(","), "da,dp,p,pe,pes,t,vat", "초안 키 = 금액·발행일 없는 폼 필드만(p·da·dp·vat·t·pe·pes)");
-  assert.ok(!("d" in draft), "발행일(d)은 초안에 저장하지 않음");
-  assert.match(saveBtn.textContent, /임시저장됨/, "저장 후 피드백 라벨");
-
-  const amt = doc.querySelector('[name="task_amount_1"]');
-  amt.value = "55555"; fire(win, amt, "input");
-  saveBtn.click();
-  draft = JSON.parse(win.localStorage.getItem("invdraft:7") || "null");
-  assert.ok(!JSON.stringify(draft).includes("55555"), "금액칸은 초안에 안 들어감(금액=DB 진실원천)");
-
-  doc.querySelector("[data-picker-combo]").__pkSet({ cid: "999", label: "테스트 청구처" }); // 청구처 세팅(미선택 제출 차단 방지)
-  const ev = new win.Event("submit", { bubbles: true, cancelable: true });
-  Object.defineProperty(ev, "submitter", { value: doc.querySelector("[data-invoice-submit]") });
-  doc.querySelector("[data-discount-form]").dispatchEvent(ev);
-  assert.equal(win.localStorage.getItem("invdraft:7"), null, "청구 생성(발행) 제출 시 초안 삭제");
-
-  // 복원(로드 시) — localStorage 시드 후 app.js 실행. 발행일은 초안에 없으므로 복원 대상 아님(항상 서버 기본=오늘).
-  const seed = { p: { cid: "42", pid: "", label: "복원청구처" }, da: "20000", dp: "", vat: false, t: "복원 제목" };
-  const r = mountDom(formHtml, { storage: { "invdraft:7": JSON.stringify(seed) } });
-  assert.equal(String(r.doc.querySelector("[data-discount-amount]").value).replace(/\D/g, ""), "20000", "복원: 할인");
-  assert.equal(r.doc.querySelector("[data-pk-cid]").value, "42", "복원: 청구처 cid");
-  assert.equal(r.doc.querySelector('input[name="title"]').value, "복원 제목", "복원: 제목");
-  assert.equal(r.doc.querySelector("[data-vat-toggle]").checked, false, "복원: VAT 해제 상태");
-});
-
 // 발행일은 초안에 저장/복원되지 않는다 — 옛 초안이 과거 일자로 발행시키던 위험 원천 제거(발행일=항상 오늘).
-test("청구 초안: 발행일은 초안에 저장/복원 안 됨(레거시 초안의 옛 발행일 무시)", () => {
-  const project = { id: 7, title: "테스트 프로젝트" };
-  const tasks = [{ id: 1, task_type: "vocal_tune", track_title: "곡A", status: "Completed", total_price: 100000, waived: 0 }];
-  const formHtml = unbilledInvoiceForm(project, tasks, []);
-  // 레거시(옛 자동저장) 초안에 d가 들어 있어도 복원하지 않는다.
-  const seed = { p: { cid: "42", pid: "", label: "x" }, da: "", dp: "", vat: true, t: "", d: "2000-01-01" };
-  const r = mountDom(formHtml, { storage: { "invdraft:7": JSON.stringify(seed) } });
-  assert.notEqual(r.doc.querySelector('[name="issued_date"]').value, "2000-01-01", "초안의 옛 발행일은 무시(서버 기본=오늘 유지)");
-  // 새 저장에도 발행일은 안 담긴다.
-  r.doc.querySelector("[data-invoice-draft-save]").click();
-  const draft = JSON.parse(r.win.localStorage.getItem("invdraft:7") || "null");
-  assert.ok(draft && !("d" in draft), "새 임시저장에도 발행일 미포함");
-});
-
 // ── 발행 이메일(청구서 건별, 2026-07-27): 청구처 선택 → 프리필+마커, 옵션 밖 당사자 → 빈칸+마커0(직접 입력 시 1), 선택 해제 → 숨김 ──
 test("발행 이메일 필드: 선택 시 프리필·payer_email_set=1, 옵션 밖 당사자는 빈칸·마커0(입력하면 1), 미선택은 숨김", () => {
   const opts = [
@@ -1555,16 +1430,6 @@ test("발행 이메일 필드: 선택 시 프리필·payer_email_set=1, 옵션 �
 });
 
 // 초안(임시저장)에 발행 이메일 포함 — __pkSet 프리필 뒤에 복원돼 입력값이 덮이지 않는다.
-test("청구 초안: 발행 이메일(pe·pes) 저장·복원 — 복원이 프리필을 이긴다", () => {
-  const project = { id: 7, title: "테스트 프로젝트" };
-  const tasks = [{ id: 1, task_type: "vocal_tune", track_title: "곡A", status: "Completed", total_price: 100000, waived: 0 }];
-  const formHtml = unbilledInvoiceForm(project, tasks, []);
-  const seed = { p: { cid: "42", pid: "", label: "복원청구처" }, da: "", dp: "", vat: true, t: "", pe: "draft@x.com", pes: "1" };
-  const r = mountDom(formHtml, { storage: { "invdraft:7": JSON.stringify(seed) } });
-  assert.equal(r.doc.querySelector("[data-payer-email]").value, "draft@x.com", "복원: 초안 이메일이 프리필을 덮음");
-  assert.equal(r.doc.querySelector("[data-payer-email-set]").value, "1", "복원: 마커도 초안대로");
-});
-
 // ── 금액칸 포커스 시 전체선택(타이핑=새 금액). 단 이미 포커스된 칸 클릭(특정 숫자)·드래그 범위는 존중 ──
 test("금액칸: 포커스 전체선택 — Tab·클릭포커스는 전체선택, 이미 포커스+클릭·드래그는 캐럿/범위 유지", () => {
   const { win, doc } = mountDom(`<form><input name="amount" id="a" value="100000" /></form>`);
@@ -1777,12 +1642,6 @@ test("장비 목록 실시간 필터: 종류로 검색해도 해당 행이 남�
 });
 
 // ── 청구 할인 정액칸: 미리 채운 '0' 없이 placeholder만(빈칸=0, 타이핑 시 바로 입력) ──
-test("청구 할인 정액칸: value='0' 없이 placeholder만", () => {
-  const html = unbilledInvoiceForm({ id: 7, title: "테스트" }, [{ id: 1, task_type: "vocal_tune", track_title: "곡A", status: "Completed", total_price: 100000, waived: 0 }], []);
-  assert.match(html, /name="discount_amount" placeholder="0"/, "할인 정액=placeholder만");
-  assert.doesNotMatch(html, /name="discount_amount" value="0"/, "미리 채운 value='0' 없음");
-});
-
 // ── 연락처 목록 키보드 이동(2026-07-17 사용자 요청 '연락처 선택 후 위아래 키로 옮겨 다니게') ──
 // 서버 렌더 목록 위에서 실제 app.js를 돌려 ↑↓ 동작을 잠근다(정적 계약이 못 보는 동작 계층).
 const { contactNameList } = require("../src/views.contacts");
@@ -2098,110 +1957,7 @@ test("제안 칩 클릭: 대상 입력칸에 값을 채우고 change를 발화�
   assert.ok(changeFired, "change 이벤트가 발화되어야 dirty-form 감시가 반응한다(함정 #23)");
 });
 
-// ── 촬영 3구간(2026-07-26) — 종류에 따라 구간 입력 ↔ 시작·종료+소요를 갈아 끼운다 ──
-// 구간이 보이는 동안 겹침 경고는 **구간 span**을 봐야 한다. 숨겨진 시작·소요 칸의 옛 값을 보면
-// 경고와 서버 차단이 어긋나고(경고≡차단 불변식 위반) 거짓 경고에 길들여진 승인이 진짜 이중 예약을 통과시킨다.
-
-/** 세션 폼(촬영 구간 포함) 마운트 — 단가 항목에 촬영 분류가 있어야 종류 스왑이 의미 있다. */
-function mountFilmingForm(busy) {
-  const rooms = [{ id: 1, name: "Studio A", is_external: 0 }];
-  const rateItems = [
-    { id: 1, name: "솔로 녹음", category: "스튜디오 녹음", base_minutes: 210, base_price: 300000, extra_minutes: 60, extra_price: 100000 },
-    { id: 2, name: "촬영 패키지", category: "스튜디오 촬영", base_minutes: 600, base_price: 1000000, extra_minutes: 60, extra_price: 100000 },
-  ];
-  const html = `<form data-session-form>${sessionBookingFields({ session_date: "2026-03-05", session_type: "녹음" }, [], rateItems, rooms, "")}<input type="hidden" data-override-conflict name="override_conflict" /></form>`;
-  return mountDom(html, {
-    fetchImpl: (url) =>
-      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(String(url).indexOf("/sessions/availability") >= 0 ? { date: "2026-03-05", busy } : {}) }),
-  });
-}
-
-/** 세션 종류 변경(app.js가 종류별 노출을 다시 계산한다). */
-function setType(win, doc, type) {
-  const sel = doc.querySelector('select[name="session_type"]');
-  sel.value = type;
-  fire(win, sel, "change");
-}
-
-/** 구간 시각 타이핑(보이는 입력 → app.js가 hidden 동기). */
-function setSeg(win, doc, kind, which, hhmm) {
-  const el = doc.querySelector(`[aria-label^="${kind}"][aria-label$="${which}"]`);
-  el.value = hhmm;
-  fire(win, el, "input");
-}
-
-test("세션 폼: 촬영 대관을 고르면 구간 입력이 나오고 시작·종료+소요는 숨는다", async () => {
-  const { win, doc } = mountFilmingForm([]);
-  await tick();
-  const seg = doc.querySelector("[data-segments]");
-  const durWrap = doc.querySelector("[data-duration-wrap]");
-  // 시작–종료 줄은 `class="flex …"`라 hidden 속성만으로는 안 숨는다(함정 #26) → display까지 본다.
-  // jsdom은 CSS를 적용하지 않아 el.hidden만 단언하면 실브라우저에서 안 숨는 것을 통과시킨다(실제로 그랬다).
-  const timeRow = doc.querySelector("[data-start-input]").closest("[data-hide-when-type]");
-  assert.ok(/\bflex\b/.test(timeRow.className), "시작–종료 줄은 display 유틸(flex) 보유 — 이 테스트의 전제");
-  assert.equal(seg.hidden, true, "녹음일 때는 구간 없음");
-  assert.equal(durWrap.hidden, false);
-  assert.equal(timeRow.style.display, "", "녹음이면 시작–종료 줄 표시");
-  setType(win, doc, "촬영 대관");
-  assert.equal(seg.hidden, false, "촬영이면 구간 입력");
-  assert.equal(durWrap.hidden, true, "같은 시간을 두 번 입력하게 두지 않는다");
-  assert.equal(timeRow.hidden, true, "시작–종료 줄도 숨김(속성 — segSpanMin 등이 읽는다)");
-  assert.equal(timeRow.style.display, "none", "속성만으로는 flex에 밀린다 — display도 함께");
-  setType(win, doc, "녹음");
-  assert.equal(seg.hidden, true, "되돌리면 다시 숨는다");
-  assert.equal(durWrap.hidden, false);
-  assert.equal(timeRow.hidden, false, "되돌리면 시작–종료 줄 복원");
-  assert.equal(timeRow.style.display, "", "인라인 display도 걷어낸다(안 그러면 영영 안 보인다)");
-});
-
-test("세션 폼: 구간 시각은 제출용 hidden에 동기된다(보이는 입력은 nameless)", async () => {
-  const { win, doc } = mountFilmingForm([]);
-  await tick();
-  setType(win, doc, "촬영 대관");
-  setSeg(win, doc, "반입·설치", "시작", "1000");
-  const hidden = doc.querySelector('input[name="seg_setup_start"]');
-  assert.equal(hidden.value, "10:00", "콜론 자동 포맷 + hidden 동기(안 되면 구간이 저장되지 않는다)");
-});
-
-test("세션 폼 겹침 경고: 촬영 구간은 span(반입 시작~철수 종료)으로 판정한다", async () => {
-  const { win, doc } = mountFilmingForm([{ start: 780, end: 840, label: "Studio A 13:00–14:00 · 다른 세션" }]);
-  await tick();
-  const warn = doc.querySelector("[data-conflict-warn]");
-  setType(win, doc, "촬영 대관");
-  setSeg(win, doc, "반입·설치", "시작", "10:00");
-  setSeg(win, doc, "반입·설치", "종료", "12:00");
-  setSeg(win, doc, "촬영", "시작", "14:00"); // 12–14시는 공백이지만 점유는 이어진다
-  setSeg(win, doc, "촬영", "종료", "19:00");
-  assert.equal(warn.hidden, false, "13:00–14:00은 구간 사이 공백이지만 점유 span(10–19시)에 든다");
-  assert.match(warn.textContent, /다른 세션/);
-});
-
-test("세션 폼 겹침 경고: 구간 span이 점유와 안 겹치면 경고 없음", async () => {
-  const { win, doc } = mountFilmingForm([{ start: 1260, end: 1380, label: "Studio A 21:00–23:00 · 야간" }]);
-  await tick();
-  const warn = doc.querySelector("[data-conflict-warn]");
-  setType(win, doc, "촬영 대관");
-  setSeg(win, doc, "반입·설치", "시작", "10:00");
-  setSeg(win, doc, "반입·설치", "종료", "12:00");
-  setSeg(win, doc, "촬영", "시작", "12:00");
-  setSeg(win, doc, "촬영", "종료", "19:00");
-  setSeg(win, doc, "철수", "시작", "19:00");
-  setSeg(win, doc, "철수", "종료", "20:00");
-  assert.equal(warn.hidden, true, "10:00–20:00은 21:00–23:00과 안 겹친다");
-});
-
-test("세션 폼: 할증 입력은 없다(할증 개념 폐기 — 가산은 단가 항목으로 표현, 2026-07-27)", async () => {
-  // 같은 요금을 '할증'과 '단가 항목' 두 경로로 넣을 수 있으면 어느 쪽으로 잡았는지에 따라 금액이 갈린다.
-  // 미장센처럼 가산이 필요한 건 '촬영 (미장센 및 다수 카메라)'처럼 단가 항목 자체로 표현한다.
-  const { win, doc } = mountFilmingForm([]);
-  await tick();
-  assert.equal(doc.querySelector("[data-surcharge-check]"), null, "할증 체크박스 없음");
-  assert.equal(doc.querySelector('input[name="surcharge_key"]'), null, "할증 제출 필드 없음");
-  assert.equal(doc.querySelector('input[name="surcharge_memo"]'), null, "할증 사유 필드 없음");
-  setType(win, doc, "촬영 대관");
-  assert.equal(doc.querySelector("[data-surcharge-check]"), null, "촬영에서도 없음");
-  assert.equal(doc.querySelector("[data-segments]").hidden, false, "촬영 구간은 그대로 동작");
-});
+// (촬영 3구간 테스트 헬퍼는 개편 3단계에서 구간 입력과 함께 제거)
 
 // ── 소속 칩 콤보(2026-07-31): 겸직을 폼에서 직접 관리 ──
 // 서버·데이터 테스트가 못 보는 층 — 칩이 실제로 담기고 지워지는지, 제출 쌍이 맞는지,
@@ -2303,56 +2059,16 @@ test("다른 폼은 이 가드에 걸리지 않는다(마커 없음)", () => {
 });
 
 // ── 청구 항목 미선택 제출 차단(2026-08-13 사용자 리포트: 견적서 버튼이 빈 새 탭에 404 같은 오류를 띄움) ──
-test("청구 생성 폼: 항목을 하나도 체크 안 하면 제출이 막히고 항목 박스가 하이라이트된다", async () => {
-  const project = { id: 7, title: "테스트 프로젝트" };
-  // status가 'Completed'가 아니면 체크박스가 기본 미체크로 렌더된다(대기 작업 흐리게 규칙).
-  const tasks = [{ id: 1, task_type: "vocal_tune", track_title: "곡A", status: "Pending", total_price: 0, waived: 0 }];
-  const html = unbilledInvoiceForm(project, tasks, []);
-  const { win, doc } = mountDom(html);
-  doc.querySelector("[data-picker-combo]").__pkSet({ cid: "999", label: "테스트 청구처" }); // 청구처는 채워 둠(항목 검사만 단독으로 확인)
-
-  const itemsBox = doc.querySelector("[data-invoice-items-box]");
-  assert.ok(itemsBox, "항목 박스 마커 존재");
-  assert.equal(doc.querySelectorAll('input[type="checkbox"][data-line-amount]:checked').length, 0, "대기 작업은 기본 미체크");
-
-  const form = doc.querySelector("[data-discount-form]");
-  const ev = new win.Event("submit", { bubbles: true, cancelable: true });
-  Object.defineProperty(ev, "submitter", { value: doc.querySelector("[data-invoice-submit]") });
-  form.dispatchEvent(ev);
-
-  assert.equal(ev.defaultPrevented, true, "항목 미선택이면 제출이 막힌다");
-  assert.match(itemsBox.style.boxShadow, /rgb\(var\(--color-danger\)\)/, "항목 박스가 하이라이트된다");
-  await tick(1700);
-  assert.equal(itemsBox.style.boxShadow, "", "하이라이트는 시간이 지나면 사라진다");
-});
-
-test("청구 생성 폼: 항목을 하나 체크하면 제출이 막히지 않는다(회귀 방지)", () => {
-  const project = { id: 7, title: "테스트 프로젝트" };
-  const tasks = [{ id: 1, task_type: "vocal_tune", track_title: "곡A", status: "Completed", total_price: 100000, waived: 0 }];
-  const html = unbilledInvoiceForm(project, tasks, []);
-  const { win, doc } = mountDom(html);
-  doc.querySelector("[data-picker-combo]").__pkSet({ cid: "999", label: "테스트 청구처" });
-
-  assert.equal(doc.querySelectorAll('input[type="checkbox"][data-line-amount]:checked').length, 1, "완료 작업은 기본 체크");
-  const form = doc.querySelector("[data-discount-form]");
-  const ev = new win.Event("submit", { bubbles: true, cancelable: true });
-  Object.defineProperty(ev, "submitter", { value: doc.querySelector("[data-invoice-submit]") });
-  form.dispatchEvent(ev);
-  assert.equal(ev.defaultPrevented, false, "항목이 있으면 이 가드는 막지 않는다");
-});
-
 // ── 견적서 미리보기 오류 화면: 큰 "400" 숫자 없이, 닫기/돌아가기 버튼(2026-08-13) ──
-test("invoicePreviewErrorPage: 코드 숫자 없이 메시지 + 닫기/청구 탭 이동 버튼을 렌더한다", () => {
-  const html = invoicePreviewErrorPage({ id: 1, email: "a@t.t", role: "chief" }, { message: "선택한 청구처를 찾을 수 없습니다.", projectId: 42 });
+test("invoicePreviewErrorPage(개편 3단계 — 청구서 작성 미리보기): 코드 숫자 없이 메시지 + 닫기/대기함 버튼", () => {
+  const html = invoicePreviewErrorPage({ id: 1, email: "a@t.t", role: "chief" }, "선택한 청구처를 찾을 수 없습니다.");
   assert.match(html, /선택한 청구처를 찾을 수 없습니다\./, "메시지 포함");
   assert.doesNotMatch(html, />400</, "큰 400 숫자 마크업 없음");
   assert.match(html, /data-close-tab/, "닫기 버튼 마커 포함");
-  assert.match(html, /\/projects\/42\?tab=invoice/, "청구 탭 링크에 projectId 반영");
+  assert.match(html, /href="\/invoices\/inbox"/, "청구 대기함 링크");
 });
-
-// ── "이 창 닫기" 버튼 클릭 시 window.close() 호출(2026-08-13) ──
 test("data-close-tab 버튼 클릭 시 window.close()가 호출된다", () => {
-  const html = invoicePreviewErrorPage({ id: 1, email: "a@t.t", role: "chief" }, { message: "테스트", projectId: 1 });
+  const html = invoicePreviewErrorPage({ id: 1, email: "a@t.t", role: "chief" }, "테스트");
   const { win, doc } = mountDom(html);
   let closed = false;
   win.close = function () { closed = true; };

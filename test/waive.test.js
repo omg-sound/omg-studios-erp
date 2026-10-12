@@ -68,10 +68,10 @@ test("setSessionWaived: 토글 + 미청구 집계에서 제외, 청구된 세션
   const rateId = Number(rate.lastInsertRowid);
   const s = db()
     .prepare(
-      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)
-       VALUES (?, '녹음', '2026-07-06', '10:00', '13:30', '완료', ?)`
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id, billing_amount)
+       VALUES (?, '녹음', '2026-07-06', '10:00', '13:30', '완료', ?, 300000)`
     )
-    .run(projectId, rateId);
+    .run(projectId, rateId); // 금액 = 확정액(개편 3단계 — 단가표 산정 없음)
   const sessionId = Number(s.lastInsertRowid);
 
   let rows = listProjects(CHIEF, {});

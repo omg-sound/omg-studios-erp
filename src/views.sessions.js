@@ -198,16 +198,9 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
       <template data-engineer-template>${engineerRow(managers, null)}</template>
       <button type="button" class="btn-ghost btn-xs mt-1.5" data-engineer-add>+ 담당 엔지니어 추가하기</button>
     </div>`;
-  // 세션 종류는 항상 선택 가능. 단가 항목은 대관 세션(녹음·대관·공연)일 때만 노출(app.js data-show-when="rec").
-  // 단가 항목은 세션 종류 kind에 맞는 항목만 보인다 — 서버는 현재 kind로 렌더 + kind별 <template> 임베드, app.js가 종류 변경 시 옵션 교체.
-  const rateKinds = [...new Set(Object.values(SESSION_TYPE_RATE_KIND))]; // recording·filming·performance …(config가 단일 진실원천)
-  const itemsByKind = Object.fromEntries(rateKinds.map((k) => [k, rateItems.filter((r) => rateCategoryKind(r.category) === k)]));
-  const curKind = SESSION_TYPE_RATE_KIND[s.session_type] || "recording";
-  const curItems = itemsByKind[curKind] || [];
-  const rateKindsAttr = Object.entries(SESSION_TYPE_RATE_KIND).map(([k, v]) => `${k}:${v}`).join(","); // "녹음:recording,촬영:filming,공연:performance"
   // 본문 줄 = 세션 종류 + 장소(개편 1단계). 둘 다 기본값이 있지만 캘린더 표시·룸 겹침 판정에 직결돼 접지 않는다.
   const typeRateRow = `<div class="grid gap-2 sm:grid-cols-2">
-         <div><label class="label-sm mb-0">세션 종류<select class="input mt-1 block py-1.5 text-sm" name="session_type" data-rec-types="${esc(RENTAL_SESSION_TYPES.join(","))}" data-rate-kinds="${esc(rateKindsAttr)}">${orderedSessionTypes().map((t) => `<option value="${esc(t)}" ${t === s.session_type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label></div>
+         <div><label class="label-sm mb-0">세션 종류<select class="input mt-1 block py-1.5 text-sm" name="session_type" data-rec-types="${esc(RENTAL_SESSION_TYPES.join(","))}">${orderedSessionTypes().map((t) => `<option value="${esc(t)}" ${t === s.session_type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label></div>
          <div><label class="label-sm mb-0">장소${roomSelect(roomList, s.room_id)}</label></div>
        </div>
        <div class="mt-2" data-external-loc ${s.room_id && roomList.some((r) => Number(r.id) === Number(s.room_id) && r.is_external) ? "" : "hidden"}>
@@ -222,8 +215,8 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
          </div>
        </div>`;
   // 단가 항목은 접힌 상세로(개편 1단계 — 없어도 수동 금액으로 청구된다). 단가표 자체는 3단계에서 제거.
-  const rateField = `<div data-show-when="rec"><label class="label-sm mb-0">단가 항목 <span class="font-normal text-muted">(선택)</span><select class="input mt-1 block py-1.5 text-sm" name="rate_item_id" data-rate-select>${rateOptionsHtml(curItems, s.rate_item_id)}</select></label>
-          ${rateKinds.map((k) => `<template data-rate-opts-${k}>${rateOptionsHtml(itemsByKind[k], s.rate_item_id)}</template>`).join("")}</div>`;
+  // 단가 항목 칸은 개편 3단계에서 삭제(단가표 제거 — 금액은 청구서에서 직접). 기존 rate_item_id는 읽지 않는다.
+  const rateField = "";
   // 담당 디렉터 — 콤마로 여러 명(2026-07-05, 아티스트 콤보와 동일 UX·옛 행 복제(+추가/✕) 폐지):
   // personCombo(multi) 하나 — 마지막 콤마 뒤 조각으로 검색, 선택·간이등록은 이어붙임, 제출=director_name 콤마 텍스트(라벨 포함).
   // 서버 resolveDirectorIds가 콤마 split 후 이름별 해석(resolvePersonByName 라벨 안전망 — '박수한 대표님 (워터멜론)'도 그 사람으로).
@@ -254,29 +247,8 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
   // 노출 조건은 **단가 kind로 파생**한다(화면에 '촬영'을 하드코딩하지 않음 — config가 종류↔kind의 진실원천).
   // 구간이 보이면 위의 [시작]–[종료]·소요 슬라이더는 숨는다(점유 시간은 구간 span에서 서버가 파생 —
   // 같은 시간을 두 번 입력하게 두면 어느 쪽이 진짜인지 알 수 없다).
-  const filmingTypes = SESSION_TYPES.filter((t) => SESSION_TYPE_RATE_KIND[t] === "filming");
-  const segmentTypesAttr = `data-when-type="${esc(filmingTypes.join(","))}"`;
-  const curSegs = s && s.id ? listSessionSegments(s.id) : [];
-  const segOf = (kind) => curSegs.find((g) => g.kind === kind) || null;
-  const SEG_PLACEHOLDER = { setup: ["10:00", "12:00"], shoot: ["12:00", "19:00"], teardown: ["19:00", "20:00"] };
-  const segmentRows = SESSION_SEGMENT_KINDS.map((kind) => {
-    const g = segOf(kind);
-    const [ph1, ph2] = SEG_PLACEHOLDER[kind] || ["", ""];
-    return `<div class="flex flex-wrap items-center gap-2">
-        <span class="w-20 shrink-0 text-sm text-muted">${esc(SESSION_SEGMENT_LABELS[kind] || kind)}</span>
-        ${timeBox(`seg_${kind}_start`, g && g.start_time, ph1, `data-seg-time aria-label="${esc(SESSION_SEGMENT_LABELS[kind])} 시작"`)}
-        <span class="text-muted">–</span>
-        ${timeBox(`seg_${kind}_end`, g && g.end_time, ph2, `data-seg-time aria-label="${esc(SESSION_SEGMENT_LABELS[kind])} 종료"`)}
-      </div>`;
-  }).join("");
-  // 🚫 **할증 개념 없음**(2026-07-27 사용자 결정 — 폐기): 미장센 같은 가산은 `촬영 (미장센 및 다수 카메라)`처럼
-  // **단가 항목 자체로** 표현한다. 같은 요금을 '할증'과 '단가 항목' 두 경로로 넣을 수 있으면 금액이 갈리기 때문.
-  const segmentBlock = `
-      <div class="rounded-lg border border-border bg-bg/40 p-3" ${segmentTypesAttr} data-show-when-type data-segments hidden>
-        <div class="mb-2 text-sm font-medium">촬영 구간 <span class="font-normal text-muted">(요금은 세 구간의 합산 시간 기준)</span></div>
-        <div class="space-y-1.5">${segmentRows}</div>
-        <p class="mt-2 text-xs text-muted">캘린더·룸 점유는 <b>반입 시작 ~ 철수 종료</b> 전체로 잡힙니다(그 사이 방을 계속 쓰므로).</p>
-      </div>`;
+  // 촬영 구간(반입·촬영·철수) 입력은 개편 3단계에서 삭제(운영 사용 0건 — 단가표와 함께). 시작~종료 시간만 받는다.
+  const segmentBlock = "";
   const endDateInit = (() => {
     const d = s.session_date || todayYmd();
     if (s.all_day && s.end_date && s.end_date > d) return s.end_date; // 종일 다일 일정: 저장된 종료 날짜 복원
@@ -293,18 +265,16 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
   //  ③ 우측 사이드 = 사람(PM 표기[프로젝트에서 지정·읽기 전용] + 예약 담당자·담당 엔지니어) — 구글의 참석자 패널
   //  md 미만은 소스 순서대로 세로 스택(시간 → 세부정보 → 사람).
   // 접힘 요약 줄 — 접혀 있어도 무엇이 채워져 있는지 보이게(편집 화면에서 내용이 숨지 않도록).
-  const rateName = s.rate_item_id ? (rateItems.find((r) => Number(r.id) === Number(s.rate_item_id)) || {}).name : "";
   const detailSummary = [
     ...(opts.projectSummary || []),
     currentEngineers.length ? `엔지니어 ${currentEngineers.map((e) => e.name).join(", ")}` : "",
     currentDirectors.length ? `디렉터 ${currentDirectors.map((d) => personLabel(d.name, d.activity_name)).join(", ")}` : "",
-    rateName || "",
     s.memo ? "메모" : "",
   ].filter(Boolean).join(" · ");
   return `
     <input type="hidden" name="status" value="${esc(s.status || "예정")}" />
     <div class="space-y-3">
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5" ${segmentTypesAttr} data-hide-when-type>
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
         <!-- 줄바꿈 단위 = 시작(날짜+시간) / 종료(–+시간+날짜) 두 덩어리. 폭이 좁아 접히더라도 종료 시간과 종료 날짜가
              떨어지지 않게 한 묶음으로 둔다(2026-07-14 사용자 리포트 — 종료 날짜만 다음 줄로 가 연관이 끊겨 보이던 것). -->
         <div class="flex items-center gap-2">
@@ -323,7 +293,7 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
       ${segmentBlock}
       <p class="text-xs text-warning" data-conflict-warn hidden>⚠ 같은 룸에 이 시간대 예약이 이미 있습니다.</p>
       <input type="hidden" name="override_conflict" value="" data-override-conflict />
-      <div data-duration-wrap ${segmentTypesAttr} data-hide-when-type>
+      <div data-duration-wrap>
         <label class="label-sm">소요 시간 <span class="ml-1 font-medium text-primary" data-duration-label>${fmtDurationKo(initMins)}</span></label>
         ${durationButtons(initMins)}
       </div>

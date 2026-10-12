@@ -97,7 +97,7 @@ router.get("/", requireAuth, (req, res) => {
       unbilledCard = `
     <div class="card mt-4">
       <div class="mb-2 flex items-center justify-between gap-2">
-        <h2 class="font-display text-base font-semibold">청구 필요 ${needBilling.length}</h2>
+        <h2 class="font-display text-base font-semibold"><a href="/invoices/inbox" class="hover:text-primary">청구 필요 ${needBilling.length} ↗</a></h2>
         ${doneCnt ? `<a href="/projects?tab=billing&mine=0" class="text-xs text-muted hover:text-fg hover:underline">완료된 프로젝트 ${doneCnt}건 ↗</a>` : ""}
       </div>
       ${rowsHtml}

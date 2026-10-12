@@ -20,14 +20,15 @@ test.after(() => cleanupDb(process.env.DB_PATH, db()));
 
 const V = require("../src/views.settings");
 
-test("좌측 메뉴: 9개 항목 + 부제 + 그룹 라벨, 현재 항목 표시", () => {
-  const html = V.settingsMenu("rates", 3);
-  for (const [key, label] of [["rooms","장소"],["rates","요금표"],["tasks","작업 종류"],["booking","예약 기본값"],["users","스태프 계정"],["studio","스튜디오 정보"],["google","구글 연동"],["alerts","알림"],["system","시스템"]]) {
+test("좌측 메뉴: 8개 항목 + 부제 + 그룹 라벨, 현재 항목 표시('요금표'는 개편 3단계에서 삭제)", () => {
+  const html = V.settingsMenu("tasks", 3);
+  for (const [key, label] of [["rooms","장소"],["tasks","작업 종류"],["booking","예약 기본값"],["users","스태프 계정"],["studio","스튜디오 정보"],["google","구글 연동"],["alerts","알림"],["system","시스템"]]) {
     assert.ok(html.includes(`/settings?s=${key}`), `${label} 링크`);
     assert.ok(html.includes(label), `${label} 라벨`);
   }
+  assert.ok(!html.includes("/settings?s=rates"), "요금표 메뉴 없음(단가표 제거 — 금액은 청구서에서 직접)");
   for (const g of ["자주 쓰는 것", "가끔 보는 것", "한 번만 하는 것", "상태 보기"]) assert.ok(html.includes(g), `그룹 ${g}`);
-  assert.ok(html.includes("룸·외부 장소") && html.includes("녹음·대관 단가"), "항목 부제(이름만으론 내용을 모르는 문제의 해법)");
+  assert.ok(html.includes("룸·외부 장소"), "항목 부제(이름만으론 내용을 모르는 문제의 해법)");
   assert.match(html, /aria-current="page"/, "현재 항목 표시");
   assert.ok(html.includes("⚠️3"), "시스템 경고 배지");
 });
