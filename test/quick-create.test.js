@@ -135,22 +135,21 @@ test("기존 프로젝트: '고쳤다' 표시가 없으면 프로젝트 정보�
   assert.equal(changed.memo, "프로젝트 메모", "갱신해도 메모는 그대로(이 화면엔 프로젝트 메모 칸이 없다)");
 });
 
-test("작업: 곡명이 없으면 프로젝트 이름의 곡을 찾거나 만들고, 작업일을 저장한다", async () => {
+test("작업: 프로젝트에 바로 붙고(곡명 없으면 NULL), 곡명 줄마다 작업 하나, 작업일 저장", async () => {
   const types = db().prepare("SELECT key FROM task_types WHERE active = 1 ORDER BY sort_order LIMIT 1").get();
   const r = await post("/new", { kind: "task", project_title: "작업 앨범", task_type: types.key, work_date: "2026-11-20", song_title: "" });
   assert.equal(r.status, 302);
   const [p] = projectsTitled("작업 앨범");
   assert.match(r.headers.get("location"), new RegExp(`^/projects/${p.id}\\?tab=tracks&flash=added`));
-  const tracks = db().prepare("SELECT * FROM project_tracks WHERE project_id = ?").all(p.id);
-  assert.equal(tracks.length, 1);
-  assert.equal(tracks[0].title, "작업 앨범", "곡명이 비면 프로젝트 이름");
-  const task = db().prepare("SELECT * FROM track_tasks WHERE track_id = ?").get(tracks[0].id);
-  assert.equal(task.work_date, "2026-11-20");
+  const tasks = db().prepare("SELECT * FROM track_tasks WHERE project_id = ?").all(p.id);
+  assert.equal(tasks.length, 1, "작업이 프로젝트에 바로 붙는다(곡 개체 없음 — 개편 2단계)");
+  assert.equal(tasks[0].song_title, null, "곡명이 비면 NULL(표시는 프로젝트 이름)");
+  assert.equal(tasks[0].work_date, "2026-11-20");
 
-  await post("/new", { kind: "task", project_id: String(p.id), task_type: types.key, song_title: "작업 앨범" });
-  await post("/new", { kind: "task", project_id: String(p.id), task_type: types.key, song_title: "타이틀곡" });
-  const titles = db().prepare("SELECT title FROM project_tracks WHERE project_id = ? ORDER BY id").all(p.id).map((t) => t.title);
-  assert.deepEqual(titles, ["작업 앨범", "타이틀곡"], "같은 곡명은 재사용, 새 곡명은 생성");
+  // 곡명 칸의 줄마다 작업 하나(빈 줄·중복 줄은 건너뜀)
+  await post("/new", { kind: "task", project_id: String(p.id), task_type: types.key, song_title: "타이틀곡\n\n수록곡 2\n타이틀곡" });
+  const titles = db().prepare("SELECT song_title FROM track_tasks WHERE project_id = ? ORDER BY id").all(p.id).map((t) => t.song_title);
+  assert.deepEqual(titles, [null, "타이틀곡", "수록곡 2"]);
 });
 
 test("저장 후 복귀: return이 있으면 그곳, 없으면 화면을 연 페이지(Referer)", async () => {

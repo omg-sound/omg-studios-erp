@@ -55,11 +55,10 @@ function myTodo(user) {
   // 내 미완료 작업: engineer_id=나 · 완료 아님 · 무료처리(waived) 아님.
   const tasks = d
     .prepare(
-      `SELECT t.id, t.task_type, tr.title AS track_title,
-              p.id AS project_id, p.title AS project_title, COALESCE(NULLIF(tr.artist, ''), p.artist) AS artist
+      `SELECT t.id, t.task_type, COALESCE(t.song_title, p.title) AS track_title,
+              p.id AS project_id, p.title AS project_title, COALESCE(NULLIF(t.song_artist, ''), p.artist) AS artist
          FROM track_tasks t
-         JOIN project_tracks tr ON tr.id = t.track_id
-         JOIN projects p ON p.id = tr.project_id
+         JOIN projects p ON p.id = t.project_id
         WHERE t.engineer_id = @id AND t.status <> 'Completed' AND COALESCE(t.waived, 0) = 0
         ORDER BY t.created_at DESC, t.id DESC
         LIMIT 6`

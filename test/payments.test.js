@@ -26,8 +26,8 @@ function seedInvoice(totalPrice) {
   const trackId = Number(tr.lastInsertRowid);
   const tk = db()
     .prepare(
-      `INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
-       VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
+      `INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
+       VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
     )
     .run(trackId, totalPrice, totalPrice);
   return createInvoiceFromTasks(CHIEF, { projectId, clientId: PAYER, taskIds: [Number(tk.lastInsertRowid)], issueDate: "2026-06-15" });

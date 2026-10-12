@@ -10,6 +10,7 @@
  * 함수 내부 지연 require("../data")로 해소(로드 시 순환 회피). computeInvoiceDraft는 내부 전용.
  */
 
+const { songOrderSql } = require("../lib/task-order");
 const { db } = require("../db");
 const { todayYmd, formatYmdShort, kstYmd } = require("../lib/date");
 const { parseMoney } = require("../lib/forms");
@@ -275,14 +276,13 @@ function listUnbilledTasksForProject(user, projectId) {
   if (!project) return null;
   const rows = db()
     .prepare(
-      `SELECT t.*, tr.title AS track_title, tr.content_type, tr.project_id
+      `SELECT t.*, COALESCE(t.song_title, ?) AS track_title
        FROM track_tasks t
-       JOIN project_tracks tr ON tr.id = t.track_id
-       WHERE tr.project_id = ?
+       WHERE t.project_id = ?
          AND t.is_invoiced = 0
-       ORDER BY tr.created_at ASC, tr.id ASC, t.created_at ASC, t.id ASC`
+       ORDER BY ${songOrderSql("t")}`
     )
-    .all(project.id);
+    .all(project.title, project.id); // 곡명이 없는 작업은 프로젝트 이름으로 표시(개편 2단계)
   return { project, rows };
 }
 
@@ -381,13 +381,12 @@ function computeInvoiceDraft(user, { projectId, taskIds, sessionIds, clientId, i
     const placeholders = selectedTasks.map(() => "?").join(",");
     tasks = d
       .prepare(
-        `SELECT t.*, tr.title AS track_title, tr.artist AS track_artist, tr.content_type, tr.project_id
+        `SELECT t.*, COALESCE(t.song_title, ?) AS track_title, t.song_artist AS track_artist
          FROM track_tasks t
-         JOIN project_tracks tr ON tr.id = t.track_id
-         WHERE tr.project_id = ? AND t.is_invoiced = 0 AND t.id IN (${placeholders})
-         ORDER BY tr.created_at ASC, tr.id ASC, t.created_at ASC, t.id ASC`
+         WHERE t.project_id = ? AND t.is_invoiced = 0 AND t.id IN (${placeholders})
+         ORDER BY ${songOrderSql("t")}`
       )
-      .all(project.id, ...selectedTasks);
+      .all(project.title, project.id, ...selectedTasks);
     if (tasks.length !== selectedTasks.length) throw new Error("TASK_NOT_BILLABLE");
   }
   tasks = tasks.map((t) => {

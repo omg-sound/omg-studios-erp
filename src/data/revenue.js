@@ -164,7 +164,7 @@ function revenueForStaff(id, period) {
   const manager = db().prepare("SELECT * FROM project_managers WHERE id = ?").get(Number(id));
   if (!manager) return null;
   const per = issuedInPeriodSql("i", period);
-  const tasks = db().prepare(`SELECT t.id, t.task_type, ${ATTR_SUPPLY} AS amount, t.worker_rate, tr.title AS track_title, p.id AS project_id, p.title AS project_title, COALESCE(NULLIF(tr.artist, ''), p.artist) AS artist, i.issued_date FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN project_tracks tr ON tr.id = t.track_id JOIN projects p ON p.id = tr.project_id JOIN invoices i ON i.id = ii.invoice_id ${LINE_TOTAL_JOIN} WHERE ${ISSUED} AND ${per} AND t.engineer_id = ? ORDER BY i.issued_date DESC, p.title COLLATE NOCASE`).all(Number(id));
+  const tasks = db().prepare(`SELECT t.id, t.task_type, ${ATTR_SUPPLY} AS amount, t.worker_rate, COALESCE(t.song_title, p.title) AS track_title, p.id AS project_id, p.title AS project_title, COALESCE(NULLIF(t.song_artist, ''), p.artist) AS artist, i.issued_date FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN projects p ON p.id = t.project_id JOIN invoices i ON i.id = ii.invoice_id ${LINE_TOTAL_JOIN} WHERE ${ISSUED} AND ${per} AND t.engineer_id = ? ORDER BY i.issued_date DESC, p.title COLLATE NOCASE`).all(Number(id));
   // payout = 그 세션에 배정된 전 엔지니어의 지급단가 합(모델 A: 리드가 전체를 흡수).
   // sl(세션당 1행)을 거치므로 근거 라인이 여러 개인 세션도 이 목록에 한 번만, 총 공급가로 나온다
   // (예전엔 invoice_items를 직접 조인해 라인 수만큼 같은 세션이 중복 행으로 나오고 payout도 그만큼 더해졌다).
@@ -195,7 +195,7 @@ function revenueForStaff(id, period) {
  */
 function revenueUnattributed(period) {
   const per = issuedInPeriodSql("i", period);
-  const tasks = db().prepare(`SELECT t.id, t.task_type, ${ATTR_SUPPLY} AS amount, t.worker_rate, tr.title AS track_title, p.id AS project_id, p.title AS project_title, COALESCE(NULLIF(tr.artist, ''), p.artist) AS artist, i.issued_date FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN project_tracks tr ON tr.id = t.track_id JOIN projects p ON p.id = tr.project_id JOIN invoices i ON i.id = ii.invoice_id ${LINE_TOTAL_JOIN} WHERE ${ISSUED} AND ${per} AND t.engineer_id IS NULL ORDER BY i.issued_date DESC, p.title COLLATE NOCASE`).all();
+  const tasks = db().prepare(`SELECT t.id, t.task_type, ${ATTR_SUPPLY} AS amount, t.worker_rate, COALESCE(t.song_title, p.title) AS track_title, p.id AS project_id, p.title AS project_title, COALESCE(NULLIF(t.song_artist, ''), p.artist) AS artist, i.issued_date FROM invoice_items ii JOIN track_tasks t ON t.id = ii.task_id JOIN projects p ON p.id = t.project_id JOIN invoices i ON i.id = ii.invoice_id ${LINE_TOTAL_JOIN} WHERE ${ISSUED} AND ${per} AND t.engineer_id IS NULL ORDER BY i.issued_date DESC, p.title COLLATE NOCASE`).all();
   const sessions = db().prepare(`SELECT s.id, s.session_date, s.session_type, sl.amount AS amount, p.id AS project_id, p.title AS project_title, p.artist AS artist, i.issued_date,
       (SELECT COALESCE(SUM(se.worker_rate),0) FROM session_engineers se WHERE se.session_id = s.id) AS payout
     FROM ${SESSION_LINES_SQL} sl JOIN sessions s ON s.id = sl.session_id JOIN projects p ON p.id = s.project_id JOIN invoices i ON i.id = sl.invoice_id
@@ -241,11 +241,10 @@ function attachWorkSummary(invoices) {
   if (!invoices.length) return;
   const ids = invoices.map((r) => Number(r.id));
   const rows = db().prepare(`SELECT ii.invoice_id, ii.id AS item_id, ii.item_date, ii.task_id, ii.session_id,
-      t.task_type, tr.title AS track_title, NULLIF(tr.artist, '') AS track_artist,
+      t.task_type, t.song_title AS track_title, NULLIF(t.song_artist, '') AS track_artist,
       s.session_type, s.session_date
     FROM invoice_items ii
     LEFT JOIN track_tasks t ON t.id = ii.task_id
-    LEFT JOIN project_tracks tr ON tr.id = t.track_id
     LEFT JOIN sessions s ON s.id = ii.session_id
     WHERE ii.invoice_id IN (${ids.map(() => "?").join(",")})
     ORDER BY ii.invoice_id, (ii.item_date IS NULL), ii.item_date, ii.id`).all(...ids);

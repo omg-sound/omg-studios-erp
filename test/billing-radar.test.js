@@ -254,7 +254,7 @@ function seedTask(projectId, { waived = 0, invoiced = 0 } = {}) {
   );
   return Number(
     db()
-      .prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, waived, is_invoiced) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 0, 0, 'Completed', ?, ?)")
+      .prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, waived, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 0, 0, 'Completed', ?, ?)")
       .run(trackId, waived, invoiced).lastInsertRowid
   );
 }

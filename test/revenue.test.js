@@ -15,7 +15,7 @@ function seedInvoice({ issued = "2026-07-10", payerName = "테스트컴퍼니", 
   const payer = db().prepare("INSERT INTO parties (kind, name) VALUES ('company', ?)").run(payerName).lastInsertRowid;
   const proj = db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('P', 'task', 0)").run().lastInsertRowid;
   const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(proj).lastInsertRowid;
-  const task = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 1, ?, ?)").run(tr, engineerId, workerRate).lastInsertRowid;
+  const task = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 1, ?, ?)").run(tr, engineerId, workerRate).lastInsertRowid;
   const inv = db().prepare("INSERT INTO invoices (project_id, payer_id, title, amount, tax_amount, status, issued_date) VALUES (?, ?, 'T', ?, ?, '발행', ?)").run(proj, payer, amount, tax, issued).lastInsertRowid;
   const supply = amount - tax;
   db().prepare("INSERT INTO invoice_items (invoice_id, task_id, description, quantity, unit_price, amount) VALUES (?, ?, 'Mixing', 1, ?, ?)").run(inv, task, supply, supply);
@@ -297,7 +297,7 @@ test("revenueByStaff: last_issued = 작업·세션 중 최신 발행일", () => 
   const mgr = db().prepare("INSERT INTO project_managers (name) VALUES ('최근엔지')").run().lastInsertRowid;
   // 작업 라인(발행 2026-02-01)
   const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(proj).lastInsertRowid;
-  const task = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 1, ?, 0)").run(tr, mgr).lastInsertRowid;
+  const task = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 1, ?, 0)").run(tr, mgr).lastInsertRowid;
   const inv1 = db().prepare("INSERT INTO invoices (project_id, payer_id, title, amount, tax_amount, status, issued_date) VALUES (?, ?, 'S1', 110000, 10000, '발행', '2026-02-01')").run(proj, payer).lastInsertRowid;
   db().prepare("INSERT INTO invoice_items (invoice_id, task_id, description, quantity, unit_price, amount) VALUES (?, ?, 'Mixing', 1, 100000, 100000)").run(inv1, task);
   // 세션 라인(발행 2026-09-09) — 이쪽이 더 최신
@@ -318,7 +318,7 @@ test("revenueForPayer: 청구서마다 work_kind·work_detail·item_count 파생
 
   // ① 작업 라인 1개(곡 제목)
   const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡가', 'Music')").run(proj).lastInsertRowid;
-  const task = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing','Fixed_Per_Track',1,100000,100000,'Completed',1)").run(tr).lastInsertRowid;
+  const task = db().prepare("INSERT INTO track_tasks (project_id, song_title, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), '곡가', 'Mixing','Fixed_Per_Track',1,100000,100000,'Completed',1)").run(tr).lastInsertRowid;
   const inv1 = db().prepare("INSERT INTO invoices (project_id,payer_id,title,amount,tax_amount,status,issued_date) VALUES (?,?,'W1',110000,10000,'발행','2026-07-16')").run(proj,payer).lastInsertRowid;
   db().prepare("INSERT INTO invoice_items (invoice_id, task_id, description, quantity, unit_price, amount, item_date) VALUES (?,?,'Mixing',1,100000,100000,'2026-07-16')").run(inv1,task);
 
@@ -329,8 +329,8 @@ test("revenueForPayer: 청구서마다 work_kind·work_detail·item_count 파생
 
   // ③ 라인 2개(개수만 알린다)
   const tr2 = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡나', 'Music')").run(proj).lastInsertRowid;
-  const task2 = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing','Fixed_Per_Track',1,50000,50000,'Completed',1)").run(tr2).lastInsertRowid;
-  const task3 = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing','Fixed_Per_Track',1,50000,50000,'Completed',1)").run(tr2).lastInsertRowid;
+  const task2 = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing','Fixed_Per_Track',1,50000,50000,'Completed',1)").run(tr2).lastInsertRowid;
+  const task3 = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing','Fixed_Per_Track',1,50000,50000,'Completed',1)").run(tr2).lastInsertRowid;
   const inv3 = db().prepare("INSERT INTO invoices (project_id,payer_id,title,amount,tax_amount,status,issued_date) VALUES (?,?,'W3',110000,10000,'발행','2026-07-05')").run(proj,payer).lastInsertRowid;
   db().prepare("INSERT INTO invoice_items (invoice_id, task_id, description, quantity, unit_price, amount, item_date) VALUES (?,?,'Mixing',1,50000,50000,'2026-07-05')").run(inv3,task2);
   db().prepare("INSERT INTO invoice_items (invoice_id, task_id, description, quantity, unit_price, amount, item_date) VALUES (?,?,'Mixing',1,50000,50000,'2026-07-06')").run(inv3,task3);
@@ -366,9 +366,9 @@ test("revenueUnattributed: 담당 없는 작업·세션을 모으고, 담당 있
   const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '무담당곡','Music')").run(proj).lastInsertRowid;
   const mgr = db().prepare("INSERT INTO project_managers (name) VALUES ('있는담당')").run().lastInsertRowid;
   // ① 담당 없는 작업
-  const taskNo = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES (?, 'Mixing','Fixed_Per_Track',1,70000,70000,'Completed',1,NULL,0)").run(tr).lastInsertRowid;
+  const taskNo = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing','Fixed_Per_Track',1,70000,70000,'Completed',1,NULL,0)").run(tr).lastInsertRowid;
   // ② 담당 있는 작업(제외돼야 함)
-  const taskYes = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES (?, 'Mixing','Fixed_Per_Track',1,50000,50000,'Completed',1,?,0)").run(tr, mgr).lastInsertRowid;
+  const taskYes = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing','Fixed_Per_Track',1,50000,50000,'Completed',1,?,0)").run(tr, mgr).lastInsertRowid;
   // ③ engineer_name이 빈 세션
   const sessNo = db().prepare("INSERT INTO sessions (project_id, session_type, session_date, engineer_name, status) VALUES (?,'녹음','2026-09-03',NULL,'완료')").run(proj).lastInsertRowid;
   // ④ engineer_name이 있으나 담당자 마스터에 없는 이름(개명 드리프트 안전망)
@@ -426,8 +426,8 @@ test("revenueByStaff: 다라인 할인 청구서를 금액 비례로 배분 — 
   const payer = db().prepare("INSERT INTO parties (kind, name) VALUES ('company','할인청구사')").run().lastInsertRowid;
   const proj = db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('DP','task',0)").run().lastInsertRowid;
   const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡','Music')").run(proj).lastInsertRowid;
-  const tA = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES (?, 'Mixing','Fixed_Per_Track',1,300000,300000,'Completed',1,?,0)").run(tr, mA).lastInsertRowid;
-  const tB = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES (?, 'Vocal_Tuning','Fixed_Per_Track',1,100000,100000,'Completed',1,?,0)").run(tr, mB).lastInsertRowid;
+  const tA = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing','Fixed_Per_Track',1,300000,300000,'Completed',1,?,0)").run(tr, mA).lastInsertRowid;
+  const tB = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Vocal_Tuning','Fixed_Per_Track',1,100000,100000,'Completed',1,?,0)").run(tr, mB).lastInsertRowid;
   // 라인 합 40만, 할인 8만 → 과세표준 32만, VAT 3.2만, amount 35.2만. 공급가(amount−tax)=32만.
   const inv = db().prepare("INSERT INTO invoices (project_id, payer_id, title, amount, tax_amount, discount_amount, status, issued_date) VALUES (?,?,'DT',352000,32000,80000,'발행','2027-03-10')").run(proj, payer).lastInsertRowid;
   db().prepare("INSERT INTO invoice_items (invoice_id, task_id, description, quantity, unit_price, amount) VALUES (?,?,'Mixing',1,300000,300000)").run(inv, tA);
@@ -451,8 +451,8 @@ test("revenueForStaff: 상세 라인 금액도 할인 반영(행 합 = 소계 = 
   const proj = db().prepare("INSERT INTO projects (title, project_type, artist, rate) VALUES ('DDP','task','루나',0)").run().lastInsertRowid;
   const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡','Music')").run(proj).lastInsertRowid;
   // 이 사람 라인 30만 + 다른(담당 없는) 라인 10만, 할인 8만 → 공급가 32만. 이 사람 몫 = 30만×32/40 = 24만.
-  const tMine = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES (?, 'Mixing','Fixed_Per_Track',1,300000,300000,'Completed',1,?,60000)").run(tr, m).lastInsertRowid;
-  const tOther = db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES (?, 'Vocal_Tuning','Fixed_Per_Track',1,100000,100000,'Completed',1,NULL,0)").run(tr).lastInsertRowid;
+  const tMine = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing','Fixed_Per_Track',1,300000,300000,'Completed',1,?,60000)").run(tr, m).lastInsertRowid;
+  const tOther = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id, worker_rate) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Vocal_Tuning','Fixed_Per_Track',1,100000,100000,'Completed',1,NULL,0)").run(tr).lastInsertRowid;
   const inv = db().prepare("INSERT INTO invoices (project_id, payer_id, title, amount, tax_amount, discount_amount, status, issued_date) VALUES (?,?,'DDT',352000,32000,80000,'발행','2027-04-10')").run(proj, payer).lastInsertRowid;
   db().prepare("INSERT INTO invoice_items (invoice_id, task_id, description, quantity, unit_price, amount) VALUES (?,?,'Mixing',1,300000,300000)").run(inv, tMine);
   db().prepare("INSERT INTO invoice_items (invoice_id, task_id, description, quantity, unit_price, amount) VALUES (?,?,'Vocal_Tuning',1,100000,100000)").run(inv, tOther);

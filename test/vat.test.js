@@ -30,8 +30,8 @@ function seedTask(totalPrice) {
   const trackId = Number(tr.lastInsertRowid);
   const tk = db()
     .prepare(
-      `INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
-       VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
+      `INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
+       VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
     )
     .run(trackId, totalPrice, totalPrice);
   return { projectId, taskId: Number(tk.lastInsertRowid) };
@@ -64,8 +64,8 @@ test("VAT: 여러 작업 합산 후 과세 — 600,000 + 400,000 → tax 100,000
     Number(
       db()
         .prepare(
-          `INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
-           VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
+          `INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
+           VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
         )
         .run(trackId, price, price).lastInsertRowid
     );
@@ -213,8 +213,8 @@ test("청구 항목 정렬: 세션은 날짜순으로 먼저, 작업은 뒤에 �
   const trackId = Number(tr.lastInsertRowid);
   const tk = db()
     .prepare(
-      `INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, created_at)
-       VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 300000, 300000, 'Completed', 0, '2026-08-01 10:00:00')`
+      `INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, created_at)
+       VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 300000, 300000, 'Completed', 0, '2026-08-01 10:00:00')`
     )
     .run(trackId);
   const taskId = Number(tk.lastInsertRowid);

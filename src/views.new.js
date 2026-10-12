@@ -12,14 +12,8 @@
 
 const { esc, pageHeader, tabBar, dateCombo, detailsChevron, personComboOptionsScript, personComboCompanyScript } = require("./views");
 const { sessionBookingFields } = require("./views.sessions");
-const { projectInfoFields, projectInfoSummary, engineerSelect, taskTypeOptions } = require("./views.projects");
-const { contactOptions, partyOptions, activeTaskTypes } = require("./data");
-
-/** 작업 종류 기본값 = 보컬 녹음(2026-10-13 사용자 지정). 키는 라벨을 바꿔도 고정 — 단 삭제됐으면 기본값 없이 첫 항목. */
-const DEFAULT_TASK_TYPE = "Vocal_Recording";
-function defaultTaskType() {
-  return activeTaskTypes().some((t) => t.key === DEFAULT_TASK_TYPE) ? DEFAULT_TASK_TYPE : "";
-}
+const { projectInfoFields, projectInfoSummary, engineerSelect, taskTypeOptions, defaultTaskType } = require("./views.projects");
+const { contactOptions, partyOptions } = require("./data");
 const { formatYmdShort, todayYmd } = require("./lib/date");
 
 /** 본문 칸 — 프로젝트를 고르거나 탭을 바꿔 다시 불러올 때 쿼리로 넘겨 유지하는 값. */
@@ -89,7 +83,7 @@ function taskFields({ values, managers, projectInfoHtml, projectSummary }) {
   return `
     <div class="grid gap-3 sm:grid-cols-3">
       <div><label class="label mb-0">작업 종류<select class="input mt-1 block" name="task_type">${taskTypeOptions(values.task_type || defaultTaskType())}</select></label></div>
-      <div><label class="label mb-0">곡명 <span class="font-normal text-muted">(선택)</span><input class="input mt-1 block" name="song_title" value="${esc(values.song_title || "")}" placeholder="비우면 프로젝트 이름" autocomplete="off" /></label></div>
+      <div><label class="label mb-0">곡명 <span class="font-normal text-muted">(선택 · 여러 곡은 줄바꿈)</span><textarea class="input mt-1 block" name="song_title" rows="1" placeholder="비우면 프로젝트 이름" autocomplete="off">${esc(values.song_title || "")}</textarea></label></div>
       <div><span class="label mb-0">작업일 <span class="font-normal text-muted">(선택)</span></span><div class="mt-1">${dateCombo("work_date", values.work_date || "", { label: "작업일", inputCls: "input w-full" })}</div></div>
     </div>
     <details class="group rounded-lg border border-border bg-bg/40" data-detail-section>
@@ -106,6 +100,7 @@ function taskFields({ values, managers, projectInfoHtml, projectSummary }) {
           <div data-worker-rate><label class="label mb-0">외주 지급단가 <span class="font-normal text-muted">(원)</span><input class="input mt-1 block" name="worker_rate" inputmode="numeric" placeholder="0" /></label></div>
           <div><label class="label mb-0">금액 <span class="font-normal text-muted">(선택 · 청구 때 입력해도 됨)</span><input class="input mt-1 block" name="unit_price" inputmode="numeric" placeholder="종류 기본 단가" /></label></div>
         </div>
+        <div><label class="label mb-0">곡 아티스트 <span class="font-normal text-muted">(프로젝트 아티스트와 다를 때만 — 컴필레이션 등)</span><input class="input mt-1 block" name="song_artist" value="${esc(values.song_artist || "")}" autocomplete="off" /></label></div>
       </div>
     </details>`;
 }

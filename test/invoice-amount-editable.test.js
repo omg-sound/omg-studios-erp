@@ -30,8 +30,8 @@ const rateId = db().prepare("SELECT id FROM rate_items LIMIT 1").get().id;
 
 // 작업 1건 + 세션 1건(단가 있음) — 금액이 산정되는 정상 후보를 만든다.
 db().prepare(
-  `INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
-   VALUES (?, ?, 'Fixed_Per_Track', 1, 200000, 200000, 'Completed', 0)`
+  `INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
+   VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), ?, 'Fixed_Per_Track', 1, 200000, 200000, 'Completed', 0)`
 ).run(trackId, listTaskTypes()[0].key);
 db().prepare(
   `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)

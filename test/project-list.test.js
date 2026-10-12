@@ -261,7 +261,7 @@ test("예산: 세션에서 전환된 작업(session_id)이 있으면 그 세션�
   const sid = Number(db().prepare("INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id) VALUES (?, '녹음', '2026-07-10', '13:00', '16:30', '예정', ?)").run(pid, ri).lastInsertRowid);
   const tr = Number(db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(pid).lastInsertRowid);
   // 이 세션에서 전환된 레거시 작업(session_id 세팅) — 300,000원.
-  db().prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, session_id) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 300000, 300000, 'Completed', 0, ?)").run(tr, sid);
+  db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, session_id) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 300000, 300000, 'Completed', 0, ?)").run(tr, sid);
   const p = D.listProjects({ role: "chief" }, {}).find((r) => r.id === pid);
   assert.equal(p.session_amount_total, 0, "세션은 파생작업이 있어 session_amount_total에서 제외(작업 쪽으로만 계상)");
   assert.equal(p.task_total, 300000, "작업 300,000만 예산에 — 세션과 합쳐 600,000으로 부풀지 않음");
@@ -303,7 +303,7 @@ test("listProjectIdsForManager: PM·담당 세션·담당 작업 합집합 + 무
   d.prepare("INSERT INTO session_engineers (session_id, manager_id) VALUES (?, ?)").run(s, me);
   // ③ 작업 담당(track_tasks.engineer_id): pjTask의 트랙 작업에 나를 배정
   const tr = Number(d.prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(pjTask).lastInsertRowid);
-  d.prepare("INSERT INTO track_tasks (track_id, task_type, billing_type, quantity, unit_price, total_price, status, engineer_id) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 0, 0, 'Pending', ?)").run(tr, me);
+  d.prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, engineer_id) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 0, 0, 'Pending', ?)").run(tr, me);
 
   const ids = D.listProjectIdsForManager(me);
   assert.ok(ids.has(pjPM), "PM 프로젝트 포함");

@@ -72,16 +72,16 @@ test("세션 탭 PM 표기도 비활성 PM의 이름을 보여준다(정보 탭�
 const { tracksSection } = require("../src/views.projects");
 const { sessionBookingFields } = require("../src/views.sessions");
 const { bookingDefaultsSection } = require("../src/views.settings");
-const { listTracksForProject, listRateItems, listRooms } = require("../src/data");
+const { listTaskGroupsForProject, listRateItems, listRooms } = require("../src/data");
 const USER = { id: 1, role: "chief" };
 const selNamed = (html, name) => (html.match(new RegExp(`<select[^>]*name="${name}"[\\s\\S]*?</select>`)) || [""])[0];
 
 test("작업 담당 엔지니어: 비활성 담당자 배정이 보존된다(정산·원천세 근거)", () => {
   const track = D.prepare("INSERT INTO project_tracks (project_id, title) VALUES (?, '월광')").run(projId).lastInsertRowid;
   // 지급까지 끝난 작업 — PAYOUT_LOCKED는 '삭제'만 막고 이 UPDATE 경로는 막지 않는다.
-  const task = D.prepare("INSERT INTO track_tasks (track_id, task_type, status, engineer_id, engineer_name, worker_rate, worker_paid) VALUES (?, 'Mixing', 'Pending', ?, '퇴사엔지', 300000, 1)").run(track, goneId).lastInsertRowid;
-  const b = listTracksForProject(USER, projId); // 반환 = { project, tracks }
-  const html = tracksSection({ project: b.project, tracks: b.tracks, isAdmin: true, managers: listProjectManagers(), expandTaskId: task });
+  const task = D.prepare("INSERT INTO track_tasks (project_id, task_type, status, engineer_id, engineer_name, worker_rate, worker_paid) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Pending', ?, '퇴사엔지', 300000, 1)").run(track, goneId).lastInsertRowid;
+  const b = listTaskGroupsForProject(USER, projId); // 반환 = { project, groups } (개편 2단계 — 곡 묶음은 보기로만)
+  const html = tracksSection({ project: b.project, groups: b.groups, isAdmin: true, managers: listProjectManagers(), expandTaskId: task });
   const sel = selNamed(html, "engineer_id");
   assert.match(sel, new RegExp(`<option value="${goneId}" selected[^>]*>퇴사엔지 \\(목록에 없음\\)`), "배정이 selected로 살아 있다");
   // data-external은 외주 지급단가 칸 노출을 가른다 — 보존 옵션도 담당자 행에서 되짚어 세운다.

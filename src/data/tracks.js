@@ -1,57 +1,54 @@
 "use strict";
 
 /**
- * 트랙/콘텐츠 + 모듈형 작업(Task) CRUD 도메인.
- * 청구 후보·채번 등 빌링 헬퍼는 invoices 도메인, 프로젝트 삭제는 projects 도메인으로 분리됨.
- * data.js에서 분리한 모듈(도메인 모듈화). data.js가 재export하므로 소비자 무변경.
+ * 작업(Task) CRUD 도메인.
+ * 개편 2단계(2026-10-13): 곡(project_tracks) 계층을 없앴다 — 작업이 프로젝트에 바로 붙고, 곡은 작업의
+ * 곡명(song_title)·곡 아티스트(song_artist) 칸이다. 화면의 '곡 묶음'은 같은 곡명끼리 **보기로만** 묶은 것.
+ * 테이블 이름은 track_tasks 그대로(이름만 바꾸는 비용이 커서 — docs/redesign/02-flatten-tasks.md §3).
  *
- * cross-domain: getProjectForUser(projects)·getManagerByUserId(clients)·normalizeTaskTypeDb/
- * taskTypeUnitPrice(task-types)를 호출한다. 이 도메인들은 tracks를 호출하지 않으므로(무순환)
- * 형제 모듈을 직접 require한다. resolveTaskEngineer는 내부 전용(공개 API 미노출).
+ * cross-domain: getProjectForUser(projects)·getManagerByUserId(parties)·normalizeTaskTypeDb/taskTypeUnitPrice
+ * (task-types)를 호출한다. 이 도메인들은 tracks를 호출하지 않으므로(무순환) 형제 모듈을 직접 require한다.
  */
 
 const { db } = require("../db");
-const { normalizeTrackContentType, normalizeTaskStatus } = require("../config");
+const { normalizeTaskStatus } = require("../config");
 const { parseMoney, cleanYmd } = require("../lib/forms");
 const { getProjectForUser } = require("./projects"); // 무순환
 const { getManagerByUserId } = require("./parties"); // 무순환
 const { normalizeTaskTypeDb, taskTypeUnitPrice } = require("./task-types"); // 무순환
+const { songOrderSql } = require("../lib/task-order");
 
 const parseWon = parseMoney; // 내부 호출명 parseWon 유지
 
-function listTracksForProject(user, projectId) {
-  const project = getProjectForUser(user, projectId);
-  if (!project) return null;
-  const tracks = db()
-    .prepare("SELECT * FROM project_tracks WHERE project_id = ? ORDER BY created_at ASC, id ASC")
-    .all(project.id);
-  const tasks = db()
-    .prepare(
-      `SELECT t.*, tr.project_id, tr.title AS track_title, tr.content_type
-       FROM track_tasks t
-       JOIN project_tracks tr ON tr.id = t.track_id
-       WHERE tr.project_id = ?
-       ORDER BY tr.created_at ASC, tr.id ASC, t.created_at ASC, t.id ASC`
-    )
-    .all(project.id);
-  const byTrack = new Map();
-  for (const task of tasks) {
-    if (!byTrack.has(task.track_id)) byTrack.set(task.track_id, []);
-    byTrack.get(task.track_id).push(task);
-  }
-  return { project, tracks: tracks.map((track) => ({ ...track, tasks: byTrack.get(track.id) || [] })) };
+/** 곡명 정리(공백 정리, 빈 값 = NULL = 표시는 프로젝트 이름). 묶음·이름 바꾸기·저장이 같은 규칙을 써야 묶음이 안 갈린다. */
+function cleanSongTitle(v) {
+  return String(v == null ? "" : v).replace(/\s+/g, " ").trim() || null;
 }
 
-function getTrackForUser(user, trackId) {
-  const track = db()
-    .prepare(
-      `SELECT tr.*, COALESCE(p.production_id, p.agency_id, p.artist_id) AS client_id, p.title AS project_title
-       FROM project_tracks tr
-       JOIN projects p ON p.id = tr.project_id
-       WHERE tr.id = ?`
-    )
-    .get(trackId);
-  return track || null;
+/**
+ * 프로젝트의 작업을 곡명별로 묶어 반환 — { project, groups: [{ key, title, artist, tasks }] }.
+ * key = 곡명(없으면 ""), title = 표시 이름(없으면 프로젝트 이름), artist = 곡 아티스트(첫 작업 기준, 없으면 null).
+ */
+function listTaskGroupsForProject(user, projectId) {
+  const project = getProjectForUser(user, projectId);
+  if (!project) return null;
+  const tasks = db()
+    .prepare(`SELECT t.* FROM track_tasks t WHERE t.project_id = ? ORDER BY ${songOrderSql("t")}`)
+    .all(project.id);
+  const groups = [];
+  const byKey = new Map();
+  for (const task of tasks) {
+    const key = task.song_title || "";
+    if (!byKey.has(key)) {
+      const g = { key, title: task.song_title || project.title, artist: null, tasks: [] };
+      byKey.set(key, g);
+      groups.push(g);
+    }
+    const g = byKey.get(key);
+    if (!g.artist && task.song_artist) g.artist = task.song_artist;
+    g.tasks.push(task);
+  }
+  return { project, groups };
 }
 
 /** 콤마 다중 아티스트 표시 정규화("아이유,태연 " → "아이유, 태연") — 프로젝트 artist TEXT와 동일 규칙(2026-07-05). */
@@ -59,54 +56,28 @@ function normalizeArtistList(value) {
   return String(value || "").split(",").map((s) => s.trim()).filter(Boolean).join(", ");
 }
 
-function createTrack(user, projectId, input = {}) {
+/**
+ * 같은 곡명의 **미청구** 작업 곡명을 한 번에 바꾼다(곡 묶음 '이름 바꾸기'). 청구된 작업은 스냅샷 잠금이라 그대로 —
+ * 그래서 바꾼 뒤에도 옛 이름 묶음이 남을 수 있다(locked 개수를 돌려줘 화면이 안내).
+ * @returns {{project_id:number, changed:number, locked:number}|null}
+ */
+function renameSong(user, projectId, from, to) {
   const project = getProjectForUser(user, projectId);
   if (!project) return null;
-  const title = String(input.title || "").trim();
-  if (!title) throw new Error("TRACK_TITLE_REQUIRED");
-  const artist = normalizeArtistList(input.artist) || project.artist || null; // 곡별 아티스트(콤마 여러 명·정규화), 미입력 시 프로젝트 아티스트
-  const info = db()
-    .prepare("INSERT INTO project_tracks (project_id, title, artist, content_type) VALUES (?, ?, ?, ?)")
-    .run(project.id, title, artist, normalizeTrackContentType(input.content_type));
-  return db().prepare("SELECT * FROM project_tracks WHERE id = ?").get(info.lastInsertRowid);
-}
-
-function updateTrack(user, trackId, input = {}) {
-  const track = getTrackForUser(user, trackId);
-  if (!track) return null;
-  const title = String(input.title || "").trim();
-  if (!title) throw new Error("TRACK_TITLE_REQUIRED");
-  const artist = input.artist !== undefined ? (normalizeArtistList(input.artist) || null) : track.artist; // 폼에 아티스트 있으면 갱신(콤마 정규화)
-  db()
-    .prepare("UPDATE project_tracks SET title = ?, artist = ?, content_type = ? WHERE id = ?")
-    .run(title, artist, normalizeTrackContentType(input.content_type), track.id);
-  return db().prepare("SELECT * FROM project_tracks WHERE id = ?").get(track.id);
-}
-
-/** 트랙 삭제. 청구된 작업·지급 완료된 작업이 하나라도 있으면 거부(인보이스 스냅샷·지급 이력 보존). */
-function deleteTrack(user, trackId) {
-  const track = getTrackForUser(user, trackId);
-  if (!track) return null;
-  const invoiced = db()
-    .prepare("SELECT COUNT(*) AS n FROM track_tasks WHERE track_id = ? AND is_invoiced = 1")
-    .get(track.id).n;
-  if (invoiced > 0) throw new Error("TRACK_HAS_INVOICED");
-  // 트랙을 지우면 하위 작업이 CASCADE로 사라진다 — 작업 단 지급 잠금(deleteTask)을 우회하는 경로를 여기서도 막는다.
-  const paid = db()
-    .prepare("SELECT COUNT(*) AS n FROM track_tasks WHERE track_id = ? AND worker_paid = 1")
-    .get(track.id).n;
-  if (paid > 0) throw new Error("PAYOUT_LOCKED");
-  db().prepare("DELETE FROM project_tracks WHERE id = ?").run(track.id); // track_tasks는 CASCADE
-  return { project_id: track.project_id };
+  const fromKey = cleanSongTitle(from) || "";
+  const next = cleanSongTitle(to);
+  const where = "project_id = ? AND COALESCE(song_title, '') = ?";
+  const changed = db().prepare(`UPDATE track_tasks SET song_title = ? WHERE ${where} AND is_invoiced = 0`).run(next, project.id, fromKey).changes;
+  const locked = db().prepare(`SELECT COUNT(*) AS n FROM track_tasks WHERE ${where} AND is_invoiced = 1`).get(project.id, fromKey).n;
+  return { project_id: project.id, changed, locked };
 }
 
 function getTaskForUser(user, taskId) {
   const task = db()
     .prepare(
-      `SELECT t.*, tr.project_id, tr.title AS track_title, tr.content_type, COALESCE(p.production_id, p.agency_id, p.artist_id) AS client_id
+      `SELECT t.*, COALESCE(t.song_title, p.title) AS track_title, COALESCE(p.production_id, p.agency_id, p.artist_id) AS client_id
        FROM track_tasks t
-       JOIN project_tracks tr ON tr.id = t.track_id
-       JOIN projects p ON p.id = tr.project_id
+       JOIN projects p ON p.id = t.project_id
        WHERE t.id = ?`
     )
     .get(taskId);
@@ -138,7 +109,7 @@ function setTaskAmount(user, taskId, amount) {
   if (task.is_invoiced) throw new Error("TASK_LOCKED");
   const amt = amount > 0 ? Math.round(amount) : 0;
   db().prepare("UPDATE track_tasks SET unit_price = ?, total_price = ? WHERE id = ?").run(amt, amt, task.id);
-  return db().prepare("SELECT t.*, tr.project_id FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE t.id = ?").get(task.id);
+  return db().prepare("SELECT t.*, t.project_id FROM track_tasks t WHERE t.id = ?").get(task.id);
 }
 
 /** 작업 수정. 이미 청구된 작업은 거부(라인아이템 스냅샷이 잠금). total_price는 재계산. */
@@ -158,7 +129,8 @@ function updateTask(user, taskId, input = {}) {
       `UPDATE track_tasks SET
          task_type = @task_type, billing_type = 'Fixed_Per_Track', quantity = 1,
          unit_price = @unit_price, total_price = @unit_price, engineer_name = @engineer_name,
-         engineer_id = @engineer_id, worker_rate = @worker_rate, status = @status, work_date = @work_date
+         engineer_id = @engineer_id, worker_rate = @worker_rate, status = @status, work_date = @work_date,
+         song_title = @song_title, song_artist = @song_artist
        WHERE id = @id`
     )
     .run({
@@ -171,8 +143,11 @@ function updateTask(user, taskId, input = {}) {
       status,
       // 작업일 칸이 없는 폼(빠른 추가 버튼 등)의 저장이 기존 날짜를 지우지 않게 — 키가 있을 때만 갱신.
       work_date: input.work_date !== undefined ? cleanYmd(input.work_date) : task.work_date || null,
+      // 곡명·곡 아티스트도 같은 규칙 — 칸이 없는 폼의 저장이 지우지 않게.
+      song_title: input.song_title !== undefined ? cleanSongTitle(input.song_title) : task.song_title || null,
+      song_artist: input.song_artist !== undefined ? normalizeArtistList(input.song_artist) || null : task.song_artist || null,
     });
-  return db().prepare("SELECT t.*, tr.project_id FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE t.id = ?").get(task.id);
+  return db().prepare("SELECT t.*, t.project_id FROM track_tasks t WHERE t.id = ?").get(task.id);
 }
 
 /** 작업 완료 토글(2026-07-05 사용자 요청 — 세션 완료 버튼과 동일 UX). 상태만 바꾸고 종류·담당·단가는 건드리지 않는다. */
@@ -181,7 +156,7 @@ function setTaskStatus(user, taskId, status) {
   if (!task) return null;
   if (task.is_invoiced) throw new Error("TASK_LOCKED");
   db().prepare("UPDATE track_tasks SET status = ? WHERE id = ?").run(normalizeTaskStatus(status), task.id);
-  return db().prepare("SELECT t.*, tr.project_id FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE t.id = ?").get(task.id);
+  return db().prepare("SELECT t.*, t.project_id FROM track_tasks t WHERE t.id = ?").get(task.id);
 }
 
 /**
@@ -195,7 +170,7 @@ function setTaskWaived(user, taskId) {
   if (!task) return null;
   if (task.is_invoiced) throw new Error("TASK_LOCKED");
   db().prepare("UPDATE track_tasks SET waived = ? WHERE id = ?").run(task.waived ? 0 : 1, task.id);
-  return db().prepare("SELECT t.*, tr.project_id FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE t.id = ?").get(task.id);
+  return db().prepare("SELECT t.*, t.project_id FROM track_tasks t WHERE t.id = ?").get(task.id);
 }
 
 function deleteTask(user, taskId) {
@@ -207,9 +182,10 @@ function deleteTask(user, taskId) {
   return { project_id: task.project_id };
 }
 
-function createTask(user, trackId, input = {}) {
-  const track = getTrackForUser(user, trackId);
-  if (!track) return null;
+/** 작업 1건 생성 — 프로젝트에 바로(개편 2단계). 곡명·곡 아티스트는 선택. */
+function createTask(user, projectId, input = {}) {
+  const project = getProjectForUser(user, projectId);
+  if (!project) return null;
   // 후반작업은 트랙/콘텐츠 고정(billing_type·quantity). 금액은 청구 탭에서 확정 — 생성 시엔 종류 기본단가 자동(입력값 있으면 우선).
   const taskType = normalizeTaskTypeDb(input.task_type);
   const hasPrice = input.unit_price != null && String(input.unit_price).trim() !== "";
@@ -223,11 +199,13 @@ function createTask(user, trackId, input = {}) {
   const info = db()
     .prepare(
       `INSERT INTO track_tasks
-       (track_id, task_type, billing_type, quantity, unit_price, total_price, engineer_name, engineer_id, worker_rate, status, is_invoiced, work_date)
-       VALUES (@track_id, @task_type, 'Fixed_Per_Track', 1, @unit_price, @unit_price, @engineer_name, @engineer_id, @worker_rate, @status, 0, @work_date)`
+       (project_id, song_title, song_artist, task_type, billing_type, quantity, unit_price, total_price, engineer_name, engineer_id, worker_rate, status, is_invoiced, work_date)
+       VALUES (@project_id, @song_title, @song_artist, @task_type, 'Fixed_Per_Track', 1, @unit_price, @unit_price, @engineer_name, @engineer_id, @worker_rate, @status, 0, @work_date)`
     )
     .run({
-      track_id: track.id,
+      project_id: project.id,
+      song_title: cleanSongTitle(input.song_title),
+      song_artist: normalizeArtistList(input.song_artist) || null, // 비우면 프로젝트 아티스트를 따라간다(복사하지 않는다)
       task_type: taskType,
       unit_price: unitPrice,
       engineer_name: eng.engineer_name,
@@ -240,26 +218,32 @@ function createTask(user, trackId, input = {}) {
 }
 
 /**
- * 빠른 작업 생성(`/new`, 개편 1단계)용 곡 찾기·만들기. 곡명(비면 프로젝트 이름)과 **정확히 같은 곡**이 그 프로젝트에
- * 있으면 그 곡, 없으면 새로 만든다. 곡 계층은 2단계에서 없어지고 이 곡 제목은 작업의 곡명 텍스트로 흡수된다.
+ * 작업 여러 건 — 곡명 칸의 **줄마다** 작업 하나(옛 '곡 일괄 추가'를 대신, 예: 믹싱 10곡). 같은 줄 중복은 한 번.
+ * 곡명이 하나도 없으면 곡명 없는 작업 1건. 한 트랜잭션(중간 실패 시 일부만 생기지 않게).
+ * @returns {Array<object>|null} 만든 작업들
  */
-function resolveTrackForQuickTask(user, projectId, songTitle) {
-  const project = getProjectForUser(user, projectId);
-  if (!project) return null;
-  const title = String(songTitle || "").replace(/\s+/g, " ").trim() || project.title;
-  const ex = db()
-    .prepare("SELECT * FROM project_tracks WHERE project_id = ? AND TRIM(title) = ? ORDER BY id LIMIT 1")
-    .get(project.id, title);
-  return ex || createTrack(user, project.id, { title });
+function createTasks(user, projectId, input = {}) {
+  const titles = [...new Set(String(input.song_title == null ? "" : input.song_title).split(/\r?\n/).map(cleanSongTitle).filter(Boolean))];
+  const { withTx } = require("../lib/tx");
+  return withTx(() => {
+    if (!titles.length) {
+      const one = createTask(user, projectId, { ...input, song_title: "" });
+      return one ? [one] : null;
+    }
+    const out = [];
+    for (const t of titles) {
+      const task = createTask(user, projectId, { ...input, song_title: t });
+      if (!task) return null;
+      out.push(task);
+    }
+    return out;
+  });
 }
 
 module.exports = {
-  resolveTrackForQuickTask,
-  listTracksForProject,
-  getTrackForUser,
-  createTrack,
-  updateTrack,
-  deleteTrack,
+  listTaskGroupsForProject,
+  cleanSongTitle,
+  renameSong,
   getTaskForUser,
   setTaskAmount,
   updateTask,
@@ -267,4 +251,5 @@ module.exports = {
   setTaskWaived,
   deleteTask,
   createTask,
+  createTasks,
 };

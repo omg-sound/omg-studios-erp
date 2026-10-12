@@ -12,7 +12,6 @@ const { db, init } = require("../src/db");
 const {
   createTask,
   deleteTask,
-  deleteTrack,
   deleteProject,
   createSession,
   updateSession,
@@ -46,14 +45,9 @@ function seedProject(title) {
   return Number(r.lastInsertRowid);
 }
 
-function seedTrack(projectId) {
-  const r = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(projectId);
-  return Number(r.lastInsertRowid);
-}
-
 /** 외주 담당·지급단가가 붙은 작업 1건. */
-function seedPaidTask(trackId, workerId, { paid = true } = {}) {
-  const task = createTask(CHIEF, trackId, { task_type: "Mixing", engineer_id: String(workerId), worker_rate: "300000" });
+function seedPaidTask(projectId, workerId, { paid = true } = {}) {
+  const task = createTask(CHIEF, projectId, { task_type: "Mixing", engineer_id: String(workerId), worker_rate: "300000" });
   if (paid) setTaskPayout(task.id, true, "2026-07-01");
   return task;
 }
@@ -79,9 +73,8 @@ test.after(() => cleanupDb(process.env.DB_PATH, db()));
 
 test("deleteTask: 지급 완료된 작업은 PAYOUT_LOCKED로 거부, 지급 취소 후엔 삭제된다", () => {
   const projectId = seedProject("지급잠금-작업");
-  const trackId = seedTrack(projectId);
   const workerId = seedWorker("외주작업자A");
-  const task = seedPaidTask(trackId, workerId);
+  const task = seedPaidTask(projectId, workerId);
 
   assert.throws(() => deleteTask(CHIEF, task.id), /PAYOUT_LOCKED/, "이미 이체한 작업은 삭제 불가");
   assert.ok(db().prepare("SELECT 1 FROM track_tasks WHERE id = ?").get(task.id), "행이 남아 있어야 한다");
@@ -93,20 +86,10 @@ test("deleteTask: 지급 완료된 작업은 PAYOUT_LOCKED로 거부, 지급 취
 
 test("deleteTask: 미지급 작업은 그대로 삭제된다(과잉 차단 아님)", () => {
   const projectId = seedProject("지급잠금-미지급작업");
-  const trackId = seedTrack(projectId);
   const workerId = seedWorker("외주작업자B");
-  const task = seedPaidTask(trackId, workerId, { paid: false });
+  const task = seedPaidTask(projectId, workerId, { paid: false });
 
   assert.ok(deleteTask(CHIEF, task.id), "지급 이력이 없으면 기존대로 삭제");
-});
-
-test("deleteTrack: 하위 작업에 지급 완료가 있으면 PAYOUT_LOCKED (작업 CASCADE 우회 차단)", () => {
-  const projectId = seedProject("지급잠금-트랙");
-  const trackId = seedTrack(projectId);
-  const workerId = seedWorker("외주작업자C");
-  seedPaidTask(trackId, workerId);
-
-  assert.throws(() => deleteTrack(CHIEF, trackId), /PAYOUT_LOCKED/, "트랙을 지워 작업을 CASCADE로 없애는 우회 경로 차단");
 });
 
 // ── 세션 ──
@@ -159,9 +142,8 @@ test("updateSession: 지급 완료 엔지니어를 유지한 채 시간만 바�
 
 test("deleteProject: 하위에 지급 완료 작업·세션이 있으면 PAYOUT_LOCKED", () => {
   const projectId = seedProject("지급잠금-프로젝트");
-  const trackId = seedTrack(projectId);
   const workerId = seedWorker("외주작업자D");
-  seedPaidTask(trackId, workerId);
+  seedPaidTask(projectId, workerId);
 
   assert.throws(() => deleteProject(projectId), /PAYOUT_LOCKED/, "프로젝트 삭제로 지급 이력을 통째로 없애는 경로 차단");
 

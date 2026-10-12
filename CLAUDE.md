@@ -40,6 +40,10 @@
   - 작업은 곡을 자동으로 찾거나 만든다(`resolveTrackForQuickTask` — 곡명, 비면 프로젝트 이름). `track_tasks.work_date`(선택)가 청구 라인 `item_date`가 된다.
   - 세션 폼(`sessionBookingFields`, 추가·편집·`/new` 공용): 본문 = 날짜·시간·종류·장소, 나머지는 **▸ 상세 정보** 접힘(요약 줄 표시).
   - 프로젝트 당사자 해석(`resolveProjectParties`)은 `data/project-write.js`로 옮겼다(라우트 → 데이터 계층, 규칙 무변경).
+- **2단계 곡 계층 제거** (`docs/redesign/02-flatten-tasks.md`): 작업(`track_tasks` — 이름 유지)이 `project_id`·`song_title`·`song_artist`를 직접 갖는다. 곡(`project_tracks`)은 **읽지 않음**(4단계에서 삭제). 화면의 곡 묶음 = 같은 곡명끼리 보기로만(`listTaskGroupsForProject`), 정렬 = `lib/task-order.js` `songOrderSql`(곡 첫 작업 id → 작업 id). 아래 '곡 · 콘텐츠' 절의 곡 단위 서술은 경위로만 읽는다.
+  - 🔒 마이그레이션 `tasks_flatten_v1`(db.js `flattenTasks`, init **맨 끝** — 새 DB도 같은 경로): **외래키를 끄고** 재구성(켠 채 DROP하면 `invoice_items.task_id`가 SET NULL로 전부 지워진다), id 보존, 전후 작업 수·청구·지급·금액·청구 라인 연결 수 비교 + `foreign_key_check` — 어긋나면 롤백하고 **기동 중단**. 빈 곡은 프로젝트 메모 끝 `곡: …`, 곡 아티스트는 프로젝트 아티스트와 다를 때만 남김(옛 곡 생성이 복사해 둔 값은 비움). 운영 백업 리허설에서 프로젝트 집계·매출·외주 정산이 옛 코드와 157건 전부 일치.
+  - 곡명 NULL = 표시는 프로젝트 이름(`COALESCE(t.song_title, p.title)`). 작업 추가·`/new`는 곡명 **줄마다 작업 하나**(`createTasks`, withTx). 곡 이름 바꾸기(`renameSong`)는 미청구 작업만(청구된 작업 = 스냅샷 잠금).
+  - 테스트의 작업 시드는 `INSERT INTO track_tasks (project_id, …) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), …)` 꼴이 남아 있다(옛 시드를 인자 위치 그대로 옮긴 것) — 4단계에서 `project_tracks`를 지울 때 함께 정리.
 
 ## 현재 상태 — v1.0 (2026-07-01)
 

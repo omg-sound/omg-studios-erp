@@ -14,8 +14,7 @@ const {
   listRateItems,
   listRooms,
   createSession,
-  createTask,
-  resolveTrackForQuickTask,
+  createTasks,
   createProjectRecord,
   updateProjectRecord,
   findProjectsByTitle,
@@ -137,10 +136,7 @@ router.post("/", requireEditor, asyncHandler(async (req, res) => {
     created = withTx(() => {
       if (!projectId) projectId = createProjectRecord({ ...projectInfoInput(b), title });
       else if (has(b.project_info_touched, "1")) updateProjectRecord(projectId, projectInfoInput(b)); // 실제로 고쳤을 때만
-      if (type === "task") {
-        const track = resolveTrackForQuickTask(req.user, projectId, b.song_title);
-        return createTask(req.user, track.id, b);
-      }
+      if (type === "task") return createTasks(req.user, projectId, b); // 곡명 줄마다 작업 하나(개편 2단계)
       return createSession(req.user, projectId, b);
     });
   } catch (e) {

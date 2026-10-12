@@ -1653,7 +1653,7 @@ function sortCellValue(cell) {
 // (작업 폼은 이제 [data-dirty-form] — engineer_id+worker-rate가 있는 폼만 처리하고 나머지는 가드로 무시.)
 (function () {
   "use strict";
-  var forms = document.querySelectorAll("[data-dirty-form], [data-new-form]"); // /new 작업 상세도 같은 토글(개편 1단계)
+  var forms = document.querySelectorAll("[data-dirty-form], [data-new-form], [data-worker-rate-form]"); // /new 작업 상세·작업 추가 폼도 같은 토글(개편 1·2단계)
   Array.prototype.forEach.call(forms, function (form) {
     var sel = form.querySelector('select[name="engineer_id"]');
     var wrap = form.querySelector("[data-worker-rate]");

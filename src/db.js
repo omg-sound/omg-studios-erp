@@ -418,7 +418,6 @@ function init() {
     CREATE INDEX IF NOT EXISTS idx_rate_items_active ON rate_items(active, name);
     CREATE INDEX IF NOT EXISTS idx_task_types_active ON task_types(active, sort_order, label);
     CREATE INDEX IF NOT EXISTS idx_project_tracks_project ON project_tracks(project_id);
-    CREATE INDEX IF NOT EXISTS idx_track_tasks_track ON track_tasks(track_id);
     CREATE INDEX IF NOT EXISTS idx_track_tasks_invoice ON track_tasks(invoice_id, is_invoiced);
     CREATE INDEX IF NOT EXISTS idx_audit_log_at ON audit_log(at DESC);
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
@@ -1004,10 +1003,131 @@ function init() {
     }
   }
 
+  // 곡 계층 제거(개편 2단계, 2026-10-13 — docs/redesign/02-flatten-tasks.md). 맨 끝에 둔다:
+  // 위의 생성·백필 단계는 옛 구조(track_id)로 쓰고, 여기서 한 번에 평탄화한다(새 DB도 같은 경로 — 테스트가 매번 검증).
+  flattenTasks(d);
+  d.exec("CREATE INDEX IF NOT EXISTS idx_track_tasks_project ON track_tasks(project_id);");
+
   // ── 후속 단계 테이블 자리(스키마만; 아직 미사용) ──
   // invoice_items / payments (라인아이템·입금 이력 분리가 필요해지면)
 
   return d;
+}
+
+/**
+ * tasks_flatten_v1 — 작업(track_tasks)을 곡(project_tracks)에서 떼어 프로젝트에 바로 붙인다.
+ *  - 추가: project_id(곡의 프로젝트) · song_title(곡 제목) · song_artist(곡 아티스트 — 프로젝트 아티스트와 다를 때만) / 제거: track_id
+ *  - **id 보존**(invoice_items.task_id 연결 유지). 테이블 이름은 그대로(쿼리 수십 곳을 바꿀 이유가 이름뿐이라).
+ *  - 작업 없는 빈 곡은 **프로젝트 메모 끝에 '곡: A, B'로 보존**(사용자 결정 — 운영 실측상 '세션에서 녹음한 곡' 기록이었다).
+ *  - project_tracks는 지우지 않는다(되돌릴 근거, 4단계에서 삭제). 이후 코드는 읽지 않는다.
+ *
+ * ⚠️ 외래키를 **끈 채로** 재구성해야 한다 — 켜진 상태에서 DROP TABLE track_tasks는 내부적으로 DELETE를 돌려
+ *    invoice_items.task_id(ON DELETE SET NULL)를 전부 지운다(청구 라인 ↔ 작업 연결 소멸). PRAGMA는 트랜잭션
+ *    안에서 무시되므로 BEGIN 전에 끄고, 끝나면 foreign_key_check로 확인한 뒤 다시 켠다.
+ * ⚠️ 전후로 작업 수·청구된 작업 수·지급 완료 수·청구 라인 연결 수를 비교해 하나라도 다르면 롤백하고 **기동을 멈춘다**
+ *    (조용히 반쯤 옮겨진 채 서비스하는 것보다 배포 실패가 낫다 — 직전 배포는 그대로 살아 있다).
+ */
+function flattenTasks(d) {
+  if (getState("tasks_flatten_v1")) return;
+  if (!columnExists("track_tasks", "track_id")) { setState("tasks_flatten_v1", "done"); return; }
+  const counts = () => d.prepare(
+    `SELECT (SELECT COUNT(*) FROM track_tasks) AS tasks,
+            (SELECT COUNT(*) FROM track_tasks WHERE is_invoiced = 1) AS invoiced,
+            (SELECT COUNT(*) FROM track_tasks WHERE worker_paid = 1) AS paid,
+            (SELECT COALESCE(SUM(total_price), 0) FROM track_tasks) AS amount,
+            (SELECT COUNT(*) FROM invoice_items WHERE task_id IS NOT NULL) AS linked`
+  ).get();
+  const before = counts();
+  d.exec("PRAGMA foreign_keys = OFF;");
+  try {
+    d.exec("BEGIN IMMEDIATE;");
+    try {
+      // ① 빈 곡 → 프로젝트 메모(이미 메모에 그 곡명이 있으면 건너뜀)
+      const empty = d.prepare(
+        `SELECT tr.project_id, tr.title FROM project_tracks tr
+         WHERE NOT EXISTS (SELECT 1 FROM track_tasks t WHERE t.track_id = tr.id)
+         ORDER BY tr.project_id, tr.id`
+      ).all();
+      const byProject = new Map();
+      for (const r of empty) {
+        const t = String(r.title || "").trim();
+        if (!t) continue;
+        if (!byProject.has(r.project_id)) byProject.set(r.project_id, []);
+        if (!byProject.get(r.project_id).includes(t)) byProject.get(r.project_id).push(t);
+      }
+      const getMemo = d.prepare("SELECT memo FROM projects WHERE id = ?");
+      const setMemo = d.prepare("UPDATE projects SET memo = ? WHERE id = ?");
+      let memoProjects = 0;
+      for (const [pid, titles] of byProject) {
+        const row = getMemo.get(pid);
+        if (!row) continue;
+        const memo = String(row.memo || "");
+        const add = titles.filter((t) => !memo.includes(t));
+        if (!add.length) continue;
+        setMemo.run((memo.trim() ? memo.replace(/\s+$/, "") + "\n" : "") + `곡: ${add.join(", ")}`, pid);
+        memoProjects++;
+      }
+      // ② 새 구조로 복사(id 보존)
+      d.exec(`CREATE TABLE track_tasks_new (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id       INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        song_title       TEXT,
+        song_artist      TEXT,
+        task_type        TEXT NOT NULL,
+        billing_type     TEXT NOT NULL DEFAULT 'Fixed_Per_Track',
+        quantity         REAL NOT NULL DEFAULT 1,
+        unit_price       INTEGER NOT NULL DEFAULT 0,
+        total_price      INTEGER NOT NULL DEFAULT 0,
+        engineer_name    TEXT,
+        status           TEXT NOT NULL DEFAULT 'Pending',
+        is_invoiced      INTEGER NOT NULL DEFAULT 0,
+        invoice_id       INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        session_id       INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+        worker_paid      INTEGER NOT NULL DEFAULT 0,
+        worker_paid_date TEXT,
+        worker_rate      INTEGER NOT NULL DEFAULT 0,
+        engineer_id      INTEGER,
+        waived           INTEGER NOT NULL DEFAULT 0,
+        billing_memo     TEXT,
+        work_date        TEXT
+      );`);
+      const copied = d.prepare(`INSERT INTO track_tasks_new
+        (id, project_id, song_title, song_artist, task_type, billing_type, quantity, unit_price, total_price, engineer_name,
+         status, is_invoiced, invoice_id, created_at, session_id, worker_paid, worker_paid_date, worker_rate, engineer_id,
+         waived, billing_memo, work_date)
+        SELECT t.id, tr.project_id, NULLIF(TRIM(tr.title), ''),
+               -- 옛 곡 생성은 프로젝트 아티스트를 곡에 **복사**했다 → 같으면 비운다(NULL = 프로젝트 아티스트를 따라감).
+               -- 다를 때만(컴필레이션 등, 운영 실측 18곡) 곡 아티스트로 남긴다.
+               CASE WHEN TRIM(COALESCE(tr.artist, '')) = TRIM(COALESCE(p.artist, '')) THEN NULL ELSE NULLIF(TRIM(tr.artist), '') END,
+               t.task_type, t.billing_type, t.quantity,
+               t.unit_price, t.total_price, t.engineer_name, t.status, t.is_invoiced, t.invoice_id, t.created_at, t.session_id,
+               t.worker_paid, t.worker_paid_date, t.worker_rate, t.engineer_id, t.waived, t.billing_memo, t.work_date
+        FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id LEFT JOIN projects p ON p.id = tr.project_id`).run().changes;
+      if (copied !== before.tasks) throw new Error(`작업 ${before.tasks}건 중 ${copied}건만 복사됨(곡 없는 작업?)`);
+      d.exec("DROP TABLE track_tasks;");
+      d.exec("ALTER TABLE track_tasks_new RENAME TO track_tasks;");
+      d.exec("CREATE INDEX IF NOT EXISTS idx_track_tasks_invoice ON track_tasks(invoice_id, is_invoiced);");
+      d.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_track_tasks_session ON track_tasks(session_id) WHERE session_id IS NOT NULL;");
+      d.exec("CREATE INDEX IF NOT EXISTS idx_track_tasks_engineer ON track_tasks(engineer_id, is_invoiced);");
+      d.exec("CREATE INDEX IF NOT EXISTS idx_track_tasks_project ON track_tasks(project_id);");
+      // ③ 검사 — 하나라도 어긋나면 롤백
+      const after = counts();
+      for (const k of Object.keys(before)) {
+        if (before[k] !== after[k]) throw new Error(`검사 불일치 ${k}: ${before[k]} → ${after[k]}`);
+      }
+      const fk = d.prepare("PRAGMA foreign_key_check").all();
+      if (fk.length) throw new Error(`외래키 위반 ${fk.length}건(예: ${JSON.stringify(fk[0])})`);
+      setState("tasks_flatten_v1", "done");
+      d.exec("COMMIT;");
+      console.log(`[migrate tasks_flatten_v1] 작업 ${after.tasks}건 평탄화 · 빈 곡 ${empty.length}개 → 프로젝트 메모 ${memoProjects}건`);
+    } catch (e) {
+      try { d.exec("ROLLBACK;"); } catch (_e) { /* noop */ }
+      throw new Error(`[migrate tasks_flatten_v1] 실패 — 롤백함, 기동 중단: ${e && e.message}`);
+    }
+  } finally {
+    d.exec("PRAGMA foreign_keys = ON;");
+  }
 }
 
 function seedDefaultCatalogs() {

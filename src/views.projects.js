@@ -259,7 +259,7 @@ function projectSummaryHtml(s, { isAdmin = false, projectId = null, tab = "activ
       return `<li>${head}${taskLis ? `<ul class="mt-0.5 space-y-0.5">${taskLis}</ul>` : ""}</li>`;
     }).join("");
     const more = s.tracks.length > 10 ? `<li class="text-muted">외 ${s.tracks.length - 10}곡</li>` : "";
-    blocks.push(`<div><div class="mb-0.5 font-medium text-fg/60">곡·콘텐츠 ${s.tracks.length}</div><ul class="space-y-1.5">${items}${more}</ul></div>`);
+    blocks.push(`<div><div class="mb-0.5 font-medium text-fg/60">작업 · 곡 ${s.tracks.length}</div><ul class="space-y-1.5">${items}${more}</ul></div>`);
   }
   // 세로 스택(2026-07-11 사용자 요청): 세션 블록은 전폭(완료 토글이 행 오른쪽 끝에 정렬), 곡·콘텐츠는 다음 줄로.
   return `<div class="space-y-3">${blocks.join("")}</div>`;
@@ -600,62 +600,67 @@ function managerSelect(selectedId) {
 }
 
 
-function tracksSection({ project, tracks, isAdmin, managers = [], expandTaskId = null }) {
-  const list = tracks.length
-    ? tracks.map((track) => trackCard(track, { isAdmin, managers, expandTaskId })).join("")
-    : emptyState("등록된 곡·콘텐츠가 없습니다.");
+/**
+ * 프로젝트 '작업' 탭(개편 2단계 — 곡 계층 제거). 같은 곡명끼리 **보기로만** 묶는다(곡은 개체가 아니라 작업의 곡명 칸).
+ * @param {{project:object, groups:Array<{key:string,title:string,artist:?string,tasks:Array}>}} o
+ */
+function tracksSection({ project, groups = [], isAdmin, managers = [], expandTaskId = null }) {
+  const list = groups.length
+    ? groups.map((g) => songGroupCard(project, g, { isAdmin, managers, expandTaskId })).join("")
+    : emptyState("등록된 작업이 없습니다.");
   const hint = isAdmin
-    ? explain(`세션(예약·실시간 작업)과 <span class="text-muted">별개로</span> 곡·콘텐츠별 후반작업(보컬튠·믹싱·마스터링)을 관리합니다. 여기선 <span class="text-fg">종류·담당·진행 상태</span>만 기록하고, <span class="text-fg">금액은 청구 탭에서</span> 정합니다.`)
+    ? explain(`세션(예약)과 <span class="text-muted">별개로</span> 후반작업(보컬튠·믹싱·마스터링 등)을 기록합니다. 곡명이 같은 작업끼리 묶어 보여 줍니다. 여기선 <span class="text-fg">종류·담당·진행 상태</span>만 기록하고, <span class="text-fg">금액은 청구 탭에서</span> 정합니다.`)
     : "";
   return `
     <section class="card mt-3 space-y-4">
       <div class="flex items-center justify-between gap-3">
-        <h2 class="font-display text-base font-semibold">곡 · 콘텐츠</h2>
+        <h2 class="font-display text-base font-semibold">작업</h2>
       </div>
       ${hint}
       <div class="space-y-3">${list}</div>
-      ${isAdmin ? `<div class="border-t border-border pt-4"><div class="mb-2 text-sm font-medium text-muted">곡·콘텐츠 추가</div>${trackCreateForm(project)}</div>` : ""}
+      ${isAdmin ? `<div class="border-t border-border pt-4"><div class="mb-2 text-sm font-medium text-muted">작업 추가</div>${taskCreateForm(project, managers)}</div>` : ""}
     </section>`;
 }
 
 
-function trackCreateForm(project) {
+/** 작업 추가 폼 — 곡명 칸의 **줄마다** 작업 하나(옛 '곡 일괄 추가' 대체. 예: 믹싱 10곡을 한 번에). */
+function taskCreateForm(project, managers = []) {
   return `
-    <form method="post" action="/projects/${project.id}/tracks" class="rounded-lg border border-border bg-bg p-3 space-y-2">
-      <div>
-        <label class="label mb-1 text-xs">아티스트 <span class="font-normal text-muted">— 기본=프로젝트 아티스트(검색·새 등록 가능)</span></label>
-        ${artistCombo({ artist: project.artist, artist_id: project.artist_id })}
+    <form method="post" action="/projects/${project.id}/tasks" class="space-y-2 rounded-lg border border-border bg-bg p-3" data-worker-rate-form>
+      <div class="grid gap-2 sm:grid-cols-3">
+        <div><label class="label mb-0 text-xs">작업 종류<select class="input mt-0.5 block py-1.5 text-sm" name="task_type">${taskTypeOptions(defaultTaskType())}</select></label></div>
+        <div><label class="label mb-0 text-xs">담당 엔지니어<select class="input mt-0.5 block py-1.5 text-sm" name="engineer_id">${engineerSelect(managers, {})}</select></label></div>
+        <div><span class="label mb-0 text-xs">작업일 <span class="font-normal text-muted">(선택)</span></span><div class="mt-0.5">${dateCombo("work_date", "", { label: "작업일", inputCls: "input w-full py-1.5 text-sm" })}</div></div>
       </div>
+      <div data-worker-rate><label class="label mb-0 text-xs">외주 지급단가 <span class="font-normal text-muted">(원 · 작업마다 같은 값)</span><input class="input mt-0.5 block py-1.5 text-sm" name="worker_rate" inputmode="numeric" placeholder="0" /></label></div>
       <div>
-        <label class="label mb-1 text-xs">곡·콘텐츠 이름 <span class="font-normal text-muted">— 여러 곡은 줄바꿈으로 구분(같은 아티스트)</span></label>
-        <div class="flex gap-2">
-          <textarea class="input flex-1 py-1.5 text-sm" name="titles" rows="2" placeholder="곡명 또는 콘텐츠명&#10;한 줄에 하나씩 입력"></textarea>
+        <label class="label mb-0 text-xs">곡명 <span class="font-normal text-muted">— 여러 곡은 줄바꿈(곡마다 작업 하나) · 비우면 프로젝트 이름</span></label>
+        <div class="mt-0.5 flex gap-2">
+          <textarea class="input flex-1 py-1.5 text-sm" name="song_title" rows="2" placeholder="곡명&#10;한 줄에 하나씩"></textarea>
           <button class="btn-primary shrink-0 self-end px-4 py-1.5 text-sm" type="submit">추가</button>
         </div>
       </div>
+      <input type="hidden" name="status" value="Pending" />
     </form>`;
 }
 
 
-function trackCard(track, { isAdmin, managers = [], expandTaskId = null }) {
-  const tasks = track.tasks && track.tasks.length
-    ? track.tasks.map((task) => taskRow(task, { isAdmin, managers, open: task.id === expandTaskId })).join("")
-    : emptyState("아직 등록된 작업이 없습니다. 아래에서 진행 단계를 추가하세요.");
-  const hasInvoiced = (track.tasks || []).some((t) => t.is_invoiced);
+function songGroupCard(project, group, { isAdmin, managers = [], expandTaskId = null }) {
+  const tasks = group.tasks.map((task) => taskRow(task, { isAdmin, managers, open: task.id === expandTaskId })).join("");
+  const unnamed = !group.key;
   return `
     <div class="rounded-lg border border-border bg-bg p-3">
       <div class="mb-2 flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <div class="font-medium">${esc(track.title)}${track.artist ? `<span class="ml-1.5 text-xs font-normal text-muted">${esc(track.artist)}</span>` : ""}</div>
+          <div class="font-medium">${esc(group.title)}${unnamed ? `<span class="ml-1.5 text-xs font-normal text-muted">(곡명 없음)</span>` : ""}${group.artist ? `<span class="ml-1.5 text-xs font-normal text-muted">${esc(group.artist)}</span>` : ""}</div>
         </div>
-        ${isAdmin ? trackEditMenu(track, hasInvoiced) : ""}
+        ${isAdmin ? songRenameMenu(project, group) : ""}
       </div>
-      ${trackProgressSummary(track.tasks)}
+      ${trackProgressSummary(group.tasks)}
       <div class="space-y-2">${tasks}</div>
-      ${isAdmin ? taskQuickAdd(track) : ""}
+      ${isAdmin ? taskQuickAdd(project, group) : ""}
     </div>`;
 }
-
 
 /** 곡의 진행 요약: 단계 그룹별 가장 진전된 상태를 한 줄로(믹스 완료 · 마스터 대기). */
 function trackProgressSummary(tasks) {
@@ -672,20 +677,16 @@ function trackProgressSummary(tasks) {
 }
 
 
-function trackEditMenu(track, hasInvoiced) {
+/** 곡 이름 바꾸기 — 이 곡명의 미청구 작업 전부(청구된 작업은 스냅샷 잠금이라 그대로, 서버가 안내). */
+function songRenameMenu(project, group) {
   return `
     <details class="group shrink-0 text-right">
-      <summary class="flex cursor-pointer list-none items-center justify-end gap-1 whitespace-nowrap text-xs text-muted hover:text-fg">수정 ${detailsChevron()}</summary>
-      <form method="post" action="/projects/tracks/${track.id}" class="mt-2 space-y-2 rounded-lg border border-border bg-surface p-3 text-left">
-        <div><label class="label mb-0.5 text-xs">아티스트</label>${artistCombo({ artist: track.artist })}</div>
-        <div class="flex gap-2"><input class="input flex-1 py-1.5 text-sm" name="title" value="${esc(track.title)}" required />
-        <button class="btn-primary shrink-0 btn-xs self-end" type="submit">저장</button></div>
+      <summary class="flex cursor-pointer list-none items-center justify-end gap-1 whitespace-nowrap text-xs text-muted hover:text-fg">이름 바꾸기 ${detailsChevron()}</summary>
+      <form method="post" action="/projects/${project.id}/songs/rename" class="mt-2 flex gap-2 rounded-lg border border-border bg-surface p-3 text-left">
+        <input type="hidden" name="from" value="${esc(group.key)}" />
+        <input class="input flex-1 py-1.5 text-sm" name="to" value="${esc(group.key)}" placeholder="비우면 곡명 없음(프로젝트 이름)" aria-label="새 곡명" />
+        <button class="btn-primary btn-xs shrink-0 self-center" type="submit">바꾸기</button>
       </form>
-      ${hasInvoiced
-        ? `<p class="mt-2 text-xs text-muted">청구된 작업이 있어 삭제할 수 없습니다.</p>`
-        : `<form method="post" action="/projects/tracks/${track.id}/delete" data-confirm="이 곡·콘텐츠와 하위 작업을 삭제할까요?" class="mt-2 text-left">
-             <button class="btn-ghost btn-xs text-danger" type="submit">곡·콘텐츠 삭제</button>
-           </form>`}
     </details>`;
 }
 
@@ -764,6 +765,12 @@ function engineerSelect(managers, task) {
 }
 
 
+/** 작업 종류 기본값 = 보컬 녹음(2026-10-13 사용자 지정 — /new·작업 추가 폼 공통). 키는 라벨을 바꿔도 고정 — 삭제됐으면 기본값 없이 첫 항목. */
+const DEFAULT_TASK_TYPE = "Vocal_Recording";
+function defaultTaskType() {
+  return activeTaskTypes().some((t) => t.key === DEFAULT_TASK_TYPE) ? DEFAULT_TASK_TYPE : "";
+}
+
 /** 작업 종류 select 옵션 — 활성 종류 + 현재값이 비활성/삭제됐으면 보존용 옵션(과거 작업 깨짐 방지). */
 function taskTypeOptions(current) {
   const types = activeTaskTypes();
@@ -791,6 +798,12 @@ function taskEditForm(task, managers = []) {
         <span class="label mb-0 text-xs">작업일 <span class="font-normal text-muted">(선택)</span></span>
         <div class="mt-0.5">${dateCombo("work_date", task.work_date || "", { label: "작업일" })}</div>
       </div>
+      <div>
+        <label class="label mb-0 text-xs">곡명 <span class="font-normal text-muted">(비우면 프로젝트 이름)</span><input class="input mt-0.5 block py-1.5 text-sm" name="song_title" value="${esc(task.song_title || "")}" autocomplete="off" /></label>
+      </div>
+      <div>
+        <label class="label mb-0 text-xs">곡 아티스트 <span class="font-normal text-muted">(프로젝트와 다를 때만)</span><input class="input mt-0.5 block py-1.5 text-sm" name="song_artist" value="${esc(task.song_artist || "")}" autocomplete="off" /></label>
+      </div>
       <div data-worker-rate>
         <label class="label mb-0 text-xs">외주 지급단가 <span class="font-normal text-muted">(정산 기준 · 원)</span><input class="input mt-0.5 block py-1.5 text-sm" name="worker_rate" inputmode="numeric" placeholder="0" value="${esc(String(task.worker_rate || ""))}" /></label>
       </div>
@@ -806,11 +819,12 @@ function taskEditForm(task, managers = []) {
 
 
 /** 다음 단계 빠른 추가 — is_quick 종류 버튼(기본 단가 주입), +기타는 전체 활성 종류 그룹 + 금액 인라인 입력(0원 강제 방지). 추가하면 편집이 펼쳐져 조정할 수 있다. */
-function taskQuickAdd(track) {
+function taskQuickAdd(project, group) {
   const types = activeTaskTypes();
   const quickTypes = types.filter((t) => t.is_quick);
   const quick = (t) => `
-    <form method="post" action="/projects/tracks/${track.id}/tasks">
+    <form method="post" action="/projects/${project.id}/tasks">
+      <input type="hidden" name="song_title" value="${esc(group.key)}" />
       <input type="hidden" name="task_type" value="${esc(t.key)}" />
       <input type="hidden" name="status" value="Pending" />
       <button class="rounded-md border border-border bg-bg btn-xs hover:border-primary hover:text-primary" type="submit">${esc(t.label)}</button>
@@ -819,7 +833,8 @@ function taskQuickAdd(track) {
   const other = `
     <details class="align-top">
       <summary class="cursor-pointer list-none rounded-md border border-border bg-bg btn-xs hover:border-primary hover:text-primary">+ 기타</summary>
-      <form method="post" action="/projects/tracks/${track.id}/tasks" class="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
+      <form method="post" action="/projects/${project.id}/tasks" class="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
+        <input type="hidden" name="song_title" value="${esc(group.key)}" />
         <select class="input py-1.5 text-sm" name="task_type">${flatOptions}</select>
         <input type="hidden" name="status" value="Pending" />
         <button class="btn-primary btn-xs" type="submit">추가</button>
@@ -1114,4 +1129,5 @@ module.exports = { artistCombo,
   projectInfoSummary,
   engineerSelect,
   taskTypeOptions,
+  defaultTaskType,
 };

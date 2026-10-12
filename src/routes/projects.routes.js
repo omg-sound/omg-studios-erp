@@ -26,14 +26,12 @@ const {
   listDeliverablesForProject,
   listInvoicesForProject,
   listInvoiceItemsForInvoice,
-  listTracksForProject,
+  listTaskGroupsForProject,
   listUnbilledTasksForProject,
   listBillableSessionsForProject,
   listSessionsForProject,
-  createTrack,
-  updateTrack,
-  deleteTrack,
-  createTask,
+  createTasks,
+  renameSong,
   updateTask,
   setTaskAmount,
   setTaskStatus,
@@ -286,7 +284,7 @@ function renderProjectDetail(req, res, p, formState = null, err = "") {
   // 메타 카드는 '프로젝트' 탭(첫 탭·기본). 유형 구분 없이 모든 프로젝트가 세션 일정 탭을 가진다.
   const tabs = [{ key: "project", label: "정보" }];
   tabs.push({ key: "sessions", label: "세션 일정" });
-  tabs.push({ key: "tracks", label: "곡 · 콘텐츠" });
+  tabs.push({ key: "tracks", label: "작업" }); // 개편 2단계 — 곡 계층 제거. URL 키 tracks는 하위 호환으로 유지
   if (showDeliverables) tabs.push({ key: "deliverables", label: "자료 전달" }); // 자료 전달은 치프·스태프만, 대표 제외
   if (showInvoice) tabs.push({ key: "invoice", label: "청구" });
   const validKeys = tabs.map((t) => t.key);
@@ -304,8 +302,8 @@ function renderProjectDetail(req, res, p, formState = null, err = "") {
   if (tab === "project") {
     tabContent = meta;
   } else if (tab === "tracks") {
-    const trackBundle = listTracksForProject(req.user, p.id);
-    tabContent = tracksSection({ project: p, tracks: trackBundle ? trackBundle.tracks : [], isAdmin: editable, managers, expandTaskId: Number(req.query.expand) || null });
+    const bundle = listTaskGroupsForProject(req.user, p.id);
+    tabContent = tracksSection({ project: p, groups: bundle ? bundle.groups : [], isAdmin: editable, managers, expandTaskId: Number(req.query.expand) || null });
   } else if (tab === "deliverables" && showDeliverables) {
     const deliv = listDeliverablesForProject(req.user, p.id);
     tabContent = deliverablesSection({ project: p, rows: deliv ? deliv.rows : [], isAdmin: editable, baseUrl: config.baseUrl, collapsed: false });
@@ -395,67 +393,22 @@ router.post("/:id", requireEditor, (req, res) => {
   res.redirect(`/projects/${id}?flash=saved`);
 });
 
-router.post("/:id/tracks", requireEditor, (req, res) => {
-  const projectId = Number(req.params.id);
-  // titles(textarea 다건) 또는 title(단건 하위호환) 모두 지원
-  const raw = String(req.body.titles || req.body.title || "");
-  const titles = raw.split("\n").map((s) => s.trim()).filter(Boolean);
-  if (!titles.length) {
-    return res.status(400).send(errorPage({ code: 400, title: "이름 필요", message: "곡·콘텐츠 이름을 입력하세요.", user: req.user }));
-  }
-  const artist = String(req.body.artist || "").trim();
-  // 여러 줄을 한 트랜잭션으로(2026-08-22 감사) — 예전엔 줄마다 독립 INSERT라, 중간에 실패하면
-  // 앞부분만 생성된 채 사용자에겐 500만 보였다(어디까지 만들어졌는지 알 수 없었다).
-  const d = db();
-  let lastTrack = null;
-  d.exec("BEGIN IMMEDIATE");
-  try {
-    for (const title of titles) {
-      const track = createTrack(req.user, projectId, { title, artist });
-      if (!track) {
-        d.exec("ROLLBACK");
-        return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-      }
-      lastTrack = track;
-    }
-    d.exec("COMMIT");
-  } catch (e) {
-    try { d.exec("ROLLBACK"); } catch (_) { /* ignore */ }
-    throw e;
-  }
-  res.redirect(`/projects/${lastTrack.project_id}?tab=tracks&flash=added`);
+// ── 작업 추가(개편 2단계 — 프로젝트에 바로). 곡명 칸의 줄마다 작업 하나(옛 '곡 일괄 추가' 대체, 한 트랜잭션) ──
+router.post("/:id/tasks", requireEditor, (req, res) => {
+  const tasks = createTasks(req.user, Number(req.params.id), req.body);
+  if (!tasks) return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
+  const one = tasks.length === 1 ? tasks[0] : null; // 1건이면 그 작업을 펼쳐 바로 담당·단가를 고칠 수 있게
+  res.redirect(`/projects/${req.params.id}?tab=tracks&flash=added${one ? `&expand=${one.id}#task-${one.id}` : ""}`);
 });
 
-router.post("/tracks/:trackId", requireEditor, (req, res) => {
-  try {
-    const track = updateTrack(req.user, Number(req.params.trackId), req.body);
-    if (!track) return res.status(404).send(errorPage({ code: 404, title: "곡·콘텐츠를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-    res.redirect(`/projects/${track.project_id}?tab=tracks&flash=saved`);
-  } catch (e) {
-    if (e.message === "TRACK_TITLE_REQUIRED") return res.status(400).send(errorPage({ code: 400, title: "이름 필요", message: "곡·콘텐츠 이름을 입력하세요.", user: req.user }));
-    throw e;
-  }
-});
-
-router.post("/tracks/:trackId/delete", requireEditor, (req, res) => {
-  try {
-    const result = deleteTrack(req.user, Number(req.params.trackId));
-    if (!result) return res.status(404).send(errorPage({ code: 404, title: "곡·콘텐츠를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-    res.redirect(`/projects/${result.project_id}?tab=tracks&flash=deleted`);
-  } catch (e) {
-    if (e.message === "TRACK_HAS_INVOICED") {
-      return res.status(400).send(errorPage({ code: 400, title: "삭제 불가", message: "이미 청구된 작업이 있는 곡·콘텐츠는 삭제할 수 없습니다.", user: req.user }));
-    }
-    if (e.message === "PAYOUT_LOCKED") return res.status(409).send(payoutLockedPage(req.user, "이 곡·콘텐츠를"));
-    throw e;
-  }
-});
-
-router.post("/tracks/:trackId/tasks", requireEditor, (req, res) => {
-  const task = createTask(req.user, Number(req.params.trackId), req.body);
-  if (!task) return res.status(404).send(errorPage({ code: 404, title: "곡·콘텐츠를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-  const track = db().prepare("SELECT project_id FROM project_tracks WHERE id = ?").get(task.track_id);
-  res.redirect(track ? `/projects/${track.project_id}?tab=tracks&flash=added&expand=${task.id}#task-${task.id}` : "/projects");
+// ── 곡 이름 바꾸기 — 같은 곡명의 미청구 작업을 한 번에(곡 묶음 머리글). 청구된 작업은 스냅샷 잠금이라 그대로 ──
+router.post("/:id/songs/rename", requireEditor, (req, res) => {
+  const r = renameSong(req.user, Number(req.params.id), req.body.from, req.body.to);
+  if (!r) return res.status(404).send(errorPage({ code: 404, title: "프로젝트를 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
+  const notice = r.locked
+    ? `&notice=${encodeURIComponent(`이미 청구된 작업 ${r.locked}건은 옛 이름 그대로입니다(청구서 기록 보존).`)}&notice_warn=1`
+    : "&flash=saved";
+  res.redirect(`/projects/${r.project_id}?tab=tracks${notice}`);
 });
 
 router.post("/tasks/:taskId", requireEditor, (req, res) => {

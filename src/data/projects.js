@@ -13,6 +13,7 @@ const { db } = require("../db");
 const { minutesBetween, daysSpan, todayYmd } = require("../lib/date");
 const { computeRatePrice } = require("./rate-items"); // 무순환(rate-items는 projects를 호출하지 않음)
 const { RENTAL_SESSION_TYPES, POSTPROD_SESSION_TYPES } = require("../config");
+const { songOrderSql, songTitlesSql } = require("../lib/task-order");
 const RENTAL_IN = RENTAL_SESSION_TYPES.map((t) => `'${t}'`).join(", "); // SQL IN절(정적 config 값 — 인젝션 무관)
 const POSTPROD_IN = POSTPROD_SESSION_TYPES.map((t) => `'${t}'`).join(", "); // 후반작업(믹싱·마스터링) 세션 IN절
 
@@ -104,12 +105,11 @@ function listProjects(_user, { q } = {}) {
   //  content_cnt  = 세션+작업 총량(0이면 아직 아무 내용 없는 빈 프로젝트) → 진행 중으로 취급
   const sql = `
     SELECT p.*, c.name AS client_name, m.name AS manager_name,
-      (SELECT GROUP_CONCAT(tr.title, '||') FROM project_tracks tr WHERE tr.project_id = p.id) AS track_titles,
+      ${songTitlesSql("p")} AS track_titles,
       (SELECT COALESCE(SUM(COALESCE(NULLIF(t.total_price, 0), tt.unit_price, 0)), 0)
        FROM track_tasks t
-       JOIN project_tracks tr ON tr.id = t.track_id
        LEFT JOIN task_types tt ON tt.key = t.task_type
-       WHERE tr.project_id = p.id AND t.waived = 0) AS task_total,
+       WHERE t.project_id = p.id AND t.waived = 0) AS task_total,
       (SELECT COUNT(*) FROM sessions s
        WHERE s.project_id = p.id AND s.session_date >= @today AND s.status = '예정') AS upcoming_cnt,
       (SELECT MIN(s.session_date) FROM sessions s
@@ -119,13 +119,12 @@ function listProjects(_user, { q } = {}) {
       -- 세션 총수(취소 포함) — 목록 카드 진입 탭 결정용(세션 있으면 세션 일정, 없고 곡만 있으면 곡·콘텐츠).
       (SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id) AS sess_cnt,
       (SELECT COUNT(*) FROM track_tasks t
-       JOIN project_tracks tr ON tr.id = t.track_id
-       WHERE tr.project_id = p.id AND t.status <> 'Completed') AS open_tasks,
-      (SELECT COUNT(*) FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE tr.project_id = p.id) AS task_cnt,
-      (SELECT COUNT(*) FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE tr.project_id = p.id AND t.status = 'Pending') AS task_pending,
-      (SELECT COUNT(*) FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE tr.project_id = p.id AND t.status = 'Completed') AS task_done,
+       WHERE t.project_id = p.id AND t.status <> 'Completed') AS open_tasks,
+      (SELECT COUNT(*) FROM track_tasks t WHERE t.project_id = p.id) AS task_cnt,
+      (SELECT COUNT(*) FROM track_tasks t WHERE t.project_id = p.id AND t.status = 'Pending') AS task_pending,
+      (SELECT COUNT(*) FROM track_tasks t WHERE t.project_id = p.id AND t.status = 'Completed') AS task_done,
       ((SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id)
-       + (SELECT COUNT(*) FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE tr.project_id = p.id)) AS content_cnt,
+       + (SELECT COUNT(*) FROM track_tasks t WHERE t.project_id = p.id)) AS content_cnt,
       -- 미청구 항목 수 = 미청구 작업 + 미청구 청구가능 세션(listBillableSessionsForProject와 동일 조건).
       -- 완료 탭에서 '청구 생성 안 한 프로젝트'를 위로 올리는 정렬·배지용(2026-07-05 사용자 요청).
       -- 청구 안 함(waived) 처리한 항목은 더 이상 '필요'하지 않으므로 제외(2026-07-06 사용자 요청).
@@ -134,8 +133,8 @@ function listProjects(_user, { q } = {}) {
       --    산정이 안 될 뿐 청구는 여전히 '필요'하다. 진짜로 안 받을 거면 '청구 안 함'(waived)이 탈출구.
       -- 내부 지원 프로젝트(internal_support=1)는 애초에 청구 대상이 아니므로 전부 0으로 강제(2026-08-26).
       (CASE WHEN p.internal_support = 1 THEN 0 ELSE (
-      (SELECT COUNT(*) FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id
-         WHERE tr.project_id = p.id AND t.is_invoiced = 0 AND t.waived = 0)
+      (SELECT COUNT(*) FROM track_tasks t
+         WHERE t.project_id = p.id AND t.is_invoiced = 0 AND t.waived = 0)
        + (SELECT COUNT(*) FROM sessions s
            WHERE s.project_id = p.id AND s.status <> '취소' AND s.session_type IN (${RENTAL_IN})
              AND (s.all_day = 1 OR (s.start_time IS NOT NULL AND s.end_time IS NOT NULL))
@@ -152,8 +151,8 @@ function listProjects(_user, { q } = {}) {
               AND s2.session_type IN (${POSTPROD_IN})
               AND s2.status <> '취소' AND s2.waived = 0
               AND s2.status = '완료'
-              AND NOT EXISTS (SELECT 1 FROM track_tasks t3 JOIN project_tracks tr3 ON tr3.id = t3.track_id
-                               WHERE tr3.project_id = p.id)
+              AND NOT EXISTS (SELECT 1 FROM track_tasks t3
+                               WHERE t3.project_id = p.id)
               AND NOT EXISTS (SELECT 1 FROM invoices i3 WHERE i3.project_id = p.id)
          ) THEN 1 ELSE 0 END)
       ) END) AS unbilled_cnt,
@@ -187,7 +186,7 @@ function listProjects(_user, { q } = {}) {
 function getProjectForUser(user, id) {
   const row = db()
     .prepare(
-      `SELECT p.*, c.name AS client_name, m.name AS manager_name, ct.name AS contact_name, ct.phone AS contact_phone, tr_sum.track_titles, task_sum.task_total,
+      `SELECT p.*, c.name AS client_name, m.name AS manager_name, ct.name AS contact_name, ct.phone AS contact_phone, ${songTitlesSql("p")} AS track_titles, task_sum.task_total,
          (SELECT COALESCE(SUM(i.discount_amount), 0) FROM invoices i
            WHERE i.project_id = p.id
              AND EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = i.id
@@ -197,16 +196,11 @@ function getProjectForUser(user, id) {
        LEFT JOIN project_managers m ON m.id = p.manager_id
        LEFT JOIN parties ct ON ct.id = p.contact_party_id
        LEFT JOIN (
-         SELECT project_id, GROUP_CONCAT(title, '||') AS track_titles
-         FROM project_tracks
-         GROUP BY project_id
-       ) tr_sum ON tr_sum.project_id = p.id
-       LEFT JOIN (
-         SELECT tr.project_id, COALESCE(SUM(COALESCE(NULLIF(t.total_price, 0), tt.unit_price, 0)), 0) AS task_total
-         FROM project_tracks tr
-         LEFT JOIN track_tasks t ON t.track_id = tr.id AND t.waived = 0
+         SELECT t.project_id, COALESCE(SUM(COALESCE(NULLIF(t.total_price, 0), tt.unit_price, 0)), 0) AS task_total
+         FROM track_tasks t
          LEFT JOIN task_types tt ON tt.key = t.task_type
-         GROUP BY tr.project_id
+         WHERE t.waived = 0
+         GROUP BY t.project_id
        ) task_sum ON task_sum.project_id = p.id
        WHERE p.id = ?`
     )
@@ -238,22 +232,24 @@ function listProjectSummaries(projectIds) {
   for (const s of sessions) if (out[s.project_id]) out[s.project_id].sessions.push(s);
   const taskRows = db()
     .prepare(
-      `SELECT tr.project_id, tr.id AS track_id, tr.title, tr.artist,
+      `SELECT t.project_id, COALESCE(t.song_title, '') AS song_key, COALESCE(t.song_title, p.title) AS title, t.song_artist AS artist,
               t.id AS task_id, t.status AS task_status, t.engineer_name,
               COALESCE(NULLIF(tt.label, ''), t.task_type) AS type_label
-       FROM project_tracks tr
-       LEFT JOIN track_tasks t ON t.track_id = tr.id
+       FROM track_tasks t
+       JOIN projects p ON p.id = t.project_id
        LEFT JOIN task_types tt ON tt.key = t.task_type
-       WHERE tr.project_id IN (${ph})
-       ORDER BY tr.created_at ASC, tr.id ASC, t.created_at ASC, t.id ASC`
+       WHERE t.project_id IN (${ph})
+       ORDER BY ${songOrderSql("t")}`
     )
     .all(...ids);
   const trackMap = {};
   for (const r of taskRows) {
-    let tk = trackMap[r.track_id];
+    // 곡 묶음 = 같은 프로젝트 안의 같은 곡명(개편 2단계 — 곡 개체 없음, 보기로만 묶는다).
+    const k = `${r.project_id}|${r.song_key}`;
+    let tk = trackMap[k];
     if (!tk) {
-      tk = { id: r.track_id, title: r.title, artist: r.artist, engineers: [], tasks: [] };
-      trackMap[r.track_id] = tk;
+      tk = { id: k, title: r.title, artist: r.artist, engineers: [], tasks: [] };
+      trackMap[k] = tk;
       if (out[r.project_id]) out[r.project_id].tracks.push(tk);
     }
     if (r.engineer_name && !tk.engineers.includes(r.engineer_name)) tk.engineers.push(r.engineer_name);
@@ -352,7 +348,7 @@ function listProjectIdsForManager(managerId) {
     .prepare(
       `SELECT id AS project_id FROM projects WHERE manager_id = @mid
        UNION SELECT s.project_id FROM session_engineers se JOIN sessions s ON s.id = se.session_id WHERE se.manager_id = @mid
-       UNION SELECT tr.project_id FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE t.engineer_id = @mid`
+       UNION SELECT t.project_id FROM track_tasks t WHERE t.engineer_id = @mid`
     )
     .all({ mid });
   return new Set(rows.map((r) => r.project_id));
@@ -362,7 +358,7 @@ function listProjectIdsForManager(managerId) {
 function deleteProject(projectId) {
   const pid = Number(projectId);
   const invoicedTask = db()
-    .prepare("SELECT 1 FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE tr.project_id = ? AND t.is_invoiced = 1 LIMIT 1")
+    .prepare("SELECT 1 FROM track_tasks t WHERE t.project_id = ? AND t.is_invoiced = 1 LIMIT 1")
     .get(pid);
   const invoicedSession = db()
     .prepare("SELECT 1 FROM invoice_items ii JOIN sessions s ON s.id = ii.session_id WHERE s.project_id = ? LIMIT 1")
@@ -370,7 +366,7 @@ function deleteProject(projectId) {
   if (invoicedTask || invoicedSession) throw new Error("PROJECT_HAS_INVOICED");
   // 프로젝트 삭제는 트랙·작업·세션·배정을 CASCADE로 쓸어간다 — 이미 이체한 지급 기록이 남아 있으면 거부.
   const paidTask = db()
-    .prepare("SELECT 1 FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id WHERE tr.project_id = ? AND t.worker_paid = 1 LIMIT 1")
+    .prepare("SELECT 1 FROM track_tasks t WHERE t.project_id = ? AND t.worker_paid = 1 LIMIT 1")
     .get(pid);
   const paidSession = db()
     .prepare("SELECT 1 FROM session_engineers se JOIN sessions s ON s.id = se.session_id WHERE s.project_id = ? AND se.worker_paid = 1 LIMIT 1")
@@ -405,8 +401,8 @@ function hasPostprodSessionNeedingBilling(projectId) {
           AND s.session_type IN (${POSTPROD_IN})
           AND s.status <> '취소' AND s.waived = 0
           AND s.status = '완료'
-          AND NOT EXISTS (SELECT 1 FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id
-                           WHERE tr.project_id = @pid)
+          AND NOT EXISTS (SELECT 1 FROM track_tasks t
+                           WHERE t.project_id = @pid)
           AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.project_id = @pid)
         LIMIT 1`
     )

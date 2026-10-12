@@ -26,9 +26,7 @@ test.after(() => cleanupDb(process.env.DB_PATH, db()));
 
 test("setTaskWaived: 토글 + 예산·미청구 집계에서 제외, 되돌리면 원래 금액 그대로 복원", () => {
   const projectId = seedProject("무료작업테스트");
-  const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(projectId);
-  const trackId = Number(tr.lastInsertRowid);
-  const task = createTask(CHIEF, trackId, { task_type: "Mixing" });
+  const task = createTask(CHIEF, projectId, { task_type: "Mixing" });
   db().prepare("UPDATE track_tasks SET total_price = 300000, status = 'Completed' WHERE id = ?").run(task.id);
 
   let rows = listProjects(CHIEF, {});
