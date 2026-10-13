@@ -112,11 +112,10 @@ const { workerNameList, workerPayoutCard, monthDot } = require("../src/views.wor
 
 function seedTask(workerId, { rate, paid, paidDate } = {}) {
   const pj = Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('정산요약', 'task', 0)").run().lastInsertRowid);
-  const tr = Number(db().prepare("INSERT INTO project_tracks (project_id, title) VALUES (?, '곡')").run(pj).lastInsertRowid);
   return Number(db().prepare(
     `INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, engineer_id, worker_rate, worker_paid, worker_paid_date, status)
-     VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'mixing', 'Fixed_Per_Track', 1, 0, 0, ?, ?, ?, ?, 'Completed')`
-  ).run(tr, workerId, rate || 0, paid ? 1 : 0, paidDate || null).lastInsertRowid);
+     VALUES (?, 'mixing', 'Fixed_Per_Track', 1, 0, 0, ?, ?, ?, ?, 'Completed')`
+  ).run(pj, workerId, rate || 0, paid ? 1 : 0, paidDate || null).lastInsertRowid);
 }
 
 test("workerPayoutSummary: 미지급 합계·건수 / 누적 지급 / 최근 지급월", () => {

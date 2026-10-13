@@ -21,12 +21,11 @@ const mid = D.prepare("INSERT INTO project_managers (name, user_id, active) VALU
 D.prepare("INSERT INTO users (id, email, role, name, active) VALUES (2, 'owner@x.com', 'owner', '대표', 1)").run();
 
 const proj = D.prepare("INSERT INTO projects (title, project_type, artist, rate) VALUES ('루나 1집', 'session', '루나', 0)").run().lastInsertRowid;
-const track = D.prepare("INSERT INTO project_tracks (project_id, title, artist) VALUES (?, '월광', '루나')").run(proj).lastInsertRowid;
 
 // 내 미완료 작업 + 완료/waived(제외 대상).
-const openTask = D.prepare("INSERT INTO track_tasks (project_id, task_type, status, engineer_id, waived) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Pending', ?, 0)").run(track, mid).lastInsertRowid;
-D.prepare("INSERT INTO track_tasks (project_id, task_type, status, engineer_id, waived) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mastering', 'Completed', ?, 0)").run(track, mid); // 완료=제외
-D.prepare("INSERT INTO track_tasks (project_id, task_type, status, engineer_id, waived) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'VocalTune', 'Pending', ?, 1)").run(track, mid); // waived=제외
+const openTask = D.prepare("INSERT INTO track_tasks (project_id, task_type, status, engineer_id, waived) VALUES (?, 'Mixing', 'Pending', ?, 0)").run(proj, mid).lastInsertRowid;
+D.prepare("INSERT INTO track_tasks (project_id, task_type, status, engineer_id, waived) VALUES (?, 'Mastering', 'Completed', ?, 0)").run(proj, mid); // 완료=제외
+D.prepare("INSERT INTO track_tasks (project_id, task_type, status, engineer_id, waived) VALUES (?, 'VocalTune', 'Pending', ?, 1)").run(proj, mid); // waived=제외
 
 // 내 담당 다가오는 세션(session_engineers 배정) + 과거 세션(제외).
 const futSess = D.prepare("INSERT INTO sessions (project_id, session_type, session_date, status) VALUES (?, '녹음', '2099-01-01', '예정')").run(proj).lastInsertRowid;

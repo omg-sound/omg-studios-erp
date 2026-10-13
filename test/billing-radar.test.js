@@ -27,25 +27,20 @@ init();
 const CHIEF = { id: 1, role: "chief", email: "chief@omg.test" };
 
 const roomA = Number(db().prepare("INSERT INTO rooms (name, active) VALUES ('A룸',1)").run().lastInsertRowid);
-const rateItem = Number(
-  db().prepare("INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active) VALUES ('보컬녹음','스튜디오 녹음',210,300000,60,100000,1)").run().lastInsertRowid
-);
-
 let seq = 0;
 function seedProject(title) {
   seq += 1;
   return Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES (?, 'session', 0)").run(`${title}${seq}`).lastInsertRowid);
 }
 
-/** 대관 세션 1건(rateItemId 생략 = 단가 항목 미선택). */
-function seedSession(projectId, { date, rateItemId = null, done = true }) {
+/** 대관 세션 1건. */
+function seedSession(projectId, { date, done = true }) {
   const s = createSession(CHIEF, projectId, {
     session_type: "녹음",
     session_date: date,
     start_time: "14:00",
     end_time: "18:00",
     room_id: roomA,
-    ...(rateItemId ? { rate_item_id: String(rateItemId) } : {}),
   });
   if (done) setSessionStatus(CHIEF, s.id, "완료");
   return s;
@@ -130,8 +125,8 @@ test("비대관 세션(믹싱)은 여전히 청구 후보가 아니다 — 후�
 
 test("다가오는 세션이 있어도 완료 세션의 미청구는 unbilled_cnt에 잡힌다", () => {
   const pid = seedProject("장기앨범");
-  seedSession(pid, { date: "2026-11-28", rateItemId: rateItem }); // 완료·미청구
-  createSession(CHIEF, pid, { session_type: "녹음", session_date: "2099-12-31", start_time: "14:00", end_time: "18:00", room_id: roomA, rate_item_id: String(rateItem) }); // 다가오는 예정
+  seedSession(pid, { date: "2026-11-28" }); // 완료·미청구
+  createSession(CHIEF, pid, { session_type: "녹음", session_date: "2099-12-31", start_time: "14:00", end_time: "18:00", room_id: roomA }); // 다가오는 예정
 
   const p = projectRow(pid);
   assert.strictEqual(p.is_completed, false, "다가오는 세션이 있으니 프로젝트는 진행 중");
@@ -177,15 +172,12 @@ function seedMixSession(projectId, { date = "2026-07-01", done = true } = {}) {
   return s;
 }
 
-/** 프로젝트에 곡+작업 1건 직접 삽입(직접 INSERT = 이 파일 셋업 스타일). 반환=taskId. */
+/** 프로젝트에 작업 1건 직접 삽입(직접 INSERT = 이 파일 셋업 스타일). 반환=taskId. */
 function seedTask(projectId, { waived = 0, invoiced = 0 } = {}) {
-  const trackId = Number(
-    db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(projectId).lastInsertRowid
-  );
   return Number(
     db()
-      .prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, waived, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 0, 0, 'Completed', ?, ?)")
-      .run(trackId, waived, invoiced).lastInsertRowid
+      .prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, waived, is_invoiced) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 0, 0, 'Completed', ?, ?)")
+      .run(projectId, waived, invoiced).lastInsertRowid
   );
 }
 

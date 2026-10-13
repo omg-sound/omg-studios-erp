@@ -19,8 +19,7 @@ test("매출 마스터-디테일 라우트 계약: 구 드릴다운 리다이렉
   // revenueByStaff()도 마찬가지로 supply>0인 스탭만 목록에 싣는다(revenue.test.js seedInvoice와 동일 패턴) —
   // 담당자가 청구 라인(작업)을 하나도 안 가지면 마스터 목록에 아예 안 나타나 aria-current 결속 검증이 불가능하다.
   const proj = db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('P', 'task', 0)").run().lastInsertRowid;
-  const trk = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(proj).lastInsertRowid;
-  const taskId = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 1, ?)").run(trk, mgrId).lastInsertRowid;
+  const taskId = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, engineer_id) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 1, ?)").run(proj, mgrId).lastInsertRowid;
   const staffInv = db().prepare("INSERT INTO invoices (project_id, payer_id, title, amount, tax_amount, status, issued_date) VALUES (?, ?, '스탭 청구', 110000, 10000, '발행', '2026-01-15')").run(proj, payerId).lastInsertRowid;
   db().prepare("INSERT INTO invoice_items (invoice_id, task_id, description, quantity, unit_price, amount) VALUES (?, ?, 'Mixing', 1, 100000, 100000)").run(staffInv, taskId);
 

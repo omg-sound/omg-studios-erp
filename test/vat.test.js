@@ -24,16 +24,12 @@ function seedTask(totalPrice) {
     .prepare("INSERT INTO projects (title, project_type, rate) VALUES (?, 'task', 0)")
     .run("VAT 테스트 프로젝트");
   const projectId = Number(pj.lastInsertRowid);
-  const tr = db()
-    .prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, ?, 'Music')")
-    .run(projectId, "곡 A");
-  const trackId = Number(tr.lastInsertRowid);
   const tk = db()
     .prepare(
       `INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
-       VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
+       VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
     )
-    .run(trackId, totalPrice, totalPrice);
+    .run(projectId, totalPrice, totalPrice);
   return { projectId, taskId: Number(tk.lastInsertRowid) };
 }
 
@@ -58,16 +54,14 @@ test("VAT: 반올림 케이스 — 공급가 333,333 → tax 33,333 · 총액 36
 test("VAT: 여러 작업 합산 후 과세 — 600,000 + 400,000 → tax 100,000 · 총액 1,100,000", () => {
   const pj = db().prepare("INSERT INTO projects (title, project_type, rate) VALUES (?, 'task', 0)").run("합산 프로젝트");
   const projectId = Number(pj.lastInsertRowid);
-  const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(projectId);
-  const trackId = Number(tr.lastInsertRowid);
   const mk = (price) =>
     Number(
       db()
         .prepare(
           `INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
-           VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
+           VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
         )
-        .run(trackId, price, price).lastInsertRowid
+        .run(projectId, price, price).lastInsertRowid
     );
   const t1 = mk(600_000);
   const t2 = mk(400_000);
@@ -209,30 +203,21 @@ test("청구 항목 정렬: 세션은 날짜순으로 먼저, 작업은 뒤에 �
   const { listInvoiceItemsForInvoice } = require("../src/data");
   const pj = db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('정렬테스트', 'task', 0)").run();
   const pid = Number(pj.lastInsertRowid);
-  const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(pid);
-  const trackId = Number(tr.lastInsertRowid);
   const tk = db()
     .prepare(
       `INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced, created_at)
-       VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 300000, 300000, 'Completed', 0, '2026-08-01 10:00:00')`
+       VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 300000, 300000, 'Completed', 0, '2026-08-01 10:00:00')`
     )
-    .run(trackId);
+    .run(pid);
   const taskId = Number(tk.lastInsertRowid);
-  const rate = db()
-    .prepare(
-      `INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active)
-       VALUES ('정렬 단가', '스튜디오 녹음', 210, 300000, 60, 100000, 1)`
-    )
-    .run();
-  const rateId = Number(rate.lastInsertRowid);
   // 세션 날짜(8/10)가 작업 등록일(8/1)보다 **늦다** — 옛 순수 날짜순이면 작업이 먼저 와야 하지만,
   // 유형 우선순위(세션 먼저)가 날짜 순서를 뒤집는다는 것을 이 케이스로 증명한다.
   const sess = db()
     .prepare(
-      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id, billing_amount)
-       VALUES (?, '녹음', '2026-08-10', '10:00', '13:30', '완료', ?, 300000)`
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, billing_amount)
+       VALUES (?, '녹음', '2026-08-10', '10:00', '13:30', '완료', 300000)`
     )
-    .run(pid, rateId);
+    .run(pid);
   const sessionId = Number(sess.lastInsertRowid);
 
   const inv = createInvoiceFromTasks(CHIEF, { projectId: pid, taskIds: [taskId], sessionIds: [sessionId], clientId: PAYER, issueDate: "2026-08-15" });
@@ -268,25 +253,18 @@ test("청구 항목 정렬: task_id·session_id 둘 다 없는 수동 라인은 
 test("청구 항목: 같은 날짜에 세션이 둘이면 설명에 시작 시간을 덧붙여 구분한다", () => {
   const pj = db().prepare("INSERT INTO projects (title, project_type, artist, rate) VALUES ('동일날짜테스트', 'task', '테스트아티스트', 0)").run();
   const pid = Number(pj.lastInsertRowid);
-  const rate = db()
-    .prepare(
-      `INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active)
-       VALUES ('동일날짜 단가', '스튜디오 녹음', 210, 300000, 60, 100000, 1)`
-    )
-    .run();
-  const rateId = Number(rate.lastInsertRowid);
   const s1 = db()
     .prepare(
-      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id, billing_amount)
-       VALUES (?, '녹음', '2026-08-16', '10:00', '13:30', '완료', ?, 300000)`
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, billing_amount)
+       VALUES (?, '녹음', '2026-08-16', '10:00', '13:30', '완료', 300000)`
     )
-    .run(pid, rateId);
+    .run(pid);
   const s2 = db()
     .prepare(
-      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id, billing_amount)
-       VALUES (?, '녹음', '2026-08-16', '15:00', '18:30', '완료', ?, 300000)`
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, billing_amount)
+       VALUES (?, '녹음', '2026-08-16', '15:00', '18:30', '완료', 300000)`
     )
-    .run(pid, rateId);
+    .run(pid);
   const s1Id = Number(s1.lastInsertRowid), s2Id = Number(s2.lastInsertRowid);
   const inv = createInvoiceFromTasks(CHIEF, { projectId: pid, sessionIds: [s1Id, s2Id], clientId: PAYER, issueDate: "2026-08-20" });
   assert.ok(inv);

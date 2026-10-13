@@ -22,14 +22,12 @@ const CHIEF = { id: 1, role: "chief", email: "chief@omg.test" };
 function seedInvoice(totalPrice) {
   const pj = db().prepare("INSERT INTO projects (title, project_type, rate) VALUES (?, 'task', 0)").run("입금 테스트");
   const projectId = Number(pj.lastInsertRowid);
-  const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(projectId);
-  const trackId = Number(tr.lastInsertRowid);
   const tk = db()
     .prepare(
       `INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
-       VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
+       VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, ?, ?, 'Completed', 0)`
     )
-    .run(trackId, totalPrice, totalPrice);
+    .run(projectId, totalPrice, totalPrice);
   return createInvoiceFromTasks(CHIEF, { projectId, clientId: PAYER, taskIds: [Number(tk.lastInsertRowid)], issueDate: "2026-06-15" });
 }
 

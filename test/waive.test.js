@@ -59,19 +59,12 @@ test("setTaskWaived: 토글 + 예산·미청구 집계에서 제외, 되돌리�
 
 test("setSessionWaived: 토글 + 미청구 집계에서 제외, 청구된 세션은 SESSION_INVOICED", () => {
   const projectId = seedProject("무료세션테스트");
-  const rate = db()
-    .prepare(
-      `INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active)
-       VALUES ('테스트 녹음', '스튜디오 녹음', 210, 300000, 60, 100000, 1)`
-    )
-    .run();
-  const rateId = Number(rate.lastInsertRowid);
   const s = db()
     .prepare(
-      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id, billing_amount)
-       VALUES (?, '녹음', '2026-07-06', '10:00', '13:30', '완료', ?, 300000)`
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, billing_amount)
+       VALUES (?, '녹음', '2026-07-06', '10:00', '13:30', '완료', 300000)`
     )
-    .run(projectId, rateId); // 금액 = 확정액(개편 3단계 — 단가표 산정 없음)
+    .run(projectId); // 금액 = 확정액(개편 3단계 — 단가표 산정 없음)
   const sessionId = Number(s.lastInsertRowid);
 
   let rows = listProjects(CHIEF, {});

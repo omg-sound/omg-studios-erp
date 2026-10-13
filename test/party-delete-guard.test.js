@@ -31,11 +31,10 @@ function seedIssuedInvoiceFor(payerId) {
   seq += 1;
   const pj = db().prepare("INSERT INTO projects (title, project_type, rate) VALUES (?, 'task', 0)").run(`발행가드${seq}`);
   const projectId = Number(pj.lastInsertRowid);
-  const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(projectId);
   const tk = db()
     .prepare(`INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
-       VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 500000, 500000, 'Completed', 0)`)
-    .run(Number(tr.lastInsertRowid));
+       VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 500000, 500000, 'Completed', 0)`)
+    .run(Number(projectId));
   return createInvoiceFromTasks(CHIEF, { projectId, clientId: payerId, taskIds: [Number(tk.lastInsertRowid)], issueDate: "2026-06-15" });
 }
 

@@ -19,17 +19,14 @@ const user = { id: 1, role: "chief" };
 
 function seed() {
   const d = db();
-  const rate = d
-    .prepare("INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active) VALUES (?,?,?,?,?,?,1)")
-    .run("보컬녹음", "스튜디오 녹음", 210, 300000, 60, 100000).lastInsertRowid;
   const pid = d.prepare("INSERT INTO projects (title) VALUES (?)").run("세션 금액 테스트").lastInsertRowid;
   const sid = d
     .prepare(
-      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status, rate_item_id)
-       VALUES (?,?,?,?,?,?,?)`
+      `INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status)
+       VALUES (?,?,?,?,?,?)`
     )
-    .run(pid, "녹음", "2026-07-01", "14:00", "17:30", "완료", rate).lastInsertRowid; // 3.5h = 1Pro = 300,000
-  return { pid, sid, rate };
+    .run(pid, "녹음", "2026-07-01", "14:00", "17:30", "완료").lastInsertRowid;
+  return { pid, sid };
 }
 
 test("세션 금액: 확정액을 저장하면 그 값이 쓰이고, 다시 조회해도 유지된다(폼 밖 영속)", () => {

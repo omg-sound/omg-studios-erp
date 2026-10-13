@@ -119,10 +119,9 @@ test("createInvoiceFromTasks: 청구처 미지정이면 PAYER_REQUIRED로 차단
     .prepare("INSERT INTO projects (title, project_type, rate, artist_id, agency_id) VALUES (?, 'task', 0, ?, ?)")
     .run("파생 없음 테스트", artistId, agencyId);
   const projectId = Number(proj.lastInsertRowid);
-  const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, ?, 'Music')").run(projectId, "곡");
   const tk = db()
-    .prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 500000, 500000, 'Completed', 0)")
-    .run(Number(tr.lastInsertRowid));
+    .prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 500000, 500000, 'Completed', 0)")
+    .run(Number(projectId));
   const taskId = Number(tk.lastInsertRowid);
 
   // 소속사(agency)가 있어도 자동으로 청구처가 되지 않는다
@@ -139,10 +138,9 @@ test("createInvoiceFromTasks: 명시 청구처(clientId=party) 우선", () => {
   const payer = D.createCompany({ name: "직접청구처", biz_no: "123-45-67890" }); // 세금계산서 정보(회사 청구처 발행 요건)
   const proj = db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('명시청구', 'task', 0)").run();
   const projectId = Number(proj.lastInsertRowid);
-  const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(projectId);
   const tk = db()
-    .prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)")
-    .run(Number(tr.lastInsertRowid));
+    .prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)")
+    .run(Number(projectId));
   const inv = D.createInvoiceFromTasks(CHIEF, { projectId, taskIds: [Number(tk.lastInsertRowid)], clientId: payer, issueDate: "2026-07-02" });
   assert.equal(db().prepare("SELECT payer_id FROM invoices WHERE id=?").get(inv.id).payer_id, payer);
 });
@@ -270,8 +268,7 @@ test("listProjectsForParty: 세션 디렉터 참여도 연결 프로젝트로 �
 test("createInvoiceFromTasks: 청구처 발행 정보 없으면 차단, 채우면 통과", () => {
   const mkBillable = (title) => {
     const pid = Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES (?, 'task', 0)").run(title).lastInsertRowid);
-    const tr = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(pid);
-    const tk = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(Number(tr.lastInsertRowid));
+    const tk = db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(Number(pid));
     return { pid, tk: Number(tk.lastInsertRowid) };
   };
   // 회사(사업자번호 없음) → 차단
@@ -365,8 +362,7 @@ test("청구처 표시: 아티스트는 본명 (활동명), 회사는 상호 그
   const artist = D.createPerson({ name: "조형우", activity_name: "형우비트" });
   db().prepare("UPDATE parties SET cash_receipt_no='010-9999-8888' WHERE id=?").run(artist);
   const pid = Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('청구처표기','task',0)").run().lastInsertRowid);
-  const tr = Number(db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(pid).lastInsertRowid);
-  const tk = Number(db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(tr).lastInsertRowid);
+  const tk = Number(db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(pid).lastInsertRowid);
   const { id: invId } = D.createInvoiceFromTasks(CHIEF, { projectId: pid, taskIds: [tk], clientId: artist, issueDate: "2026-07-05" });
   // 목록 client_name = 본명 (활동명)
   const listed = D.listInvoices(CHIEF, {}).find((i) => i.id === invId);
@@ -381,8 +377,7 @@ test("청구처 표시: 아티스트는 본명 (활동명), 회사는 상호 그
   // 회사 청구처는 상호 그대로(병기 없음)
   const co = D.createCompany({ name: "무지개레코드", roles: "제작사", biz_no: "123-45-67890" });
   const pid2 = Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('회사청구','task',0)").run().lastInsertRowid);
-  const tr2 = Number(db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(pid2).lastInsertRowid);
-  const tk2 = Number(db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(tr2).lastInsertRowid);
+  const tk2 = Number(db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(pid2).lastInsertRowid);
   const { id: invId2 } = D.createInvoiceFromTasks(CHIEF, { projectId: pid2, taskIds: [tk2], clientId: co, issueDate: "2026-07-05" });
   const listed2 = D.listInvoices(CHIEF, {}).find((i) => i.id === invId2);
   assert.equal(listed2.client_name, "무지개레코드", "회사는 상호 그대로");
@@ -392,8 +387,7 @@ test("청구처 표시: 아티스트는 본명 (활동명), 회사는 상호 그
 test("payerSnapshotChanged: 변경 없으면 false, 주소·이메일 보강 시 true, 새로고침 후 다시 false, 레거시(스냅샷 없음) false", () => {
   const co = D.createCompany({ name: "스냅샷검사사", roles: "제작사", biz_no: "555-66-77788" });
   const pid = Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('스냅샷','task',0)").run().lastInsertRowid);
-  const tr = Number(db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(pid).lastInsertRowid);
-  const tk = Number(db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(tr).lastInsertRowid);
+  const tk = Number(db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(pid).lastInsertRowid);
   const { id: invId } = D.createInvoiceFromTasks(CHIEF, { projectId: pid, taskIds: [tk], clientId: co, issueDate: "2026-07-08" });
   const inv = () => db().prepare("SELECT * FROM invoices WHERE id=?").get(invId);
   assert.equal(D.payerSnapshotChanged(inv()), false, "발행 직후 = 변경 없음");
@@ -422,8 +416,7 @@ test("발행 이메일 override: 스냅샷에만 기록·party 불변·빈값=�
   db().prepare("UPDATE parties SET email='base@co.kr' WHERE id=?").run(co);
   const mk = (opts) => {
     const pid = Number(db().prepare("INSERT INTO projects (title, project_type, rate) VALUES ('이멜','task',0)").run().lastInsertRowid);
-    const tr = Number(db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, '곡', 'Music')").run(pid).lastInsertRowid);
-    const tk = Number(db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(tr).lastInsertRowid);
+    const tk = Number(db().prepare("INSERT INTO track_tasks (project_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced) VALUES (?, 'Mixing', 'Fixed_Per_Track', 1, 100000, 100000, 'Completed', 0)").run(pid).lastInsertRowid);
     return D.createInvoiceFromTasks(CHIEF, { projectId: pid, taskIds: [tk], clientId: co, issueDate: "2026-07-27", ...opts });
   };
   const snapOf = (id) => JSON.parse(db().prepare("SELECT payer_snapshot FROM invoices WHERE id=?").get(id).payer_snapshot);
