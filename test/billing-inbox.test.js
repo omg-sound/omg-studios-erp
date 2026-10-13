@@ -67,6 +67,18 @@ test("후반작업 세션 알림: 완료 믹싱 세션만 있고 작업·청구�
   const r = D.listBillableItems(CHIEF, { q: "후반알림" });
   assert.equal(r.groups.length, 0, "대기함엔 없다(작업으로 청구)");
   assert.ok(r.postprod.some((x) => x.id === p), "대신 알림 목록에");
+  // 완료를 안 눌렀어도 날짜가 지난 예정 믹싱 세션이면 알림(청구 누락이 숨지 않게) — 미래 세션·작업 있는 프로젝트는 제외
+  const forgot = project("후반알림예정");
+  session(forgot, { type: "믹싱", status: "예정", date: "2026-01-10" });
+  const upcoming = project("후반알림미래");
+  session(upcoming, { type: "믹싱", status: "예정", date: "2099-01-10" });
+  const withTask = project("후반알림작업");
+  session(withTask, { type: "믹싱", status: "예정", date: "2026-01-10" });
+  task(withTask, { song: "곡" });
+  const ids = D.listBillableItems(CHIEF, { q: "후반알림" }).postprod.map((x) => x.id);
+  assert.ok(ids.includes(forgot), "지난 예정 믹싱 = 알림");
+  assert.ok(!ids.includes(upcoming), "앞으로 잡힌 세션은 아직");
+  assert.ok(!ids.includes(withTask), "작업이 있으면 그 작업이 대기함에 오른다");
 });
 
 test("여러 프로젝트를 한 청구서로: project_id NULL · 양쪽 프로젝트에서 보임 · 제목 기본값 · 자유 줄", () => {

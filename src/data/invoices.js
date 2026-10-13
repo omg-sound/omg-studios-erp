@@ -453,10 +453,18 @@ function listBillableItems(_user, f = {}) {
   const groups = [...byId.values()];
   const firstDate = (g) => g.items.map((i) => i.date).filter(Boolean).sort()[0] || "9999";
   groups.sort((a, b) => firstDate(a).localeCompare(firstDate(b)) || a.project.id - b.project.id);
-  // 작업 없는 완료 후반작업 세션(믹싱·마스터링) — 대기함엔 안 올리고(작업으로 청구) 알림만(hasPostprodSessionNeedingBilling과 같은 술어).
-  const { hasPostprodSessionNeedingBilling } = require("./projects");
-  const postprod = d.prepare(`SELECT DISTINCT p.id, p.title FROM projects p JOIN sessions s ON s.project_id = p.id WHERE ${projWhere} AND s.status = '완료' AND s.session_type IN ('믹싱', '마스터링')`).all(params)
-    .filter((p) => hasPostprodSessionNeedingBilling(p.id));
+  // 작업이 없는 후반작업 세션(믹싱·마스터링) — 대기함엔 안 올리고(작업으로 청구) 알림만. '완료'뿐 아니라 **날짜가 지난
+  // 예정**도 포함한다(2026-10-13 사용자 요청 — 완료를 안 누른 믹싱 세션은 '청구 필요' 신호에도 안 잡혀 청구 누락이 숨었다:
+  // 운영 실측 흑백가수·올블루레코즈). 프로젝트 탭 분류(hasPostprodSessionNeedingBilling)는 그대로 — 여기는 알림만 넓힌다.
+  const postprod = d.prepare(
+    `SELECT DISTINCT p.id, p.title FROM projects p JOIN sessions s ON s.project_id = p.id
+      WHERE ${projWhere} AND s.session_type IN (${POSTPROD_IN}) AND s.waived = 0
+        AND (s.status = '완료' OR (s.status = '예정' AND s.session_date < @today))
+        AND NOT EXISTS (SELECT 1 FROM track_tasks t WHERE t.project_id = p.id)
+        AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.project_id = p.id)
+        AND NOT EXISTS (SELECT 1 FROM invoice_items ii JOIN sessions s4 ON s4.id = ii.session_id WHERE s4.project_id = p.id)
+      ORDER BY p.title`
+  ).all({ ...params, today: todayYmd() });
   return { groups, count: sessions.length + tasks.length, postprod };
 }
 
