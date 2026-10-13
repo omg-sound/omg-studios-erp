@@ -3557,19 +3557,36 @@ document.addEventListener("click", function (e) {
     var n = 0;
     Array.prototype.forEach.call(boxes(), function (cb) { if (cb.checked) n++; });
     if (countEl) countEl.textContent = n ? "선택 " + n + "건" : "항목을 고르세요";
+    // 묶음별 선택 수 — 접힌 묶음에서도 무엇을 골랐는지 보이게(2026-10-13 기본 접힘).
+    Array.prototype.forEach.call(form.querySelectorAll("[data-inbox-group]"), function (g) {
+      var m = 0;
+      Array.prototype.forEach.call(g.querySelectorAll("[data-inbox-item]"), function (cb) { if (cb.checked) m++; });
+      var el = g.querySelector("[data-inbox-group-count]");
+      if (el) el.textContent = m ? m + "건 선택됨" : "";
+      var btn = g.querySelector("[data-inbox-select-all]");
+      var all = g.querySelectorAll("[data-inbox-item]");
+      if (btn) btn.textContent = all.length && m === all.length ? "선택 해제" : "모두 선택";
+    });
     return n;
   }
   form.addEventListener("change", function (e) { if (e.target && e.target.hasAttribute && e.target.hasAttribute("data-inbox-item")) refresh(); });
   Array.prototype.forEach.call(form.querySelectorAll("[data-inbox-select-all]"), function (btn) {
-    btn.addEventListener("click", function () {
+    btn.addEventListener("click", function (e) {
+      e.preventDefault(); // 접힌 줄(summary) 안의 버튼 — 고르기만 하고 펼침/접힘은 건드리지 않는다
       var group = btn.closest("[data-inbox-group]");
       if (!group) return;
       var items = group.querySelectorAll("[data-inbox-item]");
       var all = Array.prototype.every.call(items, function (cb) { return cb.checked; });
       // '모두 선택'은 일정 전 세션의 '청구할까요?' 확인을 건너뛴다 — 묶어서 고르는 건 의도가 분명하다.
       Array.prototype.forEach.call(items, function (cb) { cb.checked = !all; });
-      btn.textContent = all ? "모두 선택" : "선택 해제";
       refresh();
+    });
+  });
+  // 모두 펼치기 / 접기
+  Array.prototype.forEach.call(form.querySelectorAll("[data-inbox-expand]"), function (b) {
+    b.addEventListener("click", function () {
+      var open = b.getAttribute("data-inbox-expand") === "1";
+      Array.prototype.forEach.call(form.querySelectorAll("details[data-inbox-group]"), function (d) { d.open = open; });
     });
   });
   form.addEventListener("submit", function (e) {

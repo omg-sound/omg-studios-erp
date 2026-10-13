@@ -204,3 +204,35 @@ test("작업을 청구해도 세션 상태는 그대로 — 진행/완료는 날
   assert.equal(Number(row.unbilled_cnt), 0, "작업이 청구됐으니 완료 탭");
 });
 
+
+// ── 프로젝트 묶음 기본 접힘(2026-10-13 사용자 요청 '다 펼쳐져 있으니 정신없다') ──
+const { inboxPage } = require("../src/views.billing");
+const { mountDom, fire } = require("./helpers-dom");
+const grp = (id, items) => ({ project: { id, title: `묶음${id}`, artist: "루나" }, items });
+const item = (key, extra = {}) => ({ kind: key[0] === "s" ? "session" : "task", id: Number(key.slice(1)), key, date: "2026-09-01", future: false, waived: false, label: key, time: "", amount: null, ...extra });
+
+test("대기함 묶음: 기본 접힘 · 접힌 줄에 건수·오래된 날짜·금액 합·일정 전 수", () => {
+  const html = inboxPage({ groups: [grp(1, [item("s1", { amount: 300000 }), item("t2", { date: null, amount: 200000 }), item("s3", { date: "2099-01-01", future: true })]), grp(2, [item("s4")])], count: 4 });
+  assert.doesNotMatch(html, /data-inbox-group open/, "여러 묶음이면 전부 접힘");
+  assert.match(html, /3건 · 9월 1일부터 · ₩500,000/, "건수·가장 오래된 날짜·적어 둔 금액 합");
+  assert.match(html, /일정 전 1/);
+  assert.match(html, /data-inbox-expand="1"/, "모두 펼치기");
+});
+
+test("대기함 묶음: 한 프로젝트로 걸러 왔거나 묶음이 하나면 펼친 채", () => {
+  assert.match(inboxPage({ groups: [grp(1, [item("s1")])], count: 1 }), /data-inbox-group open/, "묶음 하나");
+  assert.match(inboxPage({ groups: [grp(1, [item("s1")]), grp(2, [item("s2")])], count: 2, filters: { projectId: 1 } }), /data-inbox-group open/, "프로젝트 필터");
+});
+
+test("대기함 묶음(jsdom): 접힌 채 [모두 선택] → 'N건 선택됨'·하단 합계, 접힘은 그대로 · 모두 펼치기", () => {
+  const html = inboxPage({ groups: [grp(1, [item("s1"), item("t2")]), grp(2, [item("s4")])], count: 3 });
+  const { win, doc } = mountDom(html);
+  const g1 = doc.querySelectorAll("details[data-inbox-group]")[0];
+  fire(win, g1.querySelector("[data-inbox-select-all]"), "click");
+  assert.equal(g1.open, false, "고르기만 — 펼치지 않는다");
+  assert.equal(g1.querySelector("[data-inbox-group-count]").textContent, "2건 선택됨");
+  assert.equal(g1.querySelector("[data-inbox-select-all]").textContent, "선택 해제");
+  assert.equal(doc.querySelector("[data-inbox-count]").textContent, "선택 2건");
+  fire(win, doc.querySelector('[data-inbox-expand="1"]'), "click");
+  assert.ok(Array.from(doc.querySelectorAll("details[data-inbox-group]")).every((d) => d.open), "모두 펼치기");
+});

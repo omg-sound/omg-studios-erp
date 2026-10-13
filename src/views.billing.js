@@ -6,7 +6,7 @@
  * 무JS 동작: 대기함은 GET 폼(체크 → /invoices/new?items=…), 작성은 일반 POST. JS는 합계·줄 추가/빼기·0원 확인만.
  */
 
-const { esc, formatKRW, pageHeader, explain, dateCombo, payerCombo, emptyState, tabBar } = require("./views");
+const { esc, formatKRW, pageHeader, explain, dateCombo, payerCombo, emptyState, tabBar, detailsChevron } = require("./views");
 const { clientOptions, contactOptions, payerDocMeta, peekInvoiceNumber } = require("./data");
 const { docNumberWithType } = require("./config");
 const { formatYmdShort, todayYmd } = require("./lib/date");
@@ -74,22 +74,45 @@ function inboxPage({ groups, count, postprod = [], filters = {}, ret = "/invoice
         ${postprod.map((p) => `<a href="/projects/${p.id}?tab=tracks" class="ml-1 text-primary hover:underline">${esc(p.title)}</a>`).join(",")}
       </div>`
     : "";
+  // 프로젝트 묶음은 **기본 접힘**(2026-10-13 사용자 요청 '다 펼쳐져 있으니 정신없다') — 대기함의 일은 '어느 프로젝트를
+  // 청구할지 고르기'라 첫 화면은 프로젝트 목록이고, 접힌 줄에 건수·가장 오래된 날짜·적어 둔 금액 합을 싣는다.
+  // [모두 선택]은 접힌 채로 된다(프로젝트 하나를 통째로 청구하는 게 가장 흔하다 — 접힌 묶음 안 체크도 그대로 제출된다).
+  // 자동 펼침 = 한 프로젝트로 걸러 들어왔거나(프로젝트 청구 탭 링크) 묶음이 하나뿐일 때. 펼침 상태는 기억하지 않는다.
+  const autoOpen = !!filters.projectId || groups.length === 1;
   const list = groups.length
     ? groups.map((g) => {
         const p = g.project;
         const sub = [p.artist, p.production_company ? `제작 ${p.production_company}` : "", p.artist_company ? `소속 ${p.artist_company}` : ""].filter(Boolean).join(" · ");
-        const selectable = g.items.some((i) => !i.waived);
+        const live = g.items.filter((i) => !i.waived);
+        const selectable = live.length > 0;
+        const oldest = live.map((i) => i.date).filter(Boolean).sort()[0];
+        const known = live.filter((i) => i.amount != null).reduce((sum, i) => sum + i.amount, 0);
+        const futureN = live.filter((i) => i.future).length;
+        const facts = [
+          `${live.length}건`,
+          oldest ? `${formatYmdShort(oldest)}부터` : "",
+          known > 0 ? formatKRW(known) : "",
+        ].filter(Boolean).join(" · ");
         return `
-          <section class="card" data-inbox-group>
-            <div class="mb-1 flex items-start justify-between gap-2">
-              <div class="min-w-0">
-                <a href="/projects/${p.id}?tab=invoice" class="font-medium hover:text-primary">${esc(p.title)}</a>
+          <details class="card group p-0" data-inbox-group${autoOpen ? " open" : ""}>
+            <summary class="row-link flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 rounded-[inherit] px-4 py-3 [&::-webkit-details-marker]:hidden">
+              <!-- 좁은 화면: 이름은 첫 줄 전체, 건수·버튼은 둘째 줄(한 줄에 몰면 한글 이름이 음절 단위로 쪼개진다 — 함정 #28) -->
+              <div class="min-w-0 basis-full break-keep sm:basis-0 sm:flex-1">
+                <span class="font-medium">${esc(p.title)}</span>
                 ${sub ? `<div class="truncate text-xs text-muted">${esc(sub)}</div>` : ""}
               </div>
-              ${selectable ? `<button type="button" class="btn-ghost btn-xs shrink-0" data-inbox-select-all>모두 선택</button>` : ""}
+              <span class="whitespace-nowrap text-xs text-muted tabular">${esc(facts)}${futureN ? ` · <span class="text-warning">일정 전 ${futureN}</span>` : ""}</span>
+              <span class="whitespace-nowrap text-xs font-medium text-primary" data-inbox-group-count></span>
+              <span class="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
+                ${selectable ? `<button type="button" class="btn-ghost btn-xs" data-inbox-select-all>모두 선택</button>` : ""}
+                ${detailsChevron()}
+              </span>
+            </summary>
+            <div class="border-t border-border px-4 pb-2">
+              <div class="flex justify-end pt-2"><a href="/projects/${p.id}?tab=invoice" class="text-xs text-muted hover:text-primary">프로젝트 청구 탭 ↗</a></div>
+              <div class="divide-y divide-border">${g.items.map((it) => inboxRow(it, ret)).join("")}</div>
             </div>
-            <div class="divide-y divide-border">${g.items.map((it) => inboxRow(it, ret)).join("")}</div>
-          </section>`;
+          </details>`;
       }).join("")
     : emptyState(filters.q || filters.from || filters.to || filters.pastOnly ? "조건에 맞는 미청구 항목이 없습니다." : "청구할 항목이 없습니다. 모두 청구했어요.", { card: true });
   return `
@@ -98,6 +121,10 @@ function inboxPage({ groups, count, postprod = [], filters = {}, ret = "/invoice
     ${inboxFilterForm(filters)}
     ${postprodNote}
     <form method="get" action="/invoices/new" data-inbox-form>
+      ${groups.length > 1 ? `<div class="mb-2 flex justify-end gap-3 text-xs">
+        <button type="button" class="text-muted hover:text-fg" data-inbox-expand="1">모두 펼치기</button>
+        <button type="button" class="text-muted hover:text-fg" data-inbox-expand="0">모두 접기</button>
+      </div>` : ""}
       <div class="space-y-3">${list}</div>
       ${groups.length ? `
       <div class="sticky bottom-0 z-20 mt-4 flex items-center justify-end gap-3 border-t border-border bg-bg/95 py-3 backdrop-blur">
