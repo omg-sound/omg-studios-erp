@@ -434,8 +434,8 @@ function explain(content, { label = "설명", cls = "mt-1" } = {}) {
  * 가드(저장/무시 모달)를 우회 — 취소 자체가 이미 '저장 안 함' 선택이라 다시 묻지 않는다.
  */
 function dirtyActionRow({ deleteFormId = "", deleteLabel = "삭제", saveLabel = "저장", cancelHref = "", dirty = true } = {}) {
-  const deleteBtn = deleteFormId ? `<button type="submit" form="${esc(deleteFormId)}" class="btn-ghost btn-sm text-danger">${esc(deleteLabel)}</button>` : "";
-  const cancelBtn = cancelHref ? `<a href="${esc(cancelHref)}" class="btn-ghost btn-sm" data-no-guard>취소</a>` : "";
+  const deleteBtn = deleteFormId ? `<button type="submit" form="${esc(deleteFormId)}" class="btn-ghost text-danger">${esc(deleteLabel)}</button>` : "";
+  const cancelBtn = cancelHref ? `<a href="${esc(cancelHref)}" class="btn-ghost" data-no-guard>취소</a>` : "";
   const left = deleteBtn || cancelBtn ? `<div class="flex items-center gap-2">${deleteBtn}${cancelBtn}</div>` : `<span></span>`;
   const saveBtn = dirty
     ? `<button type="submit" class="btn-primary transition" data-dirty-save>${esc(saveLabel)}</button>`
@@ -665,7 +665,7 @@ function personCombo({ idField = "contact_id", nameField = "contact_name", selec
   // multi = 칩 컨테이너가 입력칸 모양(.input)을 하고, 그 안에 칩들 + 테두리 없는 인라인 검색 입력이 흐른다.
   const chips = multi ? (selected || []).map((p) => personChip(p, idField, nameField)).join("") : "";
   const field = multi
-    ? `<div class="input flex flex-wrap items-center gap-1.5 ${compact ? "py-1 text-sm" : "py-1.5"}" data-pc-chips>
+    ? `<div class="input flex flex-wrap items-center gap-1.5 ${compact ? "min-h-[2.125rem] py-1 text-sm" : "min-h-[2.375rem] py-1"}" data-pc-chips>
         ${chips}
         <input class="min-w-[3rem] flex-1 border-0 bg-transparent p-0 text-inherit outline-none focus:ring-0" type="text" size="1" data-pc-input autocomplete="off"
           role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="${esc(placeholder)}" />
@@ -885,7 +885,7 @@ function companyCombo(fieldName, value, roleKey, label, extra = {}) {
   // 칩이 있으면 남는 폭이 좁아 긴 안내가 잘린다(실측 126px) → 짧은 문구로 바꾼다. app.js가 칩 추가·삭제 때 같은 규칙으로 갱신.
   const phEmpty = `${label} — 검색 또는 새로 등록`, phMore = "＋ 추가";
   const field = multi
-    ? `<div class="input flex items-center gap-1.5 overflow-x-auto py-1.5" data-cc-chips>
+    ? `<div class="input flex min-h-[2.375rem] items-center gap-1.5 overflow-x-auto py-1" data-cc-chips>
         ${chips}
         <input class="min-w-[3rem] flex-1 border-0 bg-transparent p-0 text-inherit outline-none focus:ring-0" type="text" size="1" data-cc-input autocomplete="off"
           role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="${esc(selected.length ? phMore : phEmpty)}" />
@@ -919,7 +919,7 @@ function companyCombo(fieldName, value, roleKey, label, extra = {}) {
             <div><label class="label">대표자 <span class="text-xs font-normal text-muted">(공동대표 가능)</span></label>
               <div class="relative">
                 <!-- 대표자 칩(공동대표) — 저장 시 owner_id/owner_name 쌍을 칩 수만큼 전송(app.js) -->
-                <div class="input flex flex-wrap items-center gap-1.5 py-1.5" data-cc-owner-chips>
+                <div class="input flex min-h-[2.375rem] flex-wrap items-center gap-1.5 py-1" data-cc-owner-chips>
                   <input class="min-w-[3rem] flex-1 border-0 bg-transparent p-0 text-inherit outline-none focus:ring-0" type="text" size="1" data-cc-owner autocomplete="off" placeholder="이름 검색 또는 새로 등록" role="combobox" aria-expanded="false" aria-autocomplete="list" />
                 </div>
                 <div class="absolute left-0 right-0 z-10 mt-1 hidden max-h-40 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg" data-cc-owner-pop role="listbox"></div>

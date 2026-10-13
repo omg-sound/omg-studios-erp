@@ -53,7 +53,7 @@ function deliverableRow(dv, { isAdmin, baseUrl }) {
         <form method="post" action="/deliverables/${dv.id}/token" class="flex items-end gap-2">
           <div>
             <label class="label mb-0.5 text-xs">만료일(선택)</label>
-            ${dateCombo("expires_at", dv.expires_at || "", { label: "만료일", inputCls: "input w-full py-1 text-xs" })}
+            ${dateCombo("expires_at", dv.expires_at || "", { label: "만료일", inputCls: "input w-full py-1.5 text-sm" })}
           </div>
           <button class="btn-ghost btn-xs">${dv.access_token ? "링크 갱신" : "링크 발급"}</button>
         </form>

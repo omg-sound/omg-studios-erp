@@ -304,7 +304,7 @@ router.get("/:id", requireInvoice, asyncHandler(async (req, res) => {
               <form method="post" action="/workers/${w.id}/payout-all" class="flex flex-wrap items-center gap-1.5" data-confirm="미지급 ${unpaidItems.length}건 · ${esc(formatKRW(unpaid))}을 전부 지급 처리할까요? (원천세 3.3% 제외 실지급 ${esc(formatKRW(whUnpaid.net))})">
                 <input type="hidden" name="return" value="detail" />
                 <span class="text-xs text-muted">지급일</span>
-                ${dateCombo("paid_on", todayYmd(), { label: "지급일", inputCls: "input w-36 py-1 text-xs" })}
+                ${dateCombo("paid_on", todayYmd(), { label: "지급일", inputCls: "input w-36 py-1.5 text-sm" })}
                 <button class="btn-ghost btn-xs text-primary" type="submit">전부 지급 처리</button>
               </form>
             </div>

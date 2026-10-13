@@ -100,7 +100,7 @@ function equipmentForm(item, { rooms = [], categories = [], locations = [] } = {
       <div class="grid gap-3 sm:grid-cols-2">
         <div>
           <label class="label mb-1 text-xs">구매 시기</label>
-          ${dateCombo("purchased_on", e.purchased_on || "", { label: "구매 시기", inputCls: "input w-full py-1.5 text-sm" })}
+          ${dateCombo("purchased_on", e.purchased_on || "", { label: "구매 시기", inputCls: "input w-full" })}
         </div>
         <div>
           <label class="label mb-0 text-xs">현재 장소<input class="input mt-1 block" name="location" value="${val(e.location)}" autocomplete="off" data-equip-location placeholder="룸을 고르거나 직접 입력" /></label>

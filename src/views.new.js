@@ -143,7 +143,7 @@ function newPage({ type, project, title = "", values = {}, ret = "", dupRows = [
       ${projectBlock({ type, project, title, values, ret, dupRows })}
       ${body}
       <div class="flex items-center justify-between gap-3 pt-1">
-        <a href="${esc(ret || "/sessions")}" class="btn-ghost btn-sm">취소</a>
+        <a href="${esc(ret || "/sessions")}" class="btn-ghost">취소</a>
         <button class="btn-primary" type="submit">저장</button>
       </div>
     </form>`;

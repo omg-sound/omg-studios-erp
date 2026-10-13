@@ -328,7 +328,7 @@ function projectMetaCard(p, err = "", { chief = false } = {}) {
     ? `<form method="post" action="/projects/${p.id}/created-at" class="mt-4 flex items-center gap-2 border-t border-border/40 pt-3">
          <label class="text-xs text-muted">작성일</label>
          <input type="hidden" name="return" value="/projects/${p.id}?tab=project" />
-         ${dateCombo("created_at", dateStr, { label: "작성일", inputCls: "w-[8.5rem] rounded border border-border/70 bg-surface px-1.5 py-0.5 text-xs text-muted tabular focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30" })}
+         ${dateCombo("created_at", dateStr, { label: "작성일", inputCls: "input w-[9rem] py-1.5 text-sm tabular" })}
          <button type="submit" class="btn-ghost btn-xs shrink-0">작성일 저장</button>
        </form>`
     : "";
@@ -524,7 +524,7 @@ function artistCombo(p = {}) {
       <input type="hidden" name="artist" value="${esc(names.join(", "))}" data-artist-hidden />
       <div class="relative">
         <!-- 보이는 검색칸은 name 없음(제출은 위 hidden) — 칩이 값의 진실원천 -->
-        <div class="input flex flex-wrap items-center gap-1.5 py-1.5" data-artist-chips>
+        <div class="input flex min-h-[2.375rem] flex-wrap items-center gap-1.5 py-1" data-artist-chips>
           ${chipHtml}
           <input class="min-w-[3rem] flex-1 border-0 bg-transparent p-0 text-inherit outline-none focus:ring-0" type="text" size="1" data-artist-input autocomplete="off"
             role="combobox" aria-expanded="false" aria-autocomplete="list" placeholder="${names.length ? "" : "아티스트명 — 검색 또는 새로 등록"}" />

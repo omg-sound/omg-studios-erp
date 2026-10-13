@@ -27,13 +27,13 @@ function inboxFilterForm(f) {
   return `
     <form method="get" action="/invoices/inbox" class="mb-4 flex flex-wrap items-end gap-2">
       <label class="min-w-[12rem] flex-1"><span class="label mb-0 text-xs">검색</span>
-        <input class="input mt-1 block w-full" type="search" name="q" value="${esc(f.q || "")}" placeholder="프로젝트 · 아티스트 · 제작/운영 · 소속" autocomplete="off" /></label>
+        <input class="input mt-1 block w-full py-1.5 text-sm" type="search" name="q" value="${esc(f.q || "")}" placeholder="프로젝트 · 아티스트 · 제작/운영 · 소속" autocomplete="off" /></label>
       <div><span class="label mb-0 text-xs">기간</span>
         <div class="mt-1 flex items-center gap-1">${dateCombo("from", f.from || "", { label: "시작일", inputCls: "input w-[9rem] py-1.5 text-sm", placeholder: "시작일" })}<span class="text-muted">~</span>${dateCombo("to", f.to || "", { label: "종료일", inputCls: "input w-[9rem] py-1.5 text-sm", placeholder: "종료일" })}</div></div>
       <label class="flex items-center gap-1.5 pb-2 text-sm"><input type="checkbox" name="done" value="1" ${f.doneOnly ? "checked" : ""} /> 완료만</label>
       <label class="flex items-center gap-1.5 pb-2 text-sm"><input type="checkbox" name="waived" value="1" ${f.showWaived ? "checked" : ""} /> 청구 안 함도 보기</label>
       ${f.projectId ? `<input type="hidden" name="project" value="${Number(f.projectId)}" />` : ""}
-      <button class="btn-ghost btn-sm mb-0.5" type="submit">적용</button>
+      <button class="btn-ghost btn-sm" type="submit">적용</button>
     </form>`;
 }
 
@@ -142,7 +142,7 @@ function composeLine(l, i) {
       <div class="col-span-3 sm:col-span-1">${dateCell}</div><!-- 모바일은 날짜를 한 줄 위로(좁은 폭에서 내용 칸이 짜부라지지 않게) -->
       <input class="input w-full py-1.5 text-sm" name="line_desc" value="${esc(l.description != null ? l.description : l.label || "")}" placeholder="${free ? "예: 계약금 · 출장비" : ""}" aria-label="내용" autocomplete="off" />
       <input class="input w-full py-1.5 text-right text-sm tabular" name="line_amount" inputmode="numeric" value="${l.amount != null && l.amount !== "" ? esc(String(l.amount).replace(/\B(?=(\d{3})+(?!\d))/g, ",")) : ""}" placeholder="금액" aria-label="금액" data-compose-amount />
-      <button type="button" class="btn-ghost btn-xs px-1 text-muted hover:text-danger" title="이 줄 빼기" aria-label="이 줄 빼기" data-compose-remove>✕</button>
+      <button type="button" class="btn-ghost px-2.5 text-muted hover:text-danger" title="이 줄 빼기" aria-label="이 줄 빼기" data-compose-remove>✕</button>
     </div>`;
 }
 
@@ -218,12 +218,12 @@ function composePage({ lines, projects, values = {}, error = "", skipped = 0 }) 
       </div>
       <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
         <div class="flex flex-wrap gap-2">
-          <button class="btn-ghost btn-sm" type="submit" formmethod="get" formaction="${act("견적서")}" formtarget="_blank">견적서</button>
-          <button class="btn-ghost btn-sm" type="submit" formmethod="get" formaction="${act("내역서")}" formtarget="_blank">내역서</button>
-          <button class="btn-ghost btn-sm" type="submit" formmethod="get" formaction="${act("거래명세서")}" formtarget="_blank">거래명세서</button>
+          <button class="btn-ghost" type="submit" formmethod="get" formaction="${act("견적서")}" formtarget="_blank">견적서</button>
+          <button class="btn-ghost" type="submit" formmethod="get" formaction="${act("내역서")}" formtarget="_blank">내역서</button>
+          <button class="btn-ghost" type="submit" formmethod="get" formaction="${act("거래명세서")}" formtarget="_blank">거래명세서</button>
         </div>
         <div class="flex items-center gap-2">
-          <a href="/invoices/inbox" class="btn-ghost btn-sm">취소</a>
+          <a href="/invoices/inbox" class="btn-ghost">취소</a>
           <button class="btn-primary" type="submit" data-compose-submit>청구서 발행 <span data-inv-doc>(계산서 발행)</span></button>
         </div>
       </div>

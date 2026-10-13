@@ -33,7 +33,7 @@ const {
 const { inboxPage, composePage, billingTabs, invoicePreviewErrorPage } = require("../views.billing");
 const { parseMoney } = require("../lib/forms");
 const { notifyInvoiceIssued } = require("../notify");
-const { layout, pageHeader, esc, formatKRW, flashBanner, errorPage, emptyState, capList, filterChips, searchBox, copyable } = require("../views");
+const { layout, pageHeader, esc, formatKRW, flashBanner, errorPage, emptyState, capList, filterChips, searchBox, copyable, dateCombo } = require("../views");
 const { invoiceTable, invoiceBulkBar, payerInfoCard, taxToggleButtons } = require("../views.invoices");
 const { formatYmdShort, todayYmd } = require("../lib/date"); // ddayLabel 미사용(마감일 개념 삭제, 2026-07-05)
 const { asyncHandler } = require("../lib/async");
@@ -301,9 +301,9 @@ router.get("/", requireBilling, (req, res) => {
       <form method="get" action="/invoices" class="flex items-center gap-1.5">
         <input type="hidden" name="filter" value="${esc(filter)}" />
         ${q ? `<input type="hidden" name="q" value="${esc(q)}" />` : ""}
-        <input type="date" name="from" value="${esc(from)}" class="input w-[9.5rem] py-1 text-sm" aria-label="시작 발행일" />
+        ${dateCombo("from", from, { label: "시작 발행일", inputCls: "input w-[9rem] py-1.5 text-sm", placeholder: "시작일" })}
         <span class="text-muted">~</span>
-        <input type="date" name="to" value="${esc(to)}" class="input w-[9.5rem] py-1 text-sm" aria-label="종료 발행일" />
+        ${dateCombo("to", to, { label: "종료 발행일", inputCls: "input w-[9rem] py-1.5 text-sm", placeholder: "종료일" })}
         <button class="btn-ghost btn-sm" type="submit">적용</button>
       </form>
     </div>`;

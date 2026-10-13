@@ -202,8 +202,8 @@ function ratesTree(rates) {
 function rateCategoryRow(c) {
   const kindOpts = Object.entries(RATE_KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === c.kind ? "selected" : ""}>${esc(l)}</option>`).join("");
   return `<div class="flex flex-wrap items-center gap-2 rounded-t-lg bg-elevated px-3 py-2" id="rate-cat-${c.id}">
-    <input class="input w-48 py-1 text-sm font-semibold" name="cat_name_${c.id}" value="${esc(c.name)}" aria-label="분류명" autocomplete="off" required />
-    <select class="input w-28 py-1 text-sm" name="kind_${c.id}" aria-label="세션 종류">${kindOpts}</select>
+    <input class="input w-48 py-1.5 text-sm font-semibold" name="cat_name_${c.id}" value="${esc(c.name)}" aria-label="분류명" autocomplete="off" required />
+    <select class="input w-28 py-1.5 text-sm" name="kind_${c.id}" aria-label="세션 종류">${kindOpts}</select>
     <span class="ml-auto flex shrink-0 items-center gap-1">
       <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="cat-del-${c.id}">분류 삭제</button>
       ${moveButtons(`cat-mv-u-${c.id}`, `cat-mv-d-${c.id}`)}
@@ -259,8 +259,8 @@ function ratesPane() {
         </form>`)}
         ${t.actionForms}
         <form method="post" action="/settings/rate-categories" class="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
-          <input class="input w-48 py-1 text-sm" name="cat_name" placeholder="+ 새 분류 이름" aria-label="분류명" autocomplete="off" required />
-          <select class="input w-28 py-1 text-sm" name="kind" aria-label="세션 종류">${kindOpts}</select>
+          <input class="input w-48 py-1.5 text-sm" name="cat_name" placeholder="+ 새 분류 이름" aria-label="분류명" autocomplete="off" required />
+          <select class="input w-28 py-1.5 text-sm" name="kind" aria-label="세션 종류">${kindOpts}</select>
           <button class="btn-ghost btn-xs shrink-0" type="submit">분류 추가</button>
         </form>
       </section>`;
@@ -584,7 +584,7 @@ function userRow(u, currentUser, chief = true) {
   const roleControl = (!chief || isSelf)
     ? `<span class="badge bg-elevated text-muted">${esc(ROLE_LABELS[u.role] || u.role)}</span>` // 스태프 또는 본인 — 역할 변경 불가(배지만)
     : `<form method="post" action="/settings/users/${u.id}/role">
-         <select class="input py-1 text-xs" name="role" data-autosubmit>
+         <select class="input py-1.5 text-sm" name="role" data-autosubmit>
            ${ROLES.map((r) => `<option value="${esc(r)}" ${r === u.role ? "selected" : ""}>${esc(ROLE_LABELS[r] || r)}</option>`).join("")}
          </select>
        </form>`;
@@ -654,7 +654,7 @@ function rateItemRow(r) {
  */
 function chargeLine(names, vals = {}, formAttr = "") {
   const num = (name, value, label, width, ph = "") =>
-    `<input class="input ${width} py-1 text-right text-sm" ${formAttr} name="${name}" inputmode="${/price/.test(name) ? "numeric" : "decimal"}" value="${esc(String(value == null ? "" : value))}" aria-label="${esc(label)}" placeholder="${esc(ph)}" />`;
+    `<input class="input ${width} py-1.5 text-right text-sm" ${formAttr} name="${name}" inputmode="${/price/.test(name) ? "numeric" : "decimal"}" value="${esc(String(value == null ? "" : value))}" aria-label="${esc(label)}" placeholder="${esc(ph)}" />`;
   return `
       <div class="flex flex-wrap items-center gap-1.5 text-xs text-muted">
         <span>기준</span>
