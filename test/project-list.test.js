@@ -265,26 +265,21 @@ test("예산: 세션에서 전환된 작업(session_id)이 있으면 그 세션�
   assert.equal(p.task_total, 300000, "작업 300,000만 예산에 — 세션과 합쳐 600,000으로 부풀지 않음");
 });
 
-test("projectSummaryHtml: 편집자면 목록 펼침 세션에 완료 토글(?open= 복귀)", () => {
+test("projectSummaryHtml: 목록 펼침에 완료 토글이 없다(개편 5단계) — 세션·작업 라벨만", () => {
   const y = Number(todayYmd().slice(0, 4));
-  const summary = { sessions: [{ id: 42, session_date: `${y + 1}-07-15`, start_time: "14:00", end_time: "17:30", session_type: "녹음", status: "예정" }], tracks: [], taskTypes: [] };
-  const admin = views.projectSummaryHtml(summary, { isAdmin: true, projectId: 7, tab: "active" });
-  assert.match(admin, /\/sessions\/42\/status/, "완료 폼 액션");
-  assert.match(admin, /name="return" value="\/projects\?tab=active&open=7"/, "완료 후 그 카드 재펼침 복귀");
-  const plain = views.projectSummaryHtml(summary, { isAdmin: false, projectId: 7 });
-  assert.doesNotMatch(plain, /\/sessions\/42\/status/, "비편집자는 완료 토글 없음");
+  const summary = {
+    sessions: [{ id: 42, session_date: `${y + 1}-07-15`, start_time: "14:00", end_time: "17:30", session_type: "녹음", status: "예정" },
+      { id: 43, session_date: `${y + 1}-07-16`, start_time: "10:00", end_time: "12:00", session_type: "녹음", status: "취소" }],
+    tracks: [{ id: 1, title: "월광", artist: "추화정", engineers: ["박수한"], tasks: [{ id: 99, label: "믹싱", status: "Pending" }] }],
+    taskTypes: [],
+  };
+  const html = views.projectSummaryHtml(summary);
+  assert.doesNotMatch(html, /\/status/, "완료 폼 없음");
+  assert.doesNotMatch(html, />완료</, "완료 버튼·표기 없음");
+  assert.match(html, /믹싱/, "작업 라벨 표시");
+  assert.match(html, /· 취소/, "취소 세션은 표시");
 });
 
-test("projectSummaryHtml: 편집자면 곡·콘텐츠 작업에도 완료 토글(?open= 복귀)", () => {
-  const summary = { sessions: [], tracks: [{ id: 1, title: "월광", artist: "추화정", engineers: ["박수한"], tasks: [{ id: 99, label: "믹싱", status: "Pending" }] }], taskTypes: [] };
-  const admin = views.projectSummaryHtml(summary, { isAdmin: true, projectId: 7, tab: "active" });
-  assert.match(admin, /\/projects\/tasks\/99\/status/, "작업 완료 폼 액션");
-  assert.match(admin, /name="return" value="\/projects\?tab=active&open=7"/, "완료 후 그 카드 재펼침 복귀");
-  assert.match(admin, /믹싱/, "작업 라벨 표시");
-  const plain = views.projectSummaryHtml(summary, { isAdmin: false, projectId: 7 });
-  assert.doesNotMatch(plain, /\/projects\/tasks\/99\/status/, "비편집자는 작업 토글 없음");
-  assert.match(plain, /믹싱/, "비편집자도 작업 라벨은 표시");
-});
 
 // ── '내 프로젝트만' 필터(2026-07-12) ──
 test("listProjectIdsForManager: PM·담당 세션·담당 작업 합집합 + 무관 제외", () => {
@@ -313,32 +308,41 @@ test("listProjectIdsForManager: PM·담당 세션·담당 작업 합집합 + 무
   assert.strictEqual(D.listProjectIdsForManager(99999).size, 0, "관여 없는 담당자는 빈 집합");
 });
 
-// 완료 토글의 복귀 경로에 '내 프로젝트만' 상태를 그대로 실어야 한다 — 안 실으면 지금 보던 화면이 아니라
-// 기본 상태로 튄다. ⚠️기본값이 역할마다 갈리므로(스태프=켜짐 / 대표=꺼짐, 2026-08-02) 뷰는 불리언이 아니라
-// **라우트가 만들어 준 파라미터 문자열(mineQ)** 을 받는다(뷰가 기본값을 알 방법이 없다).
-test("projectSummaryHtml: mineQ를 완료 복귀 경로에 그대로 보존", () => {
-  const summary = { sessions: [{ id: 42, session_date: "2999-07-15", start_time: "14:00", end_time: "17:30", session_type: "녹음", status: "예정" }], tracks: [], taskTypes: [] };
-  const off = views.projectSummaryHtml(summary, { isAdmin: true, projectId: 7, tab: "active", mineQ: "&mine=0" });
-  assert.match(off, /name="return" value="\/projects\?tab=active&mine=0&open=7"/, "끔 상태 보존(스태프)");
-  const on = views.projectSummaryHtml(summary, { isAdmin: true, projectId: 7, tab: "active", mineQ: "&mine=1" });
-  assert.match(on, /name="return" value="\/projects\?tab=active&mine=1&open=7"/, "켬 상태 보존(대표)");
-  const dflt = views.projectSummaryHtml(summary, { isAdmin: true, projectId: 7, tab: "active" });
-  assert.doesNotMatch(dflt, /mine=/, "기본 상태는 파라미터 없이");
+
+// ── 진행/완료 판정 = 날짜(개편 5단계 — 완료 버튼 없음) ──
+// 다가오는 세션 = 오늘 포함 이후 · 취소 제외. 상태 값('예정'·옛 '완료')은 보지 않는다.
+test("listProjects: 지난 세션만 있으면(상태가 '예정'이어도) 활동 끝남 → 진행 중 아님", () => {
+  const d = db();
+  const pid = Number(d.prepare("INSERT INTO projects (title, project_type) VALUES ('지난예정세션','session')").run().lastInsertRowid);
+  d.prepare("INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status) VALUES (?, '녹음', '2001-01-01', '14:00', '18:00', '예정')")
+    .run(pid);
+  const p = listProjects(null, {}).find((x) => x.id === pid);
+  assert.strictEqual(p.upcoming_cnt, 0, "지난 세션은 다가오는 세션 아님");
+  assert.strictEqual(p.is_completed, true, "완료를 안 눌러도 날짜가 지나면 진행 중이 아니다");
+  assert.ok(p.unbilled_cnt > 0, "미청구라 '청구 필요'로 간다");
 });
 
-// ── 완료 판정: 오늘 날짜 세션의 상태 반영(2026-07-15 사용자 리포트) ──
-// 오늘 녹음하고 '완료'로 눌러도 세션 날짜가 오늘이라 '다가오는 세션'으로 잡혀 진행 중에 남던 버그.
-// '다가오는 세션' = 예정 상태만 세야 한다(완료·취소는 끝난 활동이라 완료 판정을 막지 않음).
-test("listProjects: 오늘 날짜라도 '완료' 세션은 다가오는 세션에서 제외 → 완료 판정(청구 필요)", () => {
+test("listProjects: 작업만 있는 프로젝트 — 미청구면 청구 필요, 청구하면 완료(작업은 등록=수주)", () => {
   const d = db();
-  const today = todayYmd();
-  const pid = Number(d.prepare("INSERT INTO projects (title, project_type) VALUES ('오늘완료세션','session')").run().lastInsertRowid);
-  d.prepare("INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status) VALUES (?, '녹음', ?, '14:00', '18:00', '완료')")
-    .run(pid, today);
+  const pid = Number(d.prepare("INSERT INTO projects (title, project_type) VALUES ('작업만','session')").run().lastInsertRowid);
+  const tid = Number(d.prepare("INSERT INTO track_tasks (project_id, task_type, total_price, status) VALUES (?, 'Mixing', 300000, 'Pending')").run(pid).lastInsertRowid);
+  let p = listProjects(null, {}).find((x) => x.id === pid);
+  assert.strictEqual(p.is_completed, true, "다가오는 세션 없음");
+  assert.ok(p.unbilled_cnt > 0, "Pending 작업도 청구 대상");
+  d.prepare("UPDATE track_tasks SET is_invoiced = 1 WHERE id = ?").run(tid);
+  p = listProjects(null, {}).find((x) => x.id === pid);
+  assert.strictEqual(p.unbilled_cnt, 0, "청구하면 미청구 0 → 완료 탭");
+});
+
+test("listProjects: 미래 세션은 상태가 옛 '완료'여도 다가오는 세션, 취소는 아님", () => {
+  const d = db();
+  const pid = Number(d.prepare("INSERT INTO projects (title, project_type) VALUES ('미래세션','session')").run().lastInsertRowid);
+  d.prepare("INSERT INTO sessions (project_id, session_type, session_date, start_time, end_time, status) VALUES (?, '녹음', '2999-01-01', '14:00', '18:00', '완료'), (?, '녹음', '2999-01-02', '14:00', '18:00', '취소')")
+    .run(pid, pid);
   const p = listProjects(null, {}).find((x) => x.id === pid);
-  assert.strictEqual(p.upcoming_cnt, 0, "완료 세션은 다가오는 세션 아님");
-  assert.strictEqual(p.next_session_date, null, "완료 세션은 '다음 세션'으로 잡히지 않음");
-  assert.strictEqual(p.is_completed, true, "오늘 완료 세션만 있으면 진행 중이 아니라 완료(청구 필요)");
+  assert.strictEqual(p.upcoming_cnt, 1, "옛 완료 값 1건만(취소 제외)");
+  assert.strictEqual(p.next_session_date, "2999-01-01");
+  assert.strictEqual(p.is_completed, false, "진행 중");
 });
 
 test("listProjects: 오늘 날짜 '예정' 세션은 여전히 다가오는 세션(진행 중)", () => {

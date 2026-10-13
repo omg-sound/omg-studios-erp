@@ -28,7 +28,9 @@ function dashboardStats(user) {
 }
 
 /**
- * 로그인한 사람의 '내 할 일'(개인 렌즈) — 담당 다가오는 세션 + 미완료 작업.
+ * 로그인한 사람의 '내 할 일'(개인 렌즈) — 담당 다가오는 세션.
+ * (미완료 작업 목록은 개편 5단계에서 삭제 — 완료 개념이 없어 '미완료'가 성립하지 않는다. 작업은 등록=수주이고
+ *  끝났는지는 청구가 말한다.)
  * 담당자 행이 없는 계정(작업에 안 붙는 대표 등)은 null → 대시보드가 섹션 자체를 숨긴다.
  * 대시보드의 '오늘·이번 주 세션'(전체)·'청구 필요'(전체)와 달리 **나에게 배정된 것만** 본다.
  */
@@ -38,7 +40,7 @@ function myTodo(user) {
   if (!me) return null;
   const d = db();
   const today = todayYmd();
-  // 내 담당 다가오는 세션: 다대다 배정(session_engineers) 또는 레거시 첫 엔지니어(engineer_name), 예정·오늘 이후.
+  // 내 담당 다가오는 세션: 다대다 배정(session_engineers) 또는 레거시 첫 엔지니어(engineer_name), 취소 아님·오늘 이후.
   const sessions = d
     .prepare(
       `SELECT DISTINCT s.id, s.session_date, s.session_type, s.all_day, s.start_time,
@@ -47,24 +49,12 @@ function myTodo(user) {
          JOIN projects p ON p.id = s.project_id
          LEFT JOIN session_engineers se ON se.session_id = s.id
         WHERE (se.manager_id = @id OR s.engineer_name = @name)
-          AND s.status = '예정' AND s.session_date >= @today
+          AND s.status <> '취소' AND s.session_date >= @today
         ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC
         LIMIT 6`
     )
     .all({ id: me.id, name: me.name, today });
-  // 내 미완료 작업: engineer_id=나 · 완료 아님 · 무료처리(waived) 아님.
-  const tasks = d
-    .prepare(
-      `SELECT t.id, t.task_type, COALESCE(t.song_title, p.title) AS track_title,
-              p.id AS project_id, p.title AS project_title, COALESCE(NULLIF(t.song_artist, ''), p.artist) AS artist
-         FROM track_tasks t
-         JOIN projects p ON p.id = t.project_id
-        WHERE t.engineer_id = @id AND t.status <> 'Completed' AND COALESCE(t.waived, 0) = 0
-        ORDER BY t.created_at DESC, t.id DESC
-        LIMIT 6`
-    )
-    .all({ id: me.id });
-  return { name: me.name, sessions, tasks };
+  return { name: me.name, sessions };
 }
 
 /**

@@ -30,7 +30,7 @@ function inboxFilterForm(f) {
         <input class="input mt-1 block w-full py-1.5 text-sm" type="search" name="q" value="${esc(f.q || "")}" placeholder="프로젝트 · 아티스트 · 제작/운영 · 소속" autocomplete="off" /></label>
       <div><span class="label mb-0 text-xs">기간</span>
         <div class="mt-1 flex items-center gap-1">${dateCombo("from", f.from || "", { label: "시작일", inputCls: "input w-[9rem] py-1.5 text-sm", placeholder: "시작일" })}<span class="text-muted">~</span>${dateCombo("to", f.to || "", { label: "종료일", inputCls: "input w-[9rem] py-1.5 text-sm", placeholder: "종료일" })}</div></div>
-      <label class="flex items-center gap-1.5 pb-2 text-sm"><input type="checkbox" name="done" value="1" ${f.doneOnly ? "checked" : ""} /> 완료만</label>
+      <label class="flex items-center gap-1.5 pb-2 text-sm"><input type="checkbox" name="past" value="1" ${f.pastOnly ? "checked" : ""} /> 지난 일정만</label>
       <label class="flex items-center gap-1.5 pb-2 text-sm"><input type="checkbox" name="waived" value="1" ${f.showWaived ? "checked" : ""} /> 청구 안 함도 보기</label>
       ${f.projectId ? `<input type="hidden" name="project" value="${Number(f.projectId)}" />` : ""}
       <button class="btn-ghost btn-sm" type="submit">적용</button>
@@ -40,7 +40,8 @@ function inboxFilterForm(f) {
 /** 대기함 한 줄 — 체크박스(name=items, value=s12/t34) + 설명 + 상태 + 적어 둔 금액 + [청구 안 함]. */
 function inboxRow(it, ret) {
   const waiveAction = it.kind === "session" ? `/sessions/${it.id}/waive` : `/projects/tasks/${it.id}/waive`;
-  const statusTag = it.done ? "" : ` <span class="text-xs font-normal text-warning">${it.kind === "session" ? esc(it.status) : "대기"}</span>`;
+  // 날짜가 안 된(오늘 이후) 세션만 표시 — 개편 5단계부터 완료 상태가 없다(작업은 등록=수주라 늘 청구 가능).
+  const statusTag = it.future ? ` <span class="text-xs font-normal text-warning">일정 전</span>` : "";
   const meta = [it.time, it.engineer].filter(Boolean).join(" · ");
   if (it.waived) {
     return `
@@ -50,8 +51,8 @@ function inboxRow(it, ret) {
       </div>`;
   }
   return `
-    <div class="flex items-start gap-2 py-2 ${it.done ? "" : "opacity-70"}" data-inbox-row>
-      <input class="mt-1 shrink-0" type="checkbox" name="items" value="${esc(it.key)}" id="ib-${esc(it.key)}" ${it.done ? "" : "data-confirm-pending"} data-inbox-item />
+    <div class="flex items-start gap-2 py-2 ${it.future ? "opacity-70" : ""}" data-inbox-row>
+      <input class="mt-1 shrink-0" type="checkbox" name="items" value="${esc(it.key)}" id="ib-${esc(it.key)}" ${it.future ? "data-confirm-pending" : ""} data-inbox-item />
       <label for="ib-${esc(it.key)}" class="min-w-0 flex-1 cursor-pointer">
         <span class="block text-sm font-medium">${esc(it.label)}${statusTag}</span>
         ${meta ? `<span class="block text-xs text-muted">${esc(meta)}</span>` : ""}
@@ -90,7 +91,7 @@ function inboxPage({ groups, count, postprod = [], filters = {}, ret = "/invoice
             <div class="divide-y divide-border">${g.items.map((it) => inboxRow(it, ret)).join("")}</div>
           </section>`;
       }).join("")
-    : emptyState(filters.q || filters.from || filters.to || filters.doneOnly ? "조건에 맞는 미청구 항목이 없습니다." : "청구할 항목이 없습니다. 모두 청구했어요.", { card: true });
+    : emptyState(filters.q || filters.from || filters.to || filters.pastOnly ? "조건에 맞는 미청구 항목이 없습니다." : "청구할 항목이 없습니다. 모두 청구했어요.", { card: true });
   return `
     ${pageHeader({ title: "청구", desc: "청구할 세션·작업을 골라 청구서를 만듭니다. 여러 프로젝트를 한 청구서로 묶을 수 있습니다." })}
     ${billingTabs("inbox", count)}
@@ -149,7 +150,7 @@ function composeLine(l, i) {
 /**
  * 청구서 작성.
  * @param {{lines:Array, projects:Array, values?:object, error?:string, skipped?:number}} o
- *   lines = [{kind, id, label|description, date, amount, done}] (자유 줄은 kind='free')
+ *   lines = [{kind, id, label|description, date, amount, future}] (자유 줄은 kind='free')
  */
 function composePage({ lines, projects, values = {}, error = "", skipped = 0 }) {
   const issued = values.issued_date || todayYmd();
@@ -239,7 +240,7 @@ function projectBillingSummary({ project, items = [], postprod = false }) {
   const live = items.filter((i) => !i.waived);
   const note = postprod ? `<p class="mt-2 text-xs text-warning">믹싱·마스터링 세션이 있지만 작업이 없습니다 — 작업 탭에서 작업을 만들어야 청구할 수 있습니다.</p>` : "";
   if (!live.length) return `<div class="rounded-lg border border-border bg-bg px-3 py-3 text-center text-sm text-muted">청구할 세션·작업이 없습니다.</div>${note}`;
-  const rows = live.slice(0, 8).map((i) => `<li class="flex items-center justify-between gap-2"><span class="min-w-0 truncate">${esc(i.label)}${i.done ? "" : ` <span class="text-xs text-warning">${i.kind === "session" ? esc(i.status) : "대기"}</span>`}</span><span class="shrink-0 tabular text-muted">${i.amount != null ? formatKRW(i.amount) : "금액 미정"}</span></li>`).join("");
+  const rows = live.slice(0, 8).map((i) => `<li class="flex items-center justify-between gap-2"><span class="min-w-0 truncate">${esc(i.label)}${i.future ? ` <span class="text-xs text-warning">일정 전</span>` : ""}</span><span class="shrink-0 tabular text-muted">${i.amount != null ? formatKRW(i.amount) : "금액 미정"}</span></li>`).join("");
   const more = live.length > 8 ? `<li class="text-xs text-muted">외 ${live.length - 8}건</li>` : "";
   return `
     <div class="rounded-lg border border-border bg-bg p-3">

@@ -150,15 +150,6 @@ function updateTask(user, taskId, input = {}) {
   return db().prepare("SELECT t.*, t.project_id FROM track_tasks t WHERE t.id = ?").get(task.id);
 }
 
-/** 작업 완료 토글(2026-07-05 사용자 요청 — 세션 완료 버튼과 동일 UX). 상태만 바꾸고 종류·담당·단가는 건드리지 않는다. */
-function setTaskStatus(user, taskId, status) {
-  const task = getTaskForUser(user, taskId);
-  if (!task) return null;
-  if (task.is_invoiced) throw new Error("TASK_LOCKED");
-  db().prepare("UPDATE track_tasks SET status = ? WHERE id = ?").run(normalizeTaskStatus(status), task.id);
-  return db().prepare("SELECT t.*, t.project_id FROM track_tasks t WHERE t.id = ?").get(task.id);
-}
-
 /**
  * '청구 안 함'(무료 처리) 토글(2026-07-06 사용자 요청 — 리허설 등 의도적 무료 작업). 청구 후보 화면에서만
  * 노출·되돌리기 가능한 표시 플래그일 뿐 total_price는 건드리지 않는다(되돌리면 원래 금액이 그대로 보이게).
@@ -247,7 +238,6 @@ module.exports = {
   getTaskForUser,
   setTaskAmount,
   updateTask,
-  setTaskStatus,
   setTaskWaived,
   deleteTask,
   createTask,

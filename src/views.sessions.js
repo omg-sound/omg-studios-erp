@@ -282,8 +282,8 @@ function sessionCreateForm(project, managers, rooms, defaultBooker = "", pmName 
 /** 세션 한 행. showProject=true면 프로젝트명 링크 표시(전역 일정). tracks 전달 시 청구 작업 생성 폼 노출. */
 function sessionRow(s, { isAdmin = false, managers = [], rooms, showProject = false, projectTitle = "", pmName = "", optionsRef = "", openId = null } = {}) {
   const typeBadge = `<span class="badge bg-bg text-muted">${esc(s.session_type)}</span>`;
-  // 상태 배지: 예정·완료는 배지 없음(완료 버튼 토글이 상태를 나타냄 — 라벨 불필요). 취소 등만 배지 표시.
-  const statusBadge = s.status === "예정" || s.status === "완료"
+  // 상태 배지: 취소만(개편 5단계 — 완료 개념 없음. 예정·완료 값은 같은 '살아 있는 일정'으로 본다).
+  const statusBadge = s.status !== "취소"
     ? ""
     : `<span class="badge ${SESSION_STATUS_BADGE[s.status] || "bg-muted/10 text-muted"}">${esc(s.status)}</span>`;
   const dday = s.status !== "취소" && s.session_date >= todayYmd() ? ` · ${esc(ddayLabel(s.session_date))}` : "";
@@ -320,9 +320,9 @@ function sessionRow(s, { isAdmin = false, managers = [], rooms, showProject = fa
     ? '<span class="whitespace-nowrap text-muted">청구됨</span>'
     : s.billed_task_id
       ? '<span class="whitespace-nowrap text-muted">작업 생성됨</span>'
-      : s.status === "완료"
+      : s.session_date <= todayYmd()
         ? '<span class="whitespace-nowrap text-success">청구 가능</span>'
-        : '<span class="whitespace-nowrap text-muted">완료 시 청구</span>';
+        : '<span class="whitespace-nowrap text-muted">일정 전</span>';
   // 확정 청구액(billing.fixed = 청구 폼에서 사람이 고쳐 저장한 값)은 '예상'과 구분해 표시한다 —
   // 안 그러면 사람이 확정한 금액인지 아닌지 구분이 안 된다(2026-07-14 점검).
   const amountChunk = s.billing && s.billing.fixed
@@ -337,8 +337,8 @@ function sessionRow(s, { isAdmin = false, managers = [], rooms, showProject = fa
          ${billStatusChunk}
        </div>`
     : "";
-  // 청구 결핍 사유: 완료된 대관 세션에 시간이 없어 청구 정보를 못 만들면 침묵하지 않고 사유를 옅게 안내(미청구·미전환 한정).
-  const billReason = !s.billing && RENTAL_SESSION_TYPES.includes(s.session_type) && s.status === "완료" && !s.invoiced && !s.billed_task_id
+  // 청구 결핍 사유: 지난 대관 세션에 시간이 없어 청구 정보를 못 만들면 침묵하지 않고 사유를 옅게 안내(미청구·미전환 한정).
+  const billReason = !s.billing && RENTAL_SESSION_TYPES.includes(s.session_type) && s.status !== "취소" && s.session_date <= todayYmd() && !s.invoiced && !s.billed_task_id
     ? "청구하려면 시작·소요 시간을 입력하세요"
     : "";
   const reasonLine = billReason ? `<div class="mt-0.5 text-xs text-muted/70">${esc(billReason)}</div>` : "";
@@ -350,7 +350,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rooms, showProject = fa
   const placeLine = placeText
     ? `<div class="mt-0.5 truncate text-xs text-muted" title="${esc(String(s.location || placeText))}">장소 <span class="text-fg">${esc(placeText)}</span></div>`
     : "";
-  // 청구 줄(예상액·시간·항목·상태)은 왼쪽 정보 블록이 아니라 **완료 버튼이 있는 오른쪽 영역**에 둔다
+  // 청구 줄(예상액·시간·항목·상태)은 왼쪽 정보 블록이 아니라 **일정 취소 버튼이 있는 오른쪽 영역**에 둔다
   // (2026-08-03 사용자 요청). 왼쪽에 두면 담당자·메모와 섞여 '이 세션이 얼마인가'가 한눈에 안 들어왔다.
   // 청구 결핍 사유(reasonLine)는 왼쪽에 남긴다 — 안내 문장이라 오른쪽에서 접히면 읽기 나쁘다.
   const header = `
@@ -377,17 +377,10 @@ function sessionRow(s, { isAdmin = false, managers = [], rooms, showProject = fa
         </div>
       </div>`;
   }
-  // 편집 가능: 행 헤더 전체가 접기 토글. 오른쪽 끝 접기 버튼(chevron), 그 앞에 완료 토글.
-  // '완료' 버튼 = 토글: 예정일 때 누르면 완료(활성), 완료일 때 다시 누르면 예정으로 되돌림(비활성). 상태 배지 대신 버튼 상태가 완료 여부를 표시.
-  // (summary 안 button은 자기 활성화만 일어나 details 토글을 유발하지 않으며, POST→리다이렉트라 전이 상태도 무관.)
-  const isDone = s.status === "완료";
-  const completeToggle = s.status === "예정" || s.status === "완료"
-    ? `<form method="post" action="/sessions/${s.id}/status">
-            <input type="hidden" name="status" value="${isDone ? "예정" : "완료"}" />
-            <button class="btn-ghost btn-xs ${isDone ? "border-success/40 bg-success/10 text-success" : "text-success"}" type="submit" aria-pressed="${isDone}"><span aria-hidden="true" class="inline-block w-3.5 text-center ${isDone ? "" : "opacity-60"}">${isDone ? "✓" : "−"}</span>완료</button>
-          </form>`
-    : "";
-  // '일정 취소' 토글: 예정·완료면 '일정 취소'(확인 후 status=취소), 취소면 '일정 취소 해제'(→예정).
+  // 편집 가능: 행 헤더 전체가 접기 토글. 오른쪽 끝 접기 버튼(chevron), 그 앞에 '일정 취소' 토글.
+  // (완료 토글은 개편 5단계에서 삭제 — 작업자들이 누르는 걸 자주 건너뛰어 완료 여부를 믿을 수 없었다.
+  //  끝났는지는 날짜, 청구했는지는 청구 기록이 말한다.)
+  // '일정 취소' 토글: 살아 있는 일정이면 '일정 취소'(확인 후 status=취소), 취소면 '일정 취소 해제'(→예정).
   // 라벨이 그냥 '취소'였을 땐 모달 안에서 **닫기(X)와 헷갈렸다**(2026-07-20 사용자 지적) — 무엇을 취소하는지 목적어를 붙였다.
   // 취소된 일정은 캘린더에서 삭제하지 않고 '(취소)' 제목으로 남는다(2026-07-15).
   const cancelToggle = s.status === "취소"
@@ -404,7 +397,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rooms, showProject = fa
       <summary class="row-link flex cursor-pointer list-none items-start justify-between gap-2 p-3">
         ${header}
         <div class="flex min-w-0 flex-col items-end gap-1">
-          <span class="flex shrink-0 items-center gap-2">${cancelToggle}${completeToggle}${statusBadge}${detailsChevron()}</span>
+          <span class="flex shrink-0 items-center gap-2">${cancelToggle}${statusBadge}${detailsChevron()}</span>
           ${billLine}
         </div>
       </summary>
@@ -479,16 +472,10 @@ function sessionsSection({ project, rows, isAdmin, managers = [], rooms, default
     </section>`;
 }
 
-/** 캘린더 칩 색 — 목록 상태 배지와 같은 기조(예정=info, 완료=success, 취소=muted). */
-// 캘린더 칩의 상태 점(dot) 색(2026-07-21 사용자 요청 — 구글 캘린더식: 배경 채움 대신 색 점 + 글자).
-// 상태 의미 보존: 예정=primary·완료=success(초록)·취소=muted(회색). SESSION_STATUS_BADGE(배경 tint)와 별개.
-/** 캘린더 칩 점의 클래스. ⚠️**색만으로 상태를 전하지 않는다**(2026-07-30 색상 점검):
- *  라이트에서 예정(파랑)↔완료(그린)의 명도차가 1.11이라 흑백 출력·색약에서 구분되지 않았다 →
- *  완료는 **속 빈 원**(테두리만)으로 모양까지 다르게 한다(취소는 제목 '(취소)' 접두 + 흐림이 이미 보완). */
+/** 캘린더 칩 점의 클래스 — 취소는 회색, 나머지(살아 있는 일정)는 파랑(개편 5단계 — 완료 색 구분 삭제).
+ *  취소는 제목 '(취소)' 접두 + 흐림이 함께 보완한다(색만으로 상태를 전하지 않는다 — 2026-07-30 색상 점검). */
 function calendarDotColor(status) {
-  if (status === "완료") return "border border-success bg-transparent";
-  if (status === "취소") return "bg-muted";
-  return "bg-primary"; // 예정 등 기본
+  return status === "취소" ? "bg-muted" : "bg-primary";
 }
 
 /** 월 캘린더 그리드(YYYY-MM). 날짜별 세션을 셀에 배치하고 이전/다음 월로 이동. */
@@ -588,7 +575,7 @@ function monthCalendar(ym, sessions, { canEdit = false, openId = null } = {}) {
 /**
  * 캘린더 세션 팝오버(중앙 모달) — 칩 클릭 시 app.js가 GET /sessions/:id/card로 불러와 표시(2026-07-11 사용자 요청).
  * 구글 캘린더식 상세: 아티스트·프로젝트 / 날짜·시간·종류 / 예약·엔지니어·디렉터 / 예상 청구액·소요 / 메모 + 완료 토글 + 프로젝트 링크.
- * 완료는 폼 POST → 캘린더로 복귀(return, 리로드). 서베이(캘린더)에서 안 떠나고 처리.
+ * 일정 취소는 폼 POST → 캘린더로 복귀(return, 리로드). 서베이(캘린더)에서 안 떠나고 처리.
  */
 function sessionCardModal(s, { canEdit = false } = {}) {
   const ret = `/sessions?view=calendar&month=${esc(String(s.session_date || "").slice(0, 7))}`;
@@ -606,17 +593,8 @@ function sessionCardModal(s, { canEdit = false } = {}) {
   const bill = s.billing
     ? `${s.billing.fixed ? `확정 청구액 ${formatKRW(s.billing.amount)}` : s.billing.amount > 0 ? `예상 청구액 ${formatKRW(s.billing.amount)}` : "청구액 미정"} · ${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}`
     : "";
-  const isDone = s.status === "완료";
-  const canToggle = canEdit && (s.status === "예정" || s.status === "완료");
-  const statusBadge = s.status !== "예정" && s.status !== "완료"
+  const statusBadge = s.status === "취소"
     ? `<span class="badge ${SESSION_STATUS_BADGE[s.status] || "bg-muted/10 text-muted"}">${esc(s.status)}</span>` : "";
-  const completeForm = canToggle
-    ? `<form method="post" action="/sessions/${s.id}/status">
-         <input type="hidden" name="status" value="${isDone ? "예정" : "완료"}" />
-         <input type="hidden" name="return" value="${ret}" />
-         <button class="btn-ghost btn-sm ${isDone ? "border-success/40 bg-success/10 text-success" : "text-success"}" type="submit" aria-pressed="${isDone}"><span aria-hidden="true" class="inline-block w-3.5 text-center ${isDone ? "" : "opacity-60"}">${isDone ? "✓" : "−"}</span>완료</button>
-       </form>`
-    : "";
   // 일정 취소/해제(편집자만) — 라벨에 목적어를 붙인 이유는 sessionRow 쪽 주석 참조(2026-07-20).
   // 취소는 캘린더에서 삭제하지 않고 '(취소)' 제목으로 남긴다(2026-07-15).
   const cancelForm = !canEdit
@@ -650,7 +628,7 @@ function sessionCardModal(s, { canEdit = false } = {}) {
         ${bill ? `<div class="mt-2 text-sm tabular ${s.billing.amount > 0 ? "text-success" : "text-muted"}">${bill}</div>` : ""}
         <div class="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
           <a href="/projects/${s.project_id}?tab=sessions" class="btn-ghost btn-sm">프로젝트로 ↗</a>
-          <span class="flex items-center gap-2">${cancelForm}${completeForm}</span>
+          <span class="flex items-center gap-2">${cancelForm}</span>
         </div>
       </div>
     </div>`;

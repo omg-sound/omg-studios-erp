@@ -947,7 +947,6 @@ function init() {
     }
   }
 
-  completeBilledPostprodSessions(d);
   // 단가표·촬영 구간·곡 테이블과 쓰지 않는 컬럼 삭제(개편 4단계 — docs/redesign/04-cleanup.md). 맨 끝에 둔다.
   redesignCleanup(d);
 
@@ -955,39 +954,6 @@ function init() {
   // invoice_items / payments (라인아이템·입금 이력 분리가 필요해지면)
 
   return d;
-}
-
-/**
- * postprod_sessions_billed_complete_v1(2026-10-13 사용자 결정) — **청구가 끝난 프로젝트**에 남은 지난 예정
- * 믹싱·마스터링 세션을 1회 완료 처리한다. 후반작업 세션은 청구서에 안 들어가 '청구=완료'를 못 받아, 완료를 안 누른
- * 채 프로젝트가 '진행 중'에 남았다(운영 실측 7개 프로젝트·세션 8건). 이후로는 청구 발행이 같은 처리를 한다(createInvoice).
- * '청구가 끝남' = 청구 라인이 있고 + 미청구 작업 없음(청구 안 함 제외) + 미청구 대관 세션 없음(청구 안 함·취소 제외).
- * 청구가 덜 끝난 프로젝트(예: 작업은 했는데 아직 청구 전)는 건드리지 않는다 — 진행 중 신호가 맞다.
- */
-function completeBilledPostprodSessions(d) {
-  if (getState("postprod_sessions_billed_complete_v1")) return;
-  const { POSTPROD_SESSION_TYPES, RENTAL_SESSION_TYPES } = require("./config");
-  const { todayYmd } = require("./lib/date");
-  const inList = (arr) => arr.map((t) => `'${t}'`).join(", ");
-  const changed = d.prepare(
-    `UPDATE sessions SET status = '완료'
-      WHERE session_type IN (${inList(POSTPROD_SESSION_TYPES)}) AND status = '예정' AND waived = 0 AND session_date < @today
-        AND project_id IN (
-          SELECT p.id FROM projects p
-           WHERE EXISTS (SELECT 1 FROM invoice_items ii
-                           LEFT JOIN sessions s ON s.id = ii.session_id
-                           LEFT JOIN track_tasks t ON t.id = ii.task_id
-                          WHERE COALESCE(s.project_id, t.project_id) = p.id)
-             AND NOT EXISTS (SELECT 1 FROM track_tasks t2 WHERE t2.project_id = p.id AND t2.is_invoiced = 0 AND t2.waived = 0)
-             AND NOT EXISTS (SELECT 1 FROM sessions s3
-                              WHERE s3.project_id = p.id AND s3.status <> '취소' AND s3.waived = 0
-                                AND s3.session_type IN (${inList(RENTAL_SESSION_TYPES)})
-                                AND (s3.all_day = 1 OR (s3.start_time IS NOT NULL AND s3.end_time IS NOT NULL))
-                                AND NOT EXISTS (SELECT 1 FROM invoice_items i3 WHERE i3.session_id = s3.id)
-                                AND NOT EXISTS (SELECT 1 FROM track_tasks t3 WHERE t3.session_id = s3.id)))`
-  ).run({ today: todayYmd() }).changes;
-  setState("postprod_sessions_billed_complete_v1", "done");
-  if (changed) console.log(`[migrate postprod_sessions_billed_complete_v1] 청구 끝난 프로젝트의 지난 예정 후반작업 세션 ${changed}건 → 완료`);
 }
 
 /**

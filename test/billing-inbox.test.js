@@ -55,19 +55,27 @@ test("대기함: 모든 프로젝트의 미청구 세션·작업 — 내부 지�
 
   const withWaived = D.listBillableItems(CHIEF, { q: "대기", showWaived: true });
   assert.ok(withWaived.groups.flatMap((g) => g.items).some((i) => i.key === `s${waivedS}` && i.waived), "'청구 안 함 보기'면 되돌리기용으로 보인다");
-  const doneOnly = D.listBillableItems(CHIEF, { q: "대기", doneOnly: true });
-  assert.ok(doneOnly.groups.flatMap((g) => g.items).every((i) => i.done));
+  // '지난 일정만'(개편 5단계 — 완료 상태 대신 날짜): 오늘 이후 세션만 빠지고 작업은 그대로(등록=수주).
+  const futureS = session(a, { date: "2099-01-01", status: "예정" });
+  const all = D.listBillableItems(CHIEF, { q: "대기" }).groups.flatMap((g) => g.items);
+  assert.ok(all.find((i) => i.key === `s${futureS}`).future, "오늘 이후 세션 = future(화면이 흐리게·확인)");
+  assert.ok(!all.find((i) => i.key === `s${s1}`).future, "지난 세션 = 보통");
+  assert.ok(!all.find((i) => i.key === `t${t1}`).future, "작업은 늘 청구 가능");
+  const pastOnly = D.listBillableItems(CHIEF, { q: "대기", pastOnly: true }).groups.flatMap((g) => g.items);
+  assert.ok(!pastOnly.some((i) => i.key === `s${futureS}`), "지난 일정만 = 미래 세션 제외");
+  assert.ok(pastOnly.some((i) => i.key === `t${t1}`), "작업은 남는다");
+  d.prepare("DELETE FROM sessions WHERE id = ?").run(futureS);
   const ranged = D.listBillableItems(CHIEF, { q: "대기", from: "2026-10-02" });
   assert.ok(!ranged.groups.flatMap((g) => g.items).some((i) => i.key === `s${s1}`), "기간 필터(세션 날짜)");
 });
 
-test("후반작업 세션 알림: 완료 믹싱 세션만 있고 작업·청구서가 없는 프로젝트는 postprod로", () => {
+test("후반작업 세션 알림: 날짜가 된 믹싱 세션만 있고 작업·청구서가 없는 프로젝트는 postprod로", () => {
   const p = project("후반알림");
   session(p, { type: "믹싱", status: "완료" });
   const r = D.listBillableItems(CHIEF, { q: "후반알림" });
   assert.equal(r.groups.length, 0, "대기함엔 없다(작업으로 청구)");
   assert.ok(r.postprod.some((x) => x.id === p), "대신 알림 목록에");
-  // 완료를 안 눌렀어도 날짜가 지난 예정 믹싱 세션이면 알림(청구 누락이 숨지 않게) — 미래 세션·작업 있는 프로젝트는 제외
+  // 상태와 무관하게 날짜가 지난 믹싱 세션이면 알림(개편 5단계 — 완료 버튼 없음) — 미래 세션·작업 있는 프로젝트는 제외
   const forgot = project("후반알림예정");
   session(forgot, { type: "믹싱", status: "예정", date: "2026-01-10" });
   const upcoming = project("후반알림미래");
@@ -103,11 +111,11 @@ test("여러 프로젝트를 한 청구서로: project_id NULL · 양쪽 프로�
   assert.match(rows[0].description, /10월 5일 · 가수A · 녹음/);
   assert.match(rows[1].description, /^곡B - /);
   assert.equal(rows[2].description, "계약금");
-  // 발행 = 완료 처리 + 확정액
+  // 발행 = 청구됨 + 확정액. 상태는 바꾸지 않는다(개편 5단계 — 완료 개념 없음)
   const s = d.prepare("SELECT status, billing_amount FROM sessions WHERE id = ?").get(s1);
-  assert.deepEqual([s.status, s.billing_amount], ["완료", 300000]);
+  assert.deepEqual([s.status, s.billing_amount], ["예정", 300000]);
   const t = d.prepare("SELECT status, is_invoiced, total_price FROM track_tasks WHERE id = ?").get(t1);
-  assert.deepEqual([t.status, t.is_invoiced, t.total_price], ["Completed", 1, 200000]);
+  assert.deepEqual([t.status, t.is_invoiced, t.total_price], ["Pending", 1, 200000]);
   // 두 프로젝트 화면 모두에서 보인다
   for (const pid of [a, b]) assert.ok(D.listInvoicesForProject(CHIEF, pid).rows.some((r) => r.id === inv.id), `프로젝트 ${pid} 청구 탭`);
   assert.deepEqual(D.projectsForInvoice(inv.id).map((p) => p.id).sort(), [a, b].sort());
@@ -180,38 +188,19 @@ test("매출 상세: 청구서 단위 그대로 — 작업 종류·세부·항�
   assert.equal(row.work_kind, "녹음");
 });
 
-test("작업 청구 시 그 프로젝트의 지난 예정 믹싱·마스터링 세션도 완료 — 앞으로 잡힌 세션·다른 프로젝트는 그대로", () => {
-  const p = project("후반완료");
-  const other = project("후반완료다른");
+test("작업을 청구해도 세션 상태는 그대로 — 진행/완료는 날짜가 정한다(개편 5단계)", () => {
+  const p = project("후반날짜");
   const past = session(p, { type: "믹싱", status: "예정", date: "2026-01-05" });
   const future = session(p, { type: "마스터링", status: "예정", date: "2099-01-01" });
-  const otherPast = session(other, { type: "믹싱", status: "예정", date: "2026-01-05" });
   const t1 = task(p, { song: "곡" });
   D.createInvoice(CHIEF, { payerId: PAYER, lines: [{ kind: "task", id: t1, amount: "100000" }] });
   const st = (id) => d.prepare("SELECT status FROM sessions WHERE id = ?").get(id).status;
-  assert.equal(st(past), "완료", "지난 믹싱 세션 = 완료(청구=완료를 후반 세션까지)");
-  assert.equal(st(future), "예정", "앞으로 잡힌 세션은 아직 안 한 일");
-  assert.equal(st(otherPast), "예정", "청구하지 않은 프로젝트는 그대로");
-  assert.equal(D.listProjects(CHIEF, {}).find((r) => r.id === p).is_completed, false, "미래 세션이 남아 있으니 진행 중이 맞다");
+  assert.equal(st(past), "예정", "상태를 바꾸지 않는다");
+  assert.equal(st(future), "예정");
+  assert.equal(D.listProjects(CHIEF, {}).find((r) => r.id === p).is_completed, false, "미래 세션이 남아 있으니 진행 중");
+  d.prepare("DELETE FROM sessions WHERE id = ?").run(future);
+  const row = D.listProjects(CHIEF, {}).find((r) => r.id === p);
+  assert.equal(row.is_completed, true, "미래 세션이 없으면 활동 끝남");
+  assert.equal(Number(row.unbilled_cnt), 0, "작업이 청구됐으니 완료 탭");
 });
 
-test("1회 정리(postprod_sessions_billed_complete_v1): 청구가 끝난 프로젝트만 지난 예정 후반 세션을 완료로", () => {
-  const done = project("정리끝");
-  const s1 = session(done, { date: "2026-02-01" });
-  const mix = session(done, { type: "믹싱", status: "예정", date: "2026-02-02" });
-  d.prepare("INSERT INTO invoices (project_id, title, amount, status) VALUES (?, 'x', 1, '발행')").run(done);
-  const invId = d.prepare("SELECT MAX(id) id FROM invoices").get().id;
-  d.prepare("INSERT INTO invoice_items (invoice_id, session_id, description, amount) VALUES (?, ?, 'x', 1)").run(invId, s1);
-  const half = project("정리덜끝");
-  const mix2 = session(half, { type: "믹싱", status: "예정", date: "2026-02-02" });
-  task(half, { song: "아직" }); // 미청구 작업 — 청구가 덜 끝남
-  d.prepare("INSERT INTO invoices (project_id, title, amount, status) VALUES (?, 'y', 1, '발행')").run(half);
-  const none = project("정리청구없음");
-  const mix3 = session(none, { type: "믹싱", status: "예정", date: "2026-02-02" }); // 청구서 없음 = 누락 의심 → 건드리지 않음
-  d.prepare("DELETE FROM admin_state WHERE key = 'postprod_sessions_billed_complete_v1'").run();
-  init();
-  const st = (id) => d.prepare("SELECT status FROM sessions WHERE id = ?").get(id).status;
-  assert.equal(st(mix), "완료");
-  assert.equal(st(mix2), "예정", "미청구 작업이 남은 프로젝트는 그대로");
-  assert.equal(st(mix3), "예정", "청구 흔적이 없는 프로젝트는 그대로(청구 누락일 수 있다)");
-});

@@ -17,7 +17,7 @@ const { layout, pageHeader, esc, flashBanner, emptyState, errorPage, formatKRW, 
 const { contactPanes } = require("../views.contacts"); // 2단 골격 공용(연락처·업체·매출과 동일)
 const { workerNameList, workerPayoutCard, workerEmptyPane } = require("../views.workers");
 const { safePath } = require("../lib/nav");
-const { TASK_STATUS_LABELS, TASK_STATUS_BADGE, SESSION_STATUS_BADGE } = require("../config");
+const { SESSION_STATUS_BADGE } = require("../config");
 const { formatYmdShort, todayYmd, isValidYmd, kstYmd } = require("../lib/date");
 const { withholding33 } = require("../lib/tax"); // 외주 원천징수 3.3% 표시(2026-07-09 사용자 요청)
 
@@ -351,7 +351,6 @@ router.get("/:id", requireInvoice, asyncHandler(async (req, res) => {
         <a href="/projects/${t.project_id}?tab=tracks" class="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface p-2.5 hover:opacity-80">
           <div class="min-w-0 text-sm"><span class="font-medium">${esc(taskTypeLabel(t.task_type))}</span>${taskMeta(t)}</div>
           <div class="flex shrink-0 items-center gap-2">
-            <span class="badge ${TASK_STATUS_BADGE[t.status] || "bg-muted/10 text-muted"}">${esc(TASK_STATUS_LABELS[t.status] || t.status)}</span>
             ${t.total_price ? `<span class="text-sm font-semibold">${formatKRW(t.total_price)}</span>` : ""}
           </div>
         </a>`
@@ -363,7 +362,7 @@ router.get("/:id", requireInvoice, asyncHandler(async (req, res) => {
         (s) => `
         <a href="/projects/${s.project_id}?tab=sessions" class="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface p-2.5 hover:opacity-80">
           <div class="min-w-0 text-sm"><span class="font-medium">${esc(s.session_type || "녹음")} 세션</span> <span class="text-xs text-muted">· ${esc(s.project_title)} · ${esc(formatYmdShort(s.session_date))}</span></div>
-          <span class="flex shrink-0 items-center gap-1">${s.my_assigned && !(s.my_rate > 0) ? `<span class="badge bg-warning/10 text-warning" title="지급단가가 입력되지 않았습니다 — 의도한 무료(0원)면 정산 탭에서 그대로 지급 처리, 아니면 세션 편집에서 단가를 입력하세요">지급단가 미입력</span>` : ""}<span class="badge ${SESSION_STATUS_BADGE[s.status] || "bg-muted/10 text-muted"}">${esc(s.status)}</span></span>
+          <span class="flex shrink-0 items-center gap-1">${s.my_assigned && !(s.my_rate > 0) ? `<span class="badge bg-warning/10 text-warning" title="지급단가가 입력되지 않았습니다 — 의도한 무료(0원)면 정산 탭에서 그대로 지급 처리, 아니면 세션 편집에서 단가를 입력하세요">지급단가 미입력</span>` : ""}${s.status === "취소" ? `<span class="badge ${SESSION_STATUS_BADGE["취소"]}">취소</span>` : ""}</span>
         </a>`
       )
       .join("");

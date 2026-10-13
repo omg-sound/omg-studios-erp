@@ -137,7 +137,7 @@ function inboxFilters(q) {
     q: String(q.q || "").trim(),
     from: cleanYmd(q.from),
     to: cleanYmd(q.to),
-    doneOnly: q.done === "1",
+    pastOnly: q.past === "1",
     showWaived: q.waived === "1",
     projectId: Number(q.project) || null,
   };

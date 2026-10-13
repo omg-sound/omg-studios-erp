@@ -140,12 +140,13 @@ test("sessionProjectCard: 라벨이 없으면(직접 친 주소) 그 주소를 �
   assert.match(html, /장소 <span class="text-fg">서울 어딘가 5층<\/span>/);
 });
 
-test("sessionProjectCard: 청구 줄은 완료 버튼과 같은 오른쪽 묶음 안에 있다", () => {
+test("sessionProjectCard: 청구 줄은 일정 취소 버튼과 같은 오른쪽 묶음 안에 있다", () => {
   const html = sessionProjectCard([row({})], { isAdmin: true });
   // 오른쪽 묶음 = 버튼 줄 + 청구 줄을 세로로 쌓은 컨테이너. 청구 줄이 왼쪽 정보 블록에 남아 있으면 회귀.
   const right = html.slice(html.indexOf("flex min-w-0 flex-col items-end"));
   assert.ok(right.indexOf("예상 청구액") > -1 && right.indexOf("예상 청구액") < right.indexOf("</summary>"), "청구 줄이 오른쪽 묶음 안");
-  assert.match(right, /완료<\/button>[\s\S]*예상 청구액/, "버튼이 위, 청구 줄이 아래");
+  assert.match(right, /일정 취소<\/button>[\s\S]*예상 청구액/, "버튼이 위, 청구 줄이 아래");
+  assert.doesNotMatch(html, />완료<\/button>/, "완료 버튼 없음(개편 5단계)");
 });
 
 // ── 저장 후 그 세션은 펼친 채로 둔다(2026-08-03 사용자 요청 '저장만 하고 알아서 닫을게') ──

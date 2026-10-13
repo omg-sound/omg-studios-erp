@@ -2,7 +2,7 @@
 
 /** 프로젝트 상세/목록 렌더 — projects.routes.js에서 분리(2026-07-09, views.sessions.js·views.invoices.js 컨벤션과 동일). */
 
-const { TASK_STATUS_LABELS, TASK_STATUS_BADGE, docNumberWithType } = require("./config");
+const { docNumberWithType } = require("./config");
 const {
   esc,
   formatKRW,
@@ -147,14 +147,11 @@ function projectTableHead() {
  * 목록 행(2026-07-16 청구 표식 재설계 — 컬럼 정렬 + 항목명 헤더 + 작성일 열, 밀도 토글 폐지).
  *  - `<details>` 한 벌: summary=grid 셀(헤더와 같은 열).
  *  - **행 전체가 이동 링크**(2026-07-18 사용자 요청 — 모든 데이터 셀이 `projectRowHref`로 가는 `<a>`, 셀별 밑줄·색강조 없음·어포던스는 행 배경 호버만).
- *    `<summary>` 안의 `<a>`는 클릭 시 이동만 하고 토글 안 함(브라우저 기본), 유일하게 **오른쪽 끝 `.proj-toggle`(비인터랙티브 span)만 클릭 시 펼침**(세션·곡 요약 + 완료 토글).
+ *    `<summary>` 안의 `<a>`는 클릭 시 이동만 하고 토글 안 함(브라우저 기본), 유일하게 **오른쪽 끝 `.proj-toggle`(비인터랙티브 span)만 클릭 시 펼침**(세션·곡 요약).
  *  - 다음 세션=진행 중 탭만(디데이 pill), 금액=프로젝트 버짓(청구 필요 탭은 '청구 필요 N' 배지 병기), 작성일=전 탭.
  *  - 반응형: <640px면 thead 숨기고 아티스트·프로젝트 + 탭 값만 2줄 카드(제작사·PM·작성일 숨김).
  */
-// mineQ = 복귀 경로에 실을 '내 프로젝트만' 상태 파라미터(`&mine=0`·`&mine=1`·기본값이면 빈 문자열).
-// ⚠️불리언이 아니라 문자열인 이유: 기본값이 역할마다 다르다(스태프=켜짐·대표=꺼짐, 2026-08-02) — 여기서
-// 불리언으로 되돌리면 어느 쪽이 기본인지 뷰가 알 수 없어 대표의 '켬' 상태가 복귀 때마다 풀린다.
-function projectListRow(p, summary, { tab = "active", isAdmin = false, openId = null, mineQ = "", listQuery = "" } = {}) {
+function projectListRow(p, summary, { tab = "active", openId = null, listQuery = "" } = {}) {
   const href = projectRowHref(p, tab, listQuery);
   const dash = '<span class="text-muted">—</span>';
   // sortVal = 정렬 원값(헤더 클릭 정렬). **항상 명시한다** — 보이는 텍스트로 정렬하면 틀리는 열이 많다:
@@ -192,40 +189,16 @@ function projectListRow(p, summary, { tab = "active", isAdmin = false, openId = 
         ${cellLink(`${amount}${billingBadge}`, "pt-amount tabular", "금액", "amount", amt || "")}
         <span class="proj-toggle" aria-hidden="true" title="펼치기"><svg class="proj-chevron transition-transform group-open/proj:rotate-180" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8l4 4 4-4" /></svg></span>
       </summary>
-      <div class="proj-expand border-t border-border/40 bg-elevated/40 px-4 py-3 text-xs leading-relaxed">${projectSummaryHtml(summary, { isAdmin, projectId: p.id, tab, mineQ })}</div>
+      <div class="proj-expand border-t border-border/40 bg-elevated/40 px-4 py-3 text-xs leading-relaxed">${projectSummaryHtml(summary)}</div>
     </details>`;
 }
 
 
 /** 인라인 요약 본문 — 세션 일정(날짜·시간) + 곡·콘텐츠(아티스트·제목·작업자). data.listProjectSummaries 결과 1건. */
-function projectSummaryHtml(s, { isAdmin = false, projectId = null, tab = "active", mineQ = "" } = {}) {
+function projectSummaryHtml(s) {
   if (!s || (!s.sessions.length && !s.tracks.length)) {
     return `<span class="text-muted">등록된 세션·곡·콘텐츠가 없습니다.</span>`;
   }
-  // 완료 후 목록으로 복귀하며 이 카드를 다시 펼친다(?open=). 스크롤은 app.js가 보존(경로 동일).
-  // '내 프로젝트만' 상태를 복귀 경로에 그대로 싣는다(mineQ, 라우트가 기본값과 비교해 만들어 넘긴다)
-  // — 안 실으면 전체 보기로 훑던 사람이 완료 토글 한 번에 기본 상태로 튄다.
-  const ret = `/projects?tab=${esc(tab)}${mineQ}${projectId ? `&open=${projectId}` : ""}`;
-  // 프로젝트 목록 펼침에서 바로 완료(2026-07-11 사용자 요청 — 프로젝트 안 안 들어가고 완료). 편집 권한자·예정/완료 세션만.
-  const sessToggle = (se) => {
-    if (!isAdmin || (se.status !== "예정" && se.status !== "완료")) return "";
-    const done = se.status === "완료";
-    return `<form method="post" action="/sessions/${se.id}/status" class="shrink-0">
-        <input type="hidden" name="status" value="${done ? "예정" : "완료"}" />
-        <input type="hidden" name="return" value="${ret}" />
-        <button class="btn-ghost btn-xs ${done ? "border-success/40 bg-success/10 text-success" : "text-success"}" type="submit" aria-pressed="${done}"><span aria-hidden="true" class="inline-block w-3 text-center ${done ? "" : "opacity-60"}">${done ? "✓" : "−"}</span>완료</button>
-      </form>`;
-  };
-  // 곡·콘텐츠 작업(후반작업)도 목록 펼침에서 바로 완료(2026-07-11 사용자 요청 — 세션과 동일). status=Pending↔Completed.
-  const taskToggle = (tk) => {
-    if (!isAdmin) return "";
-    const done = tk.status === "Completed";
-    return `<form method="post" action="/projects/tasks/${tk.id}/status" class="shrink-0">
-        <input type="hidden" name="status" value="${done ? "Pending" : "Completed"}" />
-        <input type="hidden" name="return" value="${ret}" />
-        <button class="btn-ghost btn-xs ${done ? "border-success/40 bg-success/10 text-success" : "text-success"}" type="submit" aria-pressed="${done}"><span aria-hidden="true" class="inline-block w-3 text-center ${done ? "" : "opacity-60"}">${done ? "✓" : "−"}</span>완료</button>
-      </form>`;
-  };
   const blocks = [];
   if (s.sessions.length) {
     // 다가오는 세션(오늘 이후) 먼저, 지난 세션은 그 뒤(최근 순)로 재정렬 — 지난 세션이 앞을 먹어 다가오는 게 잘리는 것 방지.
@@ -235,25 +208,22 @@ function projectSummaryHtml(s, { isAdmin = false, projectId = null, tab = "activ
     const ordered = [...upcoming, ...past];
     const items = ordered.slice(0, 8).map((se) => {
       const time = se.start_time ? ` ${esc(se.start_time)}${se.end_time ? "–" + esc(se.end_time) : ""}` : "";
-      const st = se.status && se.status !== "예정" ? ` <span class="text-muted">· ${esc(se.status)}</span>` : "";
+      const st = se.status === "취소" ? ` <span class="text-muted">· 취소</span>` : "";
       const dateCls = se.session_date < today ? "text-muted" : "text-fg/80";
-      const toggle = sessToggle(se);
       const info = `<span class="min-w-0 truncate"><span class="tabular ${dateCls}">${esc(formatYmdShort(se.session_date))}${time}</span> <span class="text-muted">· ${esc(se.session_type)}</span>${st}</span>`;
-      return `<li class="flex items-center justify-between gap-2">${info}${toggle}</li>`;
+      return `<li class="flex items-center justify-between gap-2">${info}</li>`;
     }).join("");
     const more = s.sessions.length > 8 ? `<li class="text-muted">외 ${s.sessions.length - 8}건</li>` : "";
     blocks.push(`<div><div class="mb-0.5 font-medium text-fg/60">세션 ${s.sessions.length}</div><ul class="space-y-0.5">${items}${more}</ul></div>`);
   }
   if (s.tracks.length) {
-    // 곡별로 제목 + 그 아래 작업(믹싱·마스터링 등) 목록 — 각 작업에 완료 토글(세션과 동일). 편집 권한자만 토글, 완료는 '· 완료' 병기.
+    // 곡별로 제목 + 그 아래 작업(믹싱·마스터링 등) 목록. (완료 토글은 개편 5단계에서 삭제.)
     const items = s.tracks.slice(0, 10).map((tr) => {
       const artist = tr.artist ? `<span class="text-muted">${esc(tr.artist)} · </span>` : "";
       const eng = tr.engineers.length ? ` <span class="text-muted">(${esc(tr.engineers.join(", "))})</span>` : "";
       const head = `<div class="truncate text-fg/80">${artist}${esc(tr.title)}${eng}</div>`;
       const taskLis = (tr.tasks || []).map((tk) => {
-        const done = tk.status === "Completed";
-        const st = done ? ` <span class="text-muted">· 완료</span>` : "";
-        return `<li class="flex items-center justify-between gap-2 pl-3"><span class="min-w-0 truncate text-fg/70">${esc(tk.label)}${st}</span>${taskToggle(tk)}</li>`;
+        return `<li class="flex items-center justify-between gap-2 pl-3"><span class="min-w-0 truncate text-fg/70">${esc(tk.label)}</span></li>`;
       }).join("");
       return `<li>${head}${taskLis ? `<ul class="mt-0.5 space-y-0.5">${taskLis}</ul>` : ""}</li>`;
     }).join("");
@@ -639,7 +609,6 @@ function taskCreateForm(project, managers = []) {
           <button class="btn-primary shrink-0 self-end px-4 py-1.5 text-sm" type="submit">추가</button>
         </div>
       </div>
-      <input type="hidden" name="status" value="Pending" />
     </form>`;
 }
 
@@ -655,26 +624,10 @@ function songGroupCard(project, group, { isAdmin, managers = [], expandTaskId = 
         </div>
         ${isAdmin ? songRenameMenu(project, group) : ""}
       </div>
-      ${trackProgressSummary(group.tasks)}
       <div class="space-y-2">${tasks}</div>
       ${isAdmin ? taskQuickAdd(project, group) : ""}
     </div>`;
 }
-
-/** 곡의 진행 요약: 단계 그룹별 가장 진전된 상태를 한 줄로(믹스 완료 · 마스터 대기). */
-function trackProgressSummary(tasks) {
-  if (!tasks || !tasks.length) return "";
-  const order = { Pending: 0, Completed: 1 };
-  // 분류 폐기 — 작업 종류별(보컬튠·믹싱 등)로 최고 진행 상태를 요약(이전 그룹 묶음 대체).
-  const byType = {};
-  for (const t of tasks) {
-    const label = taskTypeLabel(t.task_type);
-    if (byType[label] == null || (order[t.status] || 0) > (order[byType[label]] || 0)) byType[label] = t.status;
-  }
-  const parts = Object.keys(byType).map((label) => `${label} ${TASK_STATUS_LABELS[byType[label]] || byType[label]}`);
-  return parts.length ? `<div class="mb-2 text-xs text-muted">진행: ${esc(parts.join(" · "))}</div>` : "";
-}
-
 
 /** 곡 이름 바꾸기 — 이 곡명의 미청구 작업 전부(청구된 작업은 스냅샷 잠금이라 그대로, 서버가 안내). */
 function songRenameMenu(project, group) {
@@ -692,13 +645,10 @@ function songRenameMenu(project, group) {
 
 function taskRow(task, { isAdmin, managers = [], open = false } = {}) {
   const label = taskTypeLabel(task.task_type);
-  const status = TASK_STATUS_LABELS[task.status] || task.status;
-  const statusCls = TASK_STATUS_BADGE[task.status] || "bg-muted/10 text-muted";
   // 금액은 청구 탭에서 확정 — 작업 행엔 청구된 작업의 확정액만 표시(미청구는 숨김, '기록만' 일관).
   const amount = `<span class="text-sm font-semibold">${task.is_invoiced && task.total_price ? formatKRW(task.total_price) : ""}</span>`;
   // 종류·담당은 '작업 저장' 후 서버 재렌더로 갱신된다(자동저장은 2026-07-01 명시 저장 버튼으로 전환).
   const title = `<span class="min-w-0 truncate text-sm"><span class="font-medium">${esc(label)}</span><span class="text-xs text-muted">${task.engineer_name ? " · " + esc(task.engineer_name) : ""}${task.work_date ? " · " + esc(formatYmdShort(task.work_date)) : ""}</span></span>`;
-  const statusBadge = `<span class="badge ${statusCls}">${esc(status)}</span>`;
 
   // 비관리자/청구된 작업: 편집 불가 → 단순 행(접기 없음).
   if (!isAdmin || task.is_invoiced) {
@@ -706,24 +656,15 @@ function taskRow(task, { isAdmin, managers = [], open = false } = {}) {
     return `
       <div id="task-${task.id}" class="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface p-2.5">
         ${title}
-        <span class="flex shrink-0 items-center gap-1.5">${amount}${statusBadge}${billed}</span>
+        <span class="flex shrink-0 items-center gap-1.5">${amount}${billed}</span>
       </div>`;
   }
-  // 완료 토글(2026-07-05 사용자 요청 — 세션 완료 버튼과 동일 UX): 배지 대신 버튼 활성/비활성이 상태를 표시.
-  // 대기=비활성 '− 완료'(누르면 완료), 완료=활성 '✓ 완료'(다시 누르면 대기로). 독립 폼(POST /status)이라 접힌 채로도 즉시 전환.
-  const isDone = task.status === "Completed";
-  const completeToggle = `
-    <form method="post" action="/projects/tasks/${task.id}/status">
-      <input type="hidden" name="status" value="${isDone ? "Pending" : "Completed"}" />
-      <button class="btn-ghost btn-xs ${isDone ? "border-success/40 bg-success/10 text-success" : "text-success"}" type="submit" aria-pressed="${isDone}"><span aria-hidden="true" class="inline-block w-3.5 text-center ${isDone ? "" : "opacity-60"}">${isDone ? "✓" : "−"}</span>완료</button>
-    </form>`;
   return `
     <details id="task-${task.id}" class="group rounded-lg border border-border bg-surface"${open ? " open" : ""}>
       <summary class="flex cursor-pointer list-none items-center justify-between gap-2 p-2.5">
         ${title}
         <span class="flex shrink-0 items-center gap-2">
           ${amount}
-          ${completeToggle}
           ${detailsChevron()}
         </span>
       </summary>
@@ -825,7 +766,6 @@ function taskQuickAdd(project, group) {
     <form method="post" action="/projects/${project.id}/tasks">
       <input type="hidden" name="song_title" value="${esc(group.key)}" />
       <input type="hidden" name="task_type" value="${esc(t.key)}" />
-      <input type="hidden" name="status" value="Pending" />
       <button class="rounded-md border border-border bg-bg btn-xs hover:border-primary hover:text-primary" type="submit">${esc(t.label)}</button>
     </form>`;
   const flatOptions = types.map((t) => `<option value="${esc(t.key)}">${esc(t.label)}</option>`).join(""); // 분류 폐기 — optgroup 없이 평면 목록
@@ -835,7 +775,6 @@ function taskQuickAdd(project, group) {
       <form method="post" action="/projects/${project.id}/tasks" class="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
         <input type="hidden" name="song_title" value="${esc(group.key)}" />
         <select class="input py-1.5 text-sm" name="task_type">${flatOptions}</select>
-        <input type="hidden" name="status" value="Pending" />
         <button class="btn-primary btn-xs" type="submit">추가</button>
       </form>
     </details>`;

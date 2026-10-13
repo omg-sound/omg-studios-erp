@@ -26,7 +26,6 @@ const {
   renameSong,
   updateTask,
   setTaskAmount,
-  setTaskStatus,
   setTaskWaived,
   deleteTask,
   getClientFile,
@@ -146,7 +145,6 @@ router.get("/", requireAuth, (req, res) => {
     // 목록 상한(2026-07-09 스케일 점검) — 완료 탭이 해가 갈수록 누적되므로 기본 100건 + 더 보기. 요약도 표시분만 배치 조회.
     const cap = capList(activeRows, req.query, (n) => `/projects?tab=${tab}${keepQ}&limit=${n}`);
     const summaries = listProjectSummaries(cap.shown.map((r) => r.id)); // 인라인 요약(배치 2쿼리)
-    const isAdmin = canEdit(user); // 펼침 세션 완료 토글 노출(편집 권한자). 완료 후 ?open=로 그 카드 재펼침.
     const openId = Number(req.query.open) || null;
     // 카드 테두리 없이 구분선 목록(2026-07-14 사용자 결정) — 행 자체가 border-b(.proj-row).
     // 상세 백링크 복귀 경로 — 보던 탭·검색·mine에 더해 **더 보기(limit)·펼친 카드(open)**까지 유지
@@ -154,7 +152,7 @@ router.get("/", requireAuth, (req, res) => {
     const limitQ = Number(req.query.limit) > 0 ? `&limit=${Number(req.query.limit)}` : "";
     const openQ = openId ? `&open=${openId}` : "";
     const listQuery = `/projects?tab=${tab}${keepQ}${limitQ}${openQ}`;
-    list = `<div class="overflow-hidden rounded-lg border border-border/50 bg-surface [&>details:last-child]:border-b-0" data-sort-rows>${projectTableHead()}${cap.shown.map((p) => projectListRow(p, summaries[p.id], { tab, isAdmin, openId, mineQ: stateQ, listQuery })).join("")}</div>${cap.more}`;
+    list = `<div class="overflow-hidden rounded-lg border border-border/50 bg-surface [&>details:last-child]:border-b-0" data-sort-rows>${projectTableHead()}${cap.shown.map((p) => projectListRow(p, summaries[p.id], { tab, openId, listQuery })).join("")}</div>${cap.more}`;
   }
 
   const action = canCreate ? newProjectMenu() : "";
@@ -396,21 +394,6 @@ router.post("/tasks/:taskId", requireEditor, (req, res) => {
     const task = updateTask(req.user, Number(req.params.taskId), req.body);
     if (!task) return res.status(404).send(errorPage({ code: 404, title: "작업을 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
     res.redirect(`/projects/${task.project_id}?tab=tracks&flash=saved`);
-  } catch (e) {
-    if (e.message === "TASK_LOCKED") return res.status(400).send(errorPage({ code: 400, title: "수정 불가", message: "이미 청구된 작업은 수정할 수 없습니다.", user: req.user }));
-    throw e;
-  }
-});
-
-// ── 작업 완료 토글(2026-07-05 사용자 요청 — 세션 완료 버튼과 동일 UX: '−완료'/'✓완료' 즉시 전환) ──
-// 독립 라우트로 상태만 바꾼다 — 일반 수정 라우트(/tasks/:taskId)는 종류·담당·단가를 함께 요구해
-// 상태만 담긴 요청이 오면 그 필드들이 리셋될 위험이 있어 별도로 분리(세션의 /sessions/:id/status와 동일 이유).
-router.post("/tasks/:taskId/status", requireEditor, (req, res) => {
-  try {
-    const task = setTaskStatus(req.user, Number(req.params.taskId), req.body.status);
-    if (!task) return res.status(404).send(errorPage({ code: 404, title: "작업을 찾을 수 없습니다", message: "삭제되었거나 주소가 잘못되었습니다.", user: req.user }));
-    const back = safePath(req.body.return); // 목록 펼침에서 완료 시 목록으로 복귀(내부 경로만)
-    res.redirect(back || `/projects/${task.project_id}?tab=tracks&flash=saved`);
   } catch (e) {
     if (e.message === "TASK_LOCKED") return res.status(400).send(errorPage({ code: 400, title: "수정 불가", message: "이미 청구된 작업은 수정할 수 없습니다.", user: req.user }));
     throw e;

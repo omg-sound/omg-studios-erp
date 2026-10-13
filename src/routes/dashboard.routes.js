@@ -2,7 +2,7 @@
 
 const express = require("express");
 const { requireAuth, canBill, canEdit } = require("../auth");
-const { dashboardStats, upcomingSessions, listProjects, myTodo, invoiceTodo, taskTypeLabel } = require("../data");
+const { dashboardStats, upcomingSessions, listProjects, myTodo, invoiceTodo } = require("../data");
 const { layout, pageHeader, esc, formatKRW, emptyState, ddayPill } = require("../views");
 const { todayYmd, formatYmdShort } = require("../lib/date");
 
@@ -106,14 +106,14 @@ router.get("/", requireAuth, (req, res) => {
   }
 
   // 내 할 일(개인 렌즈) — '오늘·이번 주 세션'(전체) 위에 둔다.
-  //  · 담당 세션·미완료 작업 = 담당자 행이 있는 사람(myTodo)
+  //  · 담당 다가오는 세션 = 담당자 행이 있는 사람(myTodo)
   //  · 계산서 발행·입금 확인 = 대표만(invoiceTodo, 2026-08-02) — 대표의 실제 업무라 맨 위에 온다.
   // 둘 중 하나라도 내용이 있으면 카드를 그린다(대표는 배정이 0이어도 청구 할 일로 카드가 뜬다).
   const todo = myTodo(user);
   const invTodo = invoiceTodo(user);
   const hasInvTodo = Boolean(invTodo && (invTodo.bill.count || invTodo.collect.count));
   let myTodoCard = "";
-  if ((todo && (todo.sessions.length || todo.tasks.length)) || hasInvTodo) {
+  if ((todo && todo.sessions.length) || hasInvTodo) {
     // 청구 할 일 행 — 건수는 도착지 필터칩과 같은 기준(invoiceTodo 주석 참조), 0건이면 줄 자체를 안 그린다.
     const invRow = (label, sub, v, href) =>
       v.count
@@ -142,17 +142,6 @@ router.get("/", requireAuth, (req, res) => {
         ${ddayPill(ss.session_date)}
       </a>`)
       .join("");
-    const taskRows = !todo
-      ? ""
-      : todo.tasks
-      .map((t) => `
-      <a href="/projects/${t.project_id}?tab=tracks" class="row-link flex items-center justify-between gap-3 border-b border-border py-2 last:border-0">
-        <div class="min-w-0">
-          <div class="truncate text-sm font-medium">${esc(taskTypeLabel(t.task_type))}${t.artist ? " · " + esc(t.artist) : ""}</div>
-          <div class="truncate text-xs text-muted">${esc(t.track_title || t.project_title)}</div>
-        </div>
-      </a>`)
-      .join("");
     myTodoCard = `
     <div class="card mt-4">
       <div class="mb-2 flex items-center justify-between gap-2">
@@ -161,7 +150,6 @@ router.get("/", requireAuth, (req, res) => {
       </div>
       ${invRows ? `<div class="mb-1 text-xs font-medium text-muted">청구</div>${invRows}` : ""}
       ${todo && todo.sessions.length ? `<div class="${invRows ? "mt-3 " : ""}mb-1 text-xs font-medium text-muted">담당 세션 ${todo.sessions.length}</div>${sessRows}` : ""}
-      ${todo && todo.tasks.length ? `<div class="mt-3 mb-1 text-xs font-medium text-muted">미완료 작업 ${todo.tasks.length}</div>${taskRows}` : ""}
     </div>`;
   }
 

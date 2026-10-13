@@ -109,12 +109,8 @@ function listProjects(_user, { q } = {}) {
     params.q = `%${q}%`;
   }
 
-  // 완료/진행 판정 신호:
-  //  upcoming_cnt = 다가오는 세션(오늘 이후, **예정 상태만**) 존재.
-  //    ⚠️ '완료'·'취소' 세션은 제외한다 — 오늘 녹음하고 완료로 눌러도 세션 날짜가 오늘이면
-  //    '다가오는 세션'으로 잡혀 진행 중에 남던 버그(2026-07-15 사용자 리포트). 완료·취소는 끝난
-  //    활동이므로 완료 판정을 막지 않는다. 지난 날짜의 예정 세션(오늘 이전)은 애초에 안 잡힘.
-  //  open_tasks   = 미완료 작업(status <> 'Completed') 수 = 대기
+  // 진행/완료 판정 신호(개편 5단계 — 완료 버튼 없음. 날짜와 청구 기록만 본다):
+  //  upcoming_cnt = 다가오는 세션(오늘 포함 이후, 취소 제외) 수 — 있으면 '진행 중'.
   //  content_cnt  = 세션+작업 총량(0이면 아직 아무 내용 없는 빈 프로젝트) → 진행 중으로 취급
   const sql = `
     SELECT p.*, c.name AS client_name, m.name AS manager_name,
@@ -123,18 +119,12 @@ function listProjects(_user, { q } = {}) {
        FROM track_tasks t
        WHERE t.project_id = p.id AND t.waived = 0) AS task_total,
       (SELECT COUNT(*) FROM sessions s
-       WHERE s.project_id = p.id AND s.session_date >= @today AND s.status = '예정') AS upcoming_cnt,
+       WHERE s.project_id = p.id AND s.session_date >= @today AND s.status <> '취소') AS upcoming_cnt,
       (SELECT MIN(s.session_date) FROM sessions s
-       WHERE s.project_id = p.id AND s.session_date >= @today AND s.status = '예정') AS next_session_date,
-      (SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id AND s.status = '예정') AS sess_scheduled,
-      (SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id AND s.status = '완료') AS sess_done,
+       WHERE s.project_id = p.id AND s.session_date >= @today AND s.status <> '취소') AS next_session_date,
       -- 세션 총수(취소 포함) — 목록 카드 진입 탭 결정용(세션 있으면 세션 일정, 없고 곡만 있으면 곡·콘텐츠).
       (SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id) AS sess_cnt,
-      (SELECT COUNT(*) FROM track_tasks t
-       WHERE t.project_id = p.id AND t.status <> 'Completed') AS open_tasks,
       (SELECT COUNT(*) FROM track_tasks t WHERE t.project_id = p.id) AS task_cnt,
-      (SELECT COUNT(*) FROM track_tasks t WHERE t.project_id = p.id AND t.status = 'Pending') AS task_pending,
-      (SELECT COUNT(*) FROM track_tasks t WHERE t.project_id = p.id AND t.status = 'Completed') AS task_done,
       ((SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id)
        + (SELECT COUNT(*) FROM track_tasks t WHERE t.project_id = p.id)) AS content_cnt,
       -- 미청구 항목 수 = 미청구 작업 + 미청구 청구가능 세션(listBillableSessionsForProject와 동일 조건).
@@ -156,13 +146,13 @@ function listProjects(_user, { q } = {}) {
        -- 후반작업(믹싱·마스터링)은 곡·콘텐츠 작업으로 청구하는데, 세션만 마치고 작업을 아직 안 만든
        -- 프로젝트는 청구할 게 없어 보여 조용히 '완료'로 넘어간다(2026-07-24). 청구 준비(작업·청구서)가
        -- 하나도 없을 때만 '청구 미착수' 플래그(+1)로 세어 '청구 필요'에 잡는다. 작업/청구서가 생기면
-       -- 그쪽 로직이 이어받으므로 자동으로 꺼진다. 명시적 완료 세션만 — 예정 세션은 진행 중에 머묾(2026-07-25).
+       -- 그쪽 로직이 이어받으므로 자동으로 꺼진다. 날짜가 된 세션만(오늘 포함 — 개편 5단계, 완료 버튼 대신 날짜).
        + (CASE WHEN EXISTS (
            SELECT 1 FROM sessions s2
             WHERE s2.project_id = p.id
               AND s2.session_type IN (${POSTPROD_IN})
               AND s2.status <> '취소' AND s2.waived = 0
-              AND s2.status = '완료'
+              AND s2.session_date <= @today
               AND NOT EXISTS (SELECT 1 FROM track_tasks t3
                                WHERE t3.project_id = p.id)
               AND NOT EXISTS (SELECT 1 FROM invoices i3 WHERE i3.project_id = p.id)
@@ -186,10 +176,10 @@ function listProjects(_user, { q } = {}) {
     ...r,
     invoice_discount_total: discounts[r.id] || 0,
     session_amount_total: sessionAmounts[r.id] || 0,
-    // 완료 = 실제 활동이 있었고(content_cnt>0) 예정 세션 없음(전부 완료/취소) + 미완료 작업 없음.
-    // ⚠️ 세션도 작업(open_tasks)과 대칭 — 완료 안 누른 예정 세션이 있으면(미래든 지난이든) 진행 중(2026-07-25).
-    //    이전엔 upcoming_cnt(미래 예정만)라 지난 예정 세션이 날짜만 지나면 완료/청구필요로 샜다.
-    is_completed: r.content_cnt > 0 && r.sess_scheduled === 0 && r.open_tasks === 0,
+    // 활동 끝남 = 실제 활동이 있었고(content_cnt>0) 다가오는 세션(오늘 포함, 취소 제외)이 없다.
+    // 개편 5단계(2026-10-13): 완료 버튼을 없애며 '예정 세션·미완료 작업이 없음'에서 **날짜**로 바꿨다 —
+    // 완료를 안 눌러 진행 중에 남던 프로젝트가 사라진다. 작업은 등록=수주라 끝났는지는 청구(unbilled_cnt)가 말한다.
+    is_completed: r.content_cnt > 0 && r.upcoming_cnt === 0,
   }));
 }
 
@@ -397,7 +387,7 @@ function deleteProject(projectId) {
 }
 
 /**
- * 후반작업(믹싱/마스터링) 세션은 마쳤지만 청구 준비(곡·콘텐츠 작업·청구서)가 하나도 없는 상태인가?
+ * 후반작업(믹싱/마스터링) 세션 날짜가 됐는데(오늘 포함) 청구 준비(작업·청구서)가 하나도 없는 상태인가?
  * = listProjects unbilled_cnt의 '청구 미착수' 항과 동일 조건. 청구 탭 안내 문구 노출 판정용.
  */
 function hasPostprodSessionNeedingBilling(projectId) {
@@ -407,15 +397,14 @@ function hasPostprodSessionNeedingBilling(projectId) {
         WHERE s.project_id = @pid
           AND s.session_type IN (${POSTPROD_IN})
           AND s.status <> '취소' AND s.waived = 0
-          AND s.status = '완료'
+          AND s.session_date <= @today
           AND NOT EXISTS (SELECT 1 FROM track_tasks t
                            WHERE t.project_id = @pid)
           AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.project_id = @pid)
         LIMIT 1`
     )
-    // SQL이 쓰지 않는 명명 파라미터를 넘기면 SQLite가 거부한다("Unknown named parameter").
-    // 9044122에서 날짜 게이트(s.session_date < @today)를 뺐을 때 today도 같이 빠졌어야 했다.
-    .get({ pid: projectId });
+    // ⚠️SQL과 명명 파라미터를 함께 바꿀 것 — 안 쓰는 파라미터를 넘기거나 쓰는 걸 빠뜨리면 SQLite가 거부한다.
+    .get({ pid: projectId, today: todayYmd() });
   return !!row;
 }
 

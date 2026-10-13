@@ -395,14 +395,16 @@ const BILLABLE_SESSION_SQL = `s.status <> '취소' AND s.session_type IN (${RENT
 /**
  * 청구 대기함(개편 3단계) — **모든 프로젝트**의 미청구 세션·작업을 프로젝트별로 묶어 반환.
  * 내부 지원 프로젝트는 뺀다. 금액은 사람이 적어 둔 값만(세션 확정액·작업 금액) — 산정치 없음.
- * @param {object} f q=프로젝트·아티스트·제작/운영·소속 검색, from/to=날짜(YYYY-MM-DD), doneOnly=완료만,
+ * 개편 5단계: 완료 상태가 없다 — 날짜가 안 된(오늘 이후) 세션만 future=true(화면이 흐리게·확인). 작업은 등록=수주라 늘 청구 가능.
+ * @param {object} f q=프로젝트·아티스트·제작/운영·소속 검색, from/to=날짜(YYYY-MM-DD), pastOnly=지난 일정만(오늘 포함),
  *   showWaived='청구 안 함'도 보기, projectId=한 프로젝트만
  * @returns {{groups: Array<{project:object, items:Array}>, count:number, postprod: Array}}
  */
 function listBillableItems(_user, f = {}) {
   const d = db();
   const where = ["p.internal_support = 0"];
-  const params = {};
+  const today = todayYmd();
+  const params = { today };
   if (f.projectId) { where.push("p.id = @pid"); params.pid = Number(f.projectId); }
   const q = String(f.q || "").trim();
   if (q) {
@@ -419,13 +421,13 @@ function listBillableItems(_user, f = {}) {
   const waived = f.showWaived ? "" : " AND s.waived = 0";
   const sessions = d.prepare(
     `SELECT s.*, p.id AS pid FROM sessions s JOIN projects p ON p.id = s.project_id
-     WHERE ${projWhere} AND ${BILLABLE_SESSION_SQL}${waived}${f.doneOnly ? " AND s.status = '완료'" : ""}${dateCond("s.session_date")}
+     WHERE ${projWhere} AND ${BILLABLE_SESSION_SQL}${waived}${f.pastOnly ? " AND s.session_date <= @today" : ""}${dateCond("s.session_date")}
      ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC`
   ).all(params);
   const tWaived = f.showWaived ? "" : " AND t.waived = 0";
   const tasks = d.prepare(
     `SELECT t.*, p.id AS pid FROM track_tasks t JOIN projects p ON p.id = t.project_id
-     WHERE ${projWhere} AND t.is_invoiced = 0${tWaived}${f.doneOnly ? " AND t.status = 'Completed'" : ""}${dateCond("COALESCE(t.work_date, substr(t.created_at, 1, 10))")}
+     WHERE ${projWhere} AND t.is_invoiced = 0${tWaived}${dateCond("COALESCE(t.work_date, substr(t.created_at, 1, 10))")}
      ORDER BY ${songOrderSql("t")}`
   ).all(params);
   const ids = [...new Set([...sessions, ...tasks].map((r) => r.pid))];
@@ -436,7 +438,7 @@ function listBillableItems(_user, f = {}) {
   for (const s of sessions) {
     const g = byId.get(s.pid);
     g.items.push({
-      kind: "session", id: s.id, key: `s${s.id}`, date: s.session_date, status: s.status, done: s.status === "완료", waived: !!s.waived,
+      kind: "session", id: s.id, key: `s${s.id}`, date: s.session_date, future: s.session_date > today, waived: !!s.waived,
       label: sessionLineLabel(s, g.project.artist), time: [s.start_time, s.end_time].filter(Boolean).join("–"),
       amount: s.billing_amount != null ? Math.round(s.billing_amount) : null,
     });
@@ -444,7 +446,7 @@ function listBillableItems(_user, f = {}) {
   for (const t of tasks) {
     const g = byId.get(t.pid);
     g.items.push({
-      kind: "task", id: t.id, key: `t${t.id}`, date: t.work_date || null, status: t.status, done: t.status === "Completed", waived: !!t.waived,
+      kind: "task", id: t.id, key: `t${t.id}`, date: t.work_date || null, future: false, waived: !!t.waived,
       label: taskLineLabel(t, g.project.title), time: "", engineer: t.engineer_name || "",
       amount: t.total_price > 0 ? t.total_price : null,
     });
@@ -453,18 +455,17 @@ function listBillableItems(_user, f = {}) {
   const groups = [...byId.values()];
   const firstDate = (g) => g.items.map((i) => i.date).filter(Boolean).sort()[0] || "9999";
   groups.sort((a, b) => firstDate(a).localeCompare(firstDate(b)) || a.project.id - b.project.id);
-  // 작업이 없는 후반작업 세션(믹싱·마스터링) — 대기함엔 안 올리고(작업으로 청구) 알림만. '완료'뿐 아니라 **날짜가 지난
-  // 예정**도 포함한다(2026-10-13 사용자 요청 — 완료를 안 누른 믹싱 세션은 '청구 필요' 신호에도 안 잡혀 청구 누락이 숨었다:
-  // 운영 실측 흑백가수·올블루레코즈). 프로젝트 탭 분류(hasPostprodSessionNeedingBilling)는 그대로 — 여기는 알림만 넓힌다.
+  // 작업이 없는 후반작업 세션(믹싱·마스터링) — 대기함엔 안 올리고(작업으로 청구) 알림만. 날짜가 된(오늘 포함) 세션 —
+  // 프로젝트 탭의 '청구 미착수' 신호(hasPostprodSessionNeedingBilling)와 같은 날짜 기준(개편 5단계, 완료 버튼 없음).
   const postprod = d.prepare(
     `SELECT DISTINCT p.id, p.title FROM projects p JOIN sessions s ON s.project_id = p.id
       WHERE ${projWhere} AND s.session_type IN (${POSTPROD_IN}) AND s.waived = 0
-        AND (s.status = '완료' OR (s.status = '예정' AND s.session_date < @today))
+        AND s.status <> '취소' AND s.session_date <= @today
         AND NOT EXISTS (SELECT 1 FROM track_tasks t WHERE t.project_id = p.id)
         AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.project_id = p.id)
         AND NOT EXISTS (SELECT 1 FROM invoice_items ii JOIN sessions s4 ON s4.id = ii.session_id WHERE s4.project_id = p.id)
       ORDER BY p.title`
-  ).all({ ...params, today: todayYmd() });
+  ).all(params);
   return { groups, count: sessions.length + tasks.length, postprod };
 }
 
@@ -486,12 +487,12 @@ function composeLinesForKeys(keys) {
       const s = d.prepare(`SELECT s.*, p.artist AS p_artist FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.id = ? AND ${BILLABLE_SESSION_SQL}`).get(id);
       if (!s) { skipped++; continue; }
       pids.add(s.project_id);
-      lines.push({ kind: "session", id, key: k, project_id: s.project_id, date: s.session_date, done: s.status === "완료", label: sessionLineLabel(s, s.p_artist), amount: s.billing_amount != null ? Math.round(s.billing_amount) : null, _s: s });
+      lines.push({ kind: "session", id, key: k, project_id: s.project_id, date: s.session_date, future: s.session_date > todayYmd(), label: sessionLineLabel(s, s.p_artist), amount: s.billing_amount != null ? Math.round(s.billing_amount) : null, _s: s });
     } else {
       const t = d.prepare("SELECT t.*, p.title AS p_title FROM track_tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ? AND t.is_invoiced = 0").get(id);
       if (!t) { skipped++; continue; }
       pids.add(t.project_id);
-      lines.push({ kind: "task", id, key: k, project_id: t.project_id, date: t.work_date || null, done: t.status === "Completed", label: taskLineLabel(t, t.p_title), amount: t.total_price > 0 ? t.total_price : null });
+      lines.push({ kind: "task", id, key: k, project_id: t.project_id, date: t.work_date || null, future: false, label: taskLineLabel(t, t.p_title), amount: t.total_price > 0 ? t.total_price : null });
     }
   }
   // 같은 날짜 세션이 둘 이상이면 그 세션들 설명에 시작 시간을 붙인다(발행될 청구서에서 구분되게).
@@ -594,7 +595,8 @@ function buildInvoiceDraft(user, o = {}) {
 }
 
 /**
- * 청구서 발행(개편 3단계 — 대기함 경로). 즉시 '발행' 상태. 세션 → '완료', 작업 → Completed·청구됨(금액 확정).
+ * 청구서 발행(개편 3단계 — 대기함 경로). 즉시 '발행' 상태. 작업 → 청구됨(금액 확정), 세션 → 확정액 = 청구 금액.
+ * 세션·작업의 **상태는 바꾸지 않는다**(개편 5단계 — 완료 개념 없음. 청구됐는지는 청구 기록이 말한다).
  * 0원 라인은 confirmZero가 있을 때만(폼이 확인창 후 세팅 — 서버가 최종 보루).
  */
 function createInvoice(user, opts = {}) {
@@ -627,25 +629,13 @@ function createInvoice(user, opts = {}) {
       `INSERT INTO invoice_items (invoice_id, task_id, session_id, track_title, task_type, description, quantity, unit_price, amount, item_date)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    const markTask = d.prepare("UPDATE track_tasks SET is_invoiced = 1, invoice_id = ?, unit_price = ?, total_price = ?, status = 'Completed' WHERE id = ? AND is_invoiced = 0");
-    // 세션: 청구=완료(예정 세션도), 확정액도 청구 금액으로 맞춘다(세션 화면에 '확정 청구액'으로 보이게).
-    const markSession = d.prepare("UPDATE sessions SET status = CASE WHEN status = '취소' THEN status ELSE '완료' END, billing_amount = ? WHERE id = ?");
+    const markTask = d.prepare("UPDATE track_tasks SET is_invoiced = 1, invoice_id = ?, unit_price = ?, total_price = ? WHERE id = ? AND is_invoiced = 0");
+    // 세션: 확정액을 청구 금액으로 맞춘다(세션 화면에 '확정 청구액'으로 보이게).
+    const markSession = d.prepare("UPDATE sessions SET billing_amount = ? WHERE id = ?");
     for (const it of draft.items) {
       insertItem.run(invoiceId, it.task_id, it.session_id, it.track_title, it.task_type, it.description, it.quantity, it.unit_price, it.amount, it.item_date);
       if (it.task_id && !markTask.run(invoiceId, it.amount, it.amount, it.task_id).changes) throw new Error("TASK_NOT_BILLABLE"); // 동시 청구 경합
       if (it.session_id) markSession.run(it.amount, it.session_id);
-    }
-    // 작업을 청구하면 그 프로젝트의 **날짜가 지난 예정 믹싱·마스터링 세션**도 완료(2026-10-13 사용자 결정).
-    // 후반작업은 세션이 아니라 작업으로 청구하므로 세션은 청구서에 안 들어가 '청구=완료'를 못 받았다 →
-    // 아무도 완료를 안 누르면 청구가 끝난 프로젝트가 '진행 중'에 남았다(운영 실측 7개 프로젝트·세션 8건).
-    // 앞으로 잡힌(오늘 이후) 세션은 아직 안 한 일이라 그대로 둔다.
-    const taskProjects = [...new Set(draft.items.filter((it) => it._task).map((it) => it._task.project_id))];
-    if (taskProjects.length) {
-      d.prepare(
-        `UPDATE sessions SET status = '완료'
-          WHERE project_id IN (${taskProjects.map(() => "?").join(",")})
-            AND session_type IN (${POSTPROD_IN}) AND status = '예정' AND session_date < ?`
-      ).run(...taskProjects, todayYmd());
     }
     d.exec("COMMIT;");
     return getInvoiceForUser(user, invoiceId);

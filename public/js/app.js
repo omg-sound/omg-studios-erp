@@ -405,11 +405,11 @@ function sortCellValue(cell) {
     if (msg && !window.confirm(msg)) e.preventDefault();
   });
 
-  // 미완료(대기 작업·예정 세션)를 청구 항목으로 체크하면 완료 여부 재확인 — 아니면 선택 해제(공급가·VAT 재계산).
+  // 날짜가 안 된(오늘 이후) 세션을 체크하면 미리 청구할지 확인 — 아니면 선택 해제(공급가·VAT 재계산). 개편 5단계.
   document.addEventListener("change", function (e) {
     var cb = e.target;
     if (!cb || cb.type !== "checkbox" || !cb.checked || !cb.hasAttribute || !cb.hasAttribute("data-confirm-pending")) return;
-    if (!window.confirm("아직 완료되지 않은 항목입니다. 청구하면서 '완료'로 바꿀까요?")) {
+    if (!window.confirm("아직 날짜가 안 된 세션입니다. 청구할까요?")) {
       cb.checked = false;
       cb.dispatchEvent(new Event("change", { bubbles: true })); // 체크 해제 반영해 금액 미리보기 갱신
     }
@@ -1058,7 +1058,7 @@ function sortCellValue(cell) {
 
 // 캘린더 세션 팝오버([data-session-card], 2026-07-11): 칩 클릭 → GET .../card 조각을 띄운다.
 // **위치 = 클릭한 칩 옆**(구글 캘린더식, 2026-07-20 사용자 요청 — 이전엔 어두운 배경 + 화면 가운데).
-// 완료는 조각 안 폼 POST(리로드) — 서베이(캘린더)에서 안 떠나고 처리. 무JS면 링크 폴백(프로젝트 세션 탭).
+// 일정 취소는 조각 안 폼 POST(리로드) — 서베이(캘린더)에서 안 떠나고 처리. 무JS면 링크 폴백(프로젝트 세션 탭).
 (function () {
   "use strict";
   var GAP = 8;   // 칩과 팝오버 사이 간격
@@ -1138,7 +1138,7 @@ function sortCellValue(cell) {
         if (pop) pop.style.visibility = "hidden";
         document.body.appendChild(modal);
         open = { modal: modal, anchor: el };
-        if (pop) { place(pop, el); pop.style.visibility = ""; try { pop.focus(); } catch (_e) {} } // 포커스를 옮겨야 키보드로 [완료]·[일정 취소]에 닿는다
+        if (pop) { place(pop, el); pop.style.visibility = ""; try { pop.focus(); } catch (_e) {} } // 포커스를 옮겨야 키보드로 [일정 취소]에 닿는다
         // ✕ — 공용 [data-modal] 핸들러는 이 팝오버에 안 붙는다(스크롤 잠금을 피하려 data-modal을 뗐다).
         var x = modal.querySelector("[data-modal-close]");
         if (x) x.addEventListener("click", close);
@@ -1509,7 +1509,7 @@ function sortCellValue(cell) {
   "use strict";
   var bypass = false; // 의도된 이동(폼 제출·모달 '이동') 시 가드·경고 우회
   function hasDirty() { return !!(window.__hasDirty && window.__hasDirty()); }
-  // 폼 제출(저장·완료 토글·삭제 등)은 의도된 동작 → beforeunload 경고 억제.
+  // 폼 제출(저장·일정 취소·삭제 등)은 의도된 동작 → beforeunload 경고 억제.
   document.addEventListener("submit", function () { bypass = true; setTimeout(function () { bypass = false; }, 2000); }, true);
   // 하드 언로드(탭 닫기·새로고침·주소 입력·외부 이동) 안전망 — 브라우저 기본 "나가시겠습니까?".
   window.addEventListener("beforeunload", function (e) {
@@ -3552,7 +3552,7 @@ document.addEventListener("click", function (e) {
       if (!group) return;
       var items = group.querySelectorAll("[data-inbox-item]");
       var all = Array.prototype.every.call(items, function (cb) { return cb.checked; });
-      // '모두 선택'은 예정·대기 항목의 '완료로 바꿀까?' 확인을 건너뛴다 — 묶어서 고르는 건 의도가 분명하다. 완료 처리는 발행 때.
+      // '모두 선택'은 일정 전 세션의 '청구할까요?' 확인을 건너뛴다 — 묶어서 고르는 건 의도가 분명하다.
       Array.prototype.forEach.call(items, function (cb) { cb.checked = !all; });
       btn.textContent = all ? "모두 선택" : "선택 해제";
       refresh();

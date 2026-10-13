@@ -350,7 +350,7 @@ router.post("/sessions/:id", requireEditor, asyncHandler(async (req, res) => {
   res.redirect(`/projects/${s.project_id}?tab=sessions&open=${s.id}&flash=${calFlash(cal, "saved")}`);
 }));
 
-// ── 상태 토글(예정 ↔ 완료 ↔ 취소) ──
+// ── 일정 취소 / 취소 해제(개편 5단계 — 완료 상태 없음. setSessionStatus가 '취소' 외 값은 전부 '예정'으로) ──
 router.post("/sessions/:id/status", requireEditor, asyncHandler(async (req, res) => {
   let r;
   try {
@@ -364,7 +364,7 @@ router.post("/sessions/:id/status", requireEditor, asyncHandler(async (req, res)
   }
   if (!r) return res.status(404).send("세션을 찾을 수 없습니다.");
   await syncSessionEvent(req.user, r); // 상태변경 캘린더 동기화(취소→'(취소)' 제목 업데이트, 삭제 아님)
-  const back = safePath(req.body.return); // 캘린더 팝오버에서 완료 시 캘린더로 복귀(내부 경로만)
+  const back = safePath(req.body.return); // 캘린더 팝오버에서 처리하면 캘린더로 복귀(내부 경로만)
   res.redirect(back || `/projects/${r.project_id}?tab=sessions&flash=saved`);
 }));
 

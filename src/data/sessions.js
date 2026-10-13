@@ -16,7 +16,7 @@ const { todayYmd, isValidYmd, cleanTime, timeToMin, minutesBetween, daysSpan, ca
 const { withTx } = require("../lib/tx");
 const { parseMoney } = require("../lib/forms");
 const { MAX_LEN: PLACE_LABEL_MAX } = require("../lib/place-label"); // 캘린더 제목 라벨 길이 상한(계산은 라우트가 함)
-const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES } = require("../config");
+const { normalizeSessionType, RENTAL_SESSION_TYPES } = require("../config");
 const { getProjectForUser } = require("./projects"); // 무순환
 const { resolvePersonByName } = require("./parties"); // 무순환 — 디렉터=parties.id(사람)
 const { listRooms } = require("./rooms"); // 무순환
@@ -117,7 +117,7 @@ function sessionFields(input) {
     end_time: allDay ? null : (start ? resolveEndTime(input, start) : null),
     booker_name: String(input.booker_name || "").trim() || null,
     engineer_name: null,
-    status: normalizeSessionStatus(input.status),
+    status: input.status === "취소" ? "취소" : "예정", // 개편 5단계 — 상태는 취소냐 아니냐뿐(완료 없음)
     room_id: roomId,
     location,
     location_label: locationLabel,
@@ -502,12 +502,16 @@ function setSessionEventId(sessionId, eventId) {
   db().prepare("UPDATE sessions SET gcal_event_id = ? WHERE id = ?").run(eventId || null, sessionId);
 }
 
+/**
+ * 일정 취소 / 취소 해제. 개편 5단계(2026-10-13)부터 세션 상태는 **'취소'냐 아니냐**뿐이다 — '취소' 외의 값은
+ * 전부 '예정'(살아 있는 일정)으로 저장한다. 옛 '완료' 값은 DB에 남아 있어도 읽는 곳이 없다(되짚을 근거로만 둔다).
+ */
 function setSessionStatus(user, sessionId, status) {
   const { isSessionInvoiced } = require("../data"); // invoices와 상호의존 → 지연 require
   const s = getSessionForUser(user, sessionId);
   if (!s) return null;
-  if (isSessionInvoiced(s.id)) throw new Error("SESSION_INVOICED"); // 청구된 세션은 상태 되돌리기 금지(매출 정합)
-  db().prepare("UPDATE sessions SET status=? WHERE id=?").run(normalizeSessionStatus(status), s.id);
+  if (isSessionInvoiced(s.id)) throw new Error("SESSION_INVOICED"); // 청구된 세션은 취소 금지(매출 정합)
+  db().prepare("UPDATE sessions SET status=? WHERE id=?").run(status === "취소" ? "취소" : "예정", s.id);
   return { ...db().prepare("SELECT * FROM sessions WHERE id = ?").get(s.id), project_id: s.project_id };
 }
 

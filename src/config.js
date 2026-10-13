@@ -164,25 +164,16 @@ const RENTAL_SESSION_TYPES = ["녹음", "촬영 대관", "작업 대관", "공�
 // 후반작업 세션 — 세션 자체는 청구 단위가 아니고 곡·콘텐츠 '작업'으로 청구한다.
 // 세션만 마치고 작업을 안 만들면 청구할 게 없어 보여 완료로 샜다(2026-07-24) → unbilled_cnt에서 '청구 미착수' 신호로 쓴다.
 const POSTPROD_SESSION_TYPES = ["믹싱", "마스터링"];
-const SESSION_STATUSES = ["예정", "완료", "취소"];
+// 세션 상태 = 취소냐 아니냐뿐(개편 5단계 — 완료 개념 삭제). 옛 '완료' 값은 DB에 남아 있어도 읽지 않는다(= 예정과 같다).
+const SESSION_STATUSES = ["예정", "취소"];
 // (SESSION_TIME_SLOTS 제거 2026-07-23 — 겹침 경고가 슬롯 근사에서 구간 비교(busySessionRanges)로 바뀌며 소비처 소멸.
 //  12:00~23:30 창이 오전 세션을 경고 사각지대로 만들던 원인이라, 시간대 창 자체를 없앤 것이 수정의 일부다.)
 const SESSION_STATUS_BADGE = {
-  예정: "bg-primary/10 text-primary",
-  완료: "bg-success/10 text-success",
   취소: "bg-muted/10 text-muted",
 };
 
-// 작업 상태 = 대기/완료 2단계('진행중' 개념 폐기 — 사용자 결정 2026-07-03). 레거시 In_Progress는 normalize·마이그레이션으로 Pending 처리.
+// 작업 상태 — **읽는 곳 없음**(개편 5단계: 완료 개념 삭제, 작업은 등록=수주, 끝은 청구가 말한다). 새 작업은 Pending.
 const TASK_STATUSES = ["Pending", "Completed"];
-const TASK_STATUS_LABELS = {
-  Pending: "대기",
-  Completed: "완료",
-};
-const TASK_STATUS_BADGE = {
-  Pending: "bg-muted/10 text-muted",
-  Completed: "bg-success/10 text-success",
-};
 
 // 인보이스 상태 배지 색. '부분납'은 코드에서 파생(별도 상태 아님).
 const INVOICE_STATUS_BADGE = {
@@ -222,8 +213,6 @@ module.exports = {
   TASK_TYPES,
 
   TASK_STATUSES,
-  TASK_STATUS_LABELS,
-  TASK_STATUS_BADGE,
   SESSION_TYPES,
   RENTAL_SESSION_TYPES,
   POSTPROD_SESSION_TYPES,
@@ -231,7 +220,6 @@ module.exports = {
   SESSION_STATUS_BADGE,
   // 옛 이름이 들어오면 새 이름으로 흡수한 뒤 검증한다 — 그냥 normalize하면 목록에 없어 첫 값(녹음)으로 조용히 떨어진다.
   normalizeSessionType: (v) => normalize(LEGACY_SESSION_TYPE_ALIAS[String(v == null ? "" : v).trim()] || v, SESSION_TYPES),
-  normalizeSessionStatus: (v) => normalize(v, SESSION_STATUSES),
   normalizeDeliverableKind: (v) => normalize(v, DELIVERABLE_KINDS),
   normalizeTaskStatus: (v) => normalize(v, TASK_STATUSES),
   normalize,
