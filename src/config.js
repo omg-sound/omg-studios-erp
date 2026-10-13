@@ -120,27 +120,6 @@ const ROLE_LABELS = { owner: "대표", chief: "치프 엔지니어", staff: "스
 
 
 
-// 단가표 분류의 **1회 시드 데이터**(2026-07-05부터 진실원천은 DB `rate_categories` 테이블 — 치프가 관리>콘텐츠에서
-// 커스텀 분류를 추가·수정·삭제할 수 있게 전환. 이 4개는 시드 시 locked=1로 들어가 수정·삭제 불가). db.js seedDefaultCatalogs만 참조.
-// 분류→kind 조회·검증은 이제 DB 기반(`src/data/rate-categories.js`의 rateCategoryKind/listRateCategories)을 쓴다.
-const RECORDING_CATEGORIES = ["스튜디오 녹음", "로케이션 녹음"];
-const FILMING_CATEGORIES = ["스튜디오 촬영"]; // 로케이션 촬영은 미사용(사용자 결정)
-const PERFORMANCE_CATEGORIES = ["공연"]; // 항목 예: 플레이백 세션·라이브 믹스
-// 세션 종류 → 단가 kind. ⚠️키는 **DB에 저장되는 session_type 문자열**(사용자에게 보이는 라벨과 같은 값),
-// 값은 요금표 분류(`rate_categories.kind`)와 짝을 이루는 **내부 키**다(값 자체는 화면에 안 보인다).
-// 🔑 kind가 폼의 형태를 정한다: `filming`만 3구간(반입·설치/촬영/철수) 입력으로 갈아 끼운다
-//    (`SESSION_TYPES.filter(t => SESSION_TYPE_RATE_KIND[t] === "filming")` → views.sessions.js).
-//    그래서 **촬영 대관과 작업 대관을 다른 kind로 갈라 둔 것**이 곧 '작업 대관엔 구간을 요구하지 않는다'는 뜻이다.
-const SESSION_TYPE_RATE_KIND = { 녹음: "recording", "촬영 대관": "filming", "작업 대관": "workspace", 공연: "performance" };
-// ── 가격 유형(2026-07-26 과금 체계 개편) ──
-// 단가 항목·작업 종류가 '금액을 어떻게 다룰지'를 정한다. 홈페이지 pricing.ts의 PriceType와 같은 세 값.
-//  fixed   = 기본가 잠금(청구 화면에서 못 고침). 초과 시간만 자동 가산 — 녹음·촬영 대관.
-//  base    = 기준가를 자동 입력한 뒤 위아래로 수정 가능 — 믹싱(작업량에 따라 차등).
-//  minimum = 최소가를 자동 입력한 뒤 상향만 — 보컬튠(작업량에 따라 상향).
-// 촬영 세션의 구간(2026-07-26) — 반입·설치 / 촬영 / 철수를 각각 시작·종료 시각으로 입력한다.
-// 룸 점유는 세 구간을 아우르는 한 덩어리(sessions.start_time~end_time)이고, 요금 시간은 구간 합산이다.
-const SESSION_SEGMENT_KINDS = ["setup", "shoot", "teardown"];
-const SESSION_SEGMENT_LABELS = { setup: "반입·설치", shoot: "촬영", teardown: "철수" };
 const COMPANY_ROLES = ["소속사/레이블", "제작사"]; // 업체 역할 다중(겸업: 소속사가 제작도 함). CSV로 clients.roles에 저장
 const DELIVERABLE_KINDS = ["녹음본", "튠본", "믹스", "스템", "마스터", "레퍼런스", "기타"];
 // 계산서(세금계산서)·입금 상태 — 청구서 발행과 독립적으로 진행(자유 선택). '입금완료'는 완납 처리와 연동.
@@ -154,34 +133,32 @@ function docNumberWithType(baseNumber, docType) {
   const code = docType === "견적서" ? "EST-" : docType === "내역서" ? "L-" : "";
   return String(baseNumber).replace(/^(OMG|INV)-/, "OMG-" + code);
 }
-const TRACK_CONTENT_TYPES = ["Music", "Video_Post"];
 // 작업 종류: DB 카탈로그(task_types)의 시드 데이터. 부팅 시 1회 시드 후로는 DB가 단일 진실원천.
-// billing=기본 과금, price=기본 단가(원), quick=곡·콘텐츠 '빠른 추가' 버튼 노출.
+// quick=작업 '빠른 추가' 버튼 노출.
 const TASK_TYPES = [
-  { key: "Vocal_Recording", label: "보컬 녹음", group: "Recording", billing: "Time_Charge", price: 0, quick: false },
-  { key: "Instrument_Recording", label: "악기 녹음", group: "Recording", billing: "Time_Charge", price: 0, quick: false },
-  { key: "ADR_Recording", label: "ADR/후시 녹음", group: "Recording", billing: "Time_Charge", price: 0, quick: false },
-  { key: "Vocal_Tuning", label: "보컬튠", group: "Post_Production", billing: "Fixed_Per_Track", price: 0, quick: true },
-  { key: "Audio_Editing", label: "오디오 편집", group: "Post_Production", billing: "Fixed_Per_Track", price: 0, quick: true },
-  { key: "Mixing", label: "믹싱", group: "Mix_Master", billing: "Fixed_Per_Track", price: 0, quick: true },
-  { key: "Mastering", label: "마스터링", group: "Mix_Master", billing: "Fixed_Per_Track", price: 0, quick: true },
-  { key: "Audio_Dub_Mixing", label: "더빙 믹싱", group: "Video_Audio", billing: "Fixed_Per_Track", price: 0, quick: false },
-  { key: "SFX_Foley", label: "SFX/Foley", group: "Video_Audio", billing: "Fixed_Per_Track", price: 0, quick: false },
+  { key: "Vocal_Recording", label: "보컬 녹음", group: "Recording", quick: false },
+  { key: "Instrument_Recording", label: "악기 녹음", group: "Recording", quick: false },
+  { key: "ADR_Recording", label: "ADR/후시 녹음", group: "Recording", quick: false },
+  { key: "Vocal_Tuning", label: "보컬튠", group: "Post_Production", quick: true },
+  { key: "Audio_Editing", label: "오디오 편집", group: "Post_Production", quick: true },
+  { key: "Mixing", label: "믹싱", group: "Mix_Master", quick: true },
+  { key: "Mastering", label: "마스터링", group: "Mix_Master", quick: true },
+  { key: "Audio_Dub_Mixing", label: "더빙 믹싱", group: "Video_Audio", quick: false },
+  { key: "SFX_Foley", label: "SFX/Foley", group: "Video_Audio", quick: false },
 ];
 
-// 세션(스튜디오 일정). 청구 시간 산정의 기반.
+// 세션(스튜디오 일정). **배열 순서 = 세션 종류 드롭다운 순서**(개편 4단계부터 — 그 전엔 요금표 분류 순서를 따랐다).
 // ⚠️이 값이 **그대로 DB(`sessions.session_type`)에 저장**된다 — 이름을 바꾸면 기존 행 마이그레이션이 필요하다
 // (2026-07-30 '촬영' → **'촬영 대관' + '작업 대관'** 분리: db.js `session_type_rental_split_v1`).
 // 🏷 **대관 = 스튜디오가 작업을 대행하지 않고 자리를 내주는 거래**(사용자 정의). 두 종류로 나눈 이유:
-//   촬영 대관 = 외부 촬영팀에 공간·장비를 시간제로(반입·설치/촬영/철수 3구간, 고액)
-//   작업 대관 = 외주 엔지니어에게 믹싱룸 등을 시간 단위로(구간 없음, 시작~종료)
-// 한 종류로 묶었더니 **폼의 갈림길이 종류 하나**라 작업 대관에도 촬영용 3구간이 강제됐다 → 종류를 갈랐다.
-// 성격·단가대가 다른 거래라 매출 '종류별 구성'에서도 나뉘어 보이는 편이 맞다.
+//   촬영 대관 = 외부 촬영팀에 공간·장비를 시간제로(고액)
+//   작업 대관 = 외주 엔지니어에게 믹싱룸 등을 시간 단위로
+// 성격·단가대가 다른 거래라 매출 '종류별 구성'에서 나뉘어 보이는 편이 맞다.
 const SESSION_TYPES = ["녹음", "촬영 대관", "작업 대관", "공연", "믹싱", "마스터링", "기타"];
 // 옛 이름 → 새 이름(정규화가 흡수). 캐시된 폼·외부 호출·옛 링크가 옛 값을 보내도 조용히 첫 값('녹음')으로
 // 떨어지지 않게. '대관'은 2026-07-30 하루 존재했던 중간 이름(배포 전에 분리로 바뀜).
 const LEGACY_SESSION_TYPE_ALIAS = { 촬영: "촬영 대관", 대관: "촬영 대관" };
-// 대관 매출 세션 — 세션 자체가 단가표(시간제) 청구 대상. 완료 시 청구로 넘어간다.
+// 대관 매출 세션 — 세션 자체가 청구 대상(청구 대기함에 오른다).
 // (믹싱·마스터링 등은 세션이 청구 단위가 아님 — 곡·콘텐츠 후반작업으로 청구.)
 const RENTAL_SESSION_TYPES = ["녹음", "촬영 대관", "작업 대관", "공연"];
 // 후반작업 세션 — 세션 자체는 청구 단위가 아니고 곡·콘텐츠 '작업'으로 청구한다.
@@ -242,7 +219,6 @@ module.exports = {
   docNumberWithType,
   normalizeDocType: (v) => normalize(v, DOC_TYPES, "거래명세서"),
   INVOICE_STATUS_BADGE,
-  TRACK_CONTENT_TYPES,
   TASK_TYPES,
 
   TASK_STATUSES,
@@ -253,17 +229,10 @@ module.exports = {
   POSTPROD_SESSION_TYPES,
   SESSION_STATUSES,
   SESSION_STATUS_BADGE,
-  RECORDING_CATEGORIES,
-  FILMING_CATEGORIES,
-  PERFORMANCE_CATEGORIES,
-  SESSION_TYPE_RATE_KIND,
-  SESSION_SEGMENT_KINDS,
-  SESSION_SEGMENT_LABELS,
   // 옛 이름이 들어오면 새 이름으로 흡수한 뒤 검증한다 — 그냥 normalize하면 목록에 없어 첫 값(녹음)으로 조용히 떨어진다.
   normalizeSessionType: (v) => normalize(LEGACY_SESSION_TYPE_ALIAS[String(v == null ? "" : v).trim()] || v, SESSION_TYPES),
   normalizeSessionStatus: (v) => normalize(v, SESSION_STATUSES),
   normalizeDeliverableKind: (v) => normalize(v, DELIVERABLE_KINDS),
-  normalizeTrackContentType: (v) => normalize(v, TRACK_CONTENT_TYPES),
   normalizeTaskStatus: (v) => normalize(v, TASK_STATUSES),
   normalize,
 };

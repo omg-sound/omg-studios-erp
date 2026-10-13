@@ -3,7 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { config, TASK_TYPES, RECORDING_CATEGORIES, FILMING_CATEGORIES, PERFORMANCE_CATEGORIES } = require("./config");
+const { config, TASK_TYPES } = require("./config");
 const { openDatabase } = require("./sqlite");
 const { splitKoreanName, honorificFromTitle } = require("./lib/korean-name");
 
@@ -64,6 +64,11 @@ function db() {
  */
 function init() {
   const d = db();
+  // 곡 계층이 남아 있는(개편 2단계 tasks_flatten_v1 이전) DB는 이 코드로 열지 않는다 — 평탄화 이행은 4단계에서
+  // 코드째 삭제됐다. 운영 DB는 이미 이행됐고, 옛 백업을 복원할 일이 생기면 2026-10-13 이전 버전으로 먼저 기동한다.
+  if (columnExists("track_tasks", "track_id")) {
+    throw new Error("[db] 옛 구조 DB(작업이 곡에 붙어 있음) — 개편 2단계 이전 버전으로 먼저 기동해 이행한 뒤 여세요(docs/redesign/04-cleanup.md §4)");
+  }
 
   d.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -105,68 +110,44 @@ function init() {
 
 
 
-    -- 단가표(과금 항목). 1Pro 기준시간/기준가 + 초과 단위/단가. 세션 시간 → 자동 산정의 기준.
-    CREATE TABLE IF NOT EXISTS rate_items (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      name          TEXT NOT NULL,                 -- 예: 보컬 녹음, 악기+보컬 녹음(그룹)
-      base_minutes  INTEGER NOT NULL DEFAULT 0,    -- 기준 시간(분). 0이면 시간 무관 정액
-      base_price    INTEGER NOT NULL DEFAULT 0,    -- 기준 가격(원)
-      extra_minutes INTEGER NOT NULL DEFAULT 60,   -- 초과 단위(분)
-      extra_price   INTEGER NOT NULL DEFAULT 0,    -- 초과 단위당 가격(원)
-      active        INTEGER NOT NULL DEFAULT 1,
-      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    -- 단가표 분류(2026-07-05, 이전엔 config 하드코딩 배열이 유일한 진실원천 — 커스텀 분류 추가 불가했음).
-    -- config RECORDING/FILMING/PERFORMANCE_CATEGORIES를 1회 시드한다. locked는 레거시 컬럼(2026-07-29부터
-    -- 읽는 코드 없음) — 기본 분류도 수정·삭제할 수 있다(잠금 근거였던 '코드가 이름에 의존'이 사실이 아니었다).
-    CREATE TABLE IF NOT EXISTS rate_categories (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      name       TEXT NOT NULL UNIQUE,
-      kind       TEXT NOT NULL DEFAULT 'recording', -- recording | filming | performance
-      locked     INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
     -- 작업 종류 카탈로그(곡·콘텐츠 후반작업 종류). config.TASK_TYPES를 1회 시드 후 DB가 단일 진실원천.
-    -- track_tasks.task_type은 이 key를 문자열로 저장(FK 아님). CHECK 제약 없음(코드 상수가 분류·과금 정규화).
+    -- track_tasks.task_type은 이 key를 문자열로 저장(FK 아님). CHECK 제약 없음.
     CREATE TABLE IF NOT EXISTS task_types (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       key          TEXT NOT NULL UNIQUE,                       -- 안정 식별자(기존 Vocal_Recording… / 신규 tt_xxx)
       label        TEXT NOT NULL,                              -- 표시명(예: 보컬튠)
-      task_group   TEXT NOT NULL DEFAULT 'Post_Production',    -- 분류(TASK_GROUPS 참조)
-      billing_type TEXT NOT NULL DEFAULT 'Fixed_Per_Track',    -- 기본 과금(BILLING_TYPES)
-      unit_price   INTEGER NOT NULL DEFAULT 0,                 -- 기본 단가(원)
+      task_group   TEXT NOT NULL DEFAULT 'Post_Production',    -- 레거시(분류 개념 폐기 — 항상 Post_Production)
       is_quick     INTEGER NOT NULL DEFAULT 0,                 -- 곡·콘텐츠 '빠른 추가' 버튼 노출
       sort_order   INTEGER NOT NULL DEFAULT 100,
       active       INTEGER NOT NULL DEFAULT 1,
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    -- 프로젝트 하위 트랙/콘텐츠. 한 프로젝트는 1..N개의 음악 트랙 또는 영상 콘텐츠를 가진다.
-    CREATE TABLE IF NOT EXISTS project_tracks (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      title        TEXT NOT NULL,
-      content_type TEXT NOT NULL DEFAULT 'Music', -- Music | Video_Post
-      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    -- 모듈형 스튜디오 작업 단위. 청구 생성 시 완료+미청구 작업을 invoice_items로 복사한다.
+    -- 작업(테이블 이름은 옛 이름 유지 — 개편 2단계에서 곡 계층을 없애고 프로젝트에 바로 붙였다).
+    -- 곡은 song_title 문자열이고(NULL = 프로젝트 이름), 청구 생성 시 invoice_items로 복사된다.
+    -- 운영 DB는 tasks_flatten_v1(2026-10-13)이 이 모양으로 재구성했다 — 새 DB는 처음부터 이 모양.
     CREATE TABLE IF NOT EXISTS track_tasks (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      track_id      INTEGER NOT NULL REFERENCES project_tracks(id) ON DELETE CASCADE,
-      task_type     TEXT NOT NULL, -- Vocal_Recording | Mixing | ...
-      billing_type  TEXT NOT NULL DEFAULT 'Fixed_Per_Track', -- Time_Charge | Fixed_Per_Track
-      quantity      REAL NOT NULL DEFAULT 1,
-      unit_price    INTEGER NOT NULL DEFAULT 0,
-      total_price   INTEGER NOT NULL DEFAULT 0,
-      engineer_name TEXT,
-      status        TEXT NOT NULL DEFAULT 'Pending', -- Pending | Completed ('진행중' 폐기)
-      is_invoiced   INTEGER NOT NULL DEFAULT 0,
-      invoice_id    INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
-      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id       INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      song_title       TEXT,
+      song_artist      TEXT,                       -- 프로젝트 아티스트와 다를 때만
+      task_type        TEXT NOT NULL,              -- task_types.key
+      billing_type     TEXT NOT NULL DEFAULT 'Fixed_Per_Track', -- 레거시 상수(후반작업은 곡 단위 고정)
+      quantity         REAL NOT NULL DEFAULT 1,
+      unit_price       INTEGER NOT NULL DEFAULT 0,
+      total_price      INTEGER NOT NULL DEFAULT 0,
+      engineer_name    TEXT,
+      status           TEXT NOT NULL DEFAULT 'Pending', -- Pending | Completed
+      is_invoiced      INTEGER NOT NULL DEFAULT 0,
+      invoice_id       INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      session_id       INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+      worker_paid      INTEGER NOT NULL DEFAULT 0,
+      worker_paid_date TEXT,
+      worker_rate      INTEGER NOT NULL DEFAULT 0,
+      engineer_id      INTEGER,
+      waived           INTEGER NOT NULL DEFAULT 0,
+      work_date        TEXT
     );
 
     -- 스튜디오 룸(공간). 룸별 시간 겹침 검사용(다른 룸이면 같은 시간 병렬 예약 허용).
@@ -203,19 +184,6 @@ function init() {
       status        TEXT NOT NULL DEFAULT '예정', -- 예정 | 완료 | 취소
       memo          TEXT,
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    -- 촬영 세션의 구간(2026-07-26 과금 체계 개편) — 반입·설치 / 촬영 / 철수.
-    -- 요금 시간은 이 구간들의 **합산**이고, 룸 점유·캘린더 일정은 세 구간을 아우르는 한 덩어리
-    -- (sessions.start_time = 첫 구간 시작, end_time = 마지막 구간 종료)라 겹침 판정·캘린더 동기화는 무변경이다.
-    CREATE TABLE IF NOT EXISTS session_segments (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-      kind       TEXT NOT NULL,                 -- setup | shoot | teardown (config.SESSION_SEGMENT_KINDS)
-      start_time TEXT NOT NULL,                 -- 'HH:MM'
-      end_time   TEXT NOT NULL,                 -- 'HH:MM' (자정 넘김은 end < start)
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     -- 자료 전달 기록(플레이북1 §2.3·§4.3). 파일은 Drive 또는 로컬에 저장, 메타는 여기.
@@ -415,15 +383,13 @@ function init() {
     );
     CREATE INDEX IF NOT EXISTS idx_project_contacts_party ON project_contacts(party_id);
 
-    CREATE INDEX IF NOT EXISTS idx_rate_items_active ON rate_items(active, name);
     CREATE INDEX IF NOT EXISTS idx_task_types_active ON task_types(active, sort_order, label);
-    CREATE INDEX IF NOT EXISTS idx_project_tracks_project ON project_tracks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_track_tasks_project ON track_tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_track_tasks_invoice ON track_tasks(invoice_id, is_invoiced);
     CREATE INDEX IF NOT EXISTS idx_audit_log_at ON audit_log(at DESC);
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_date ON sessions(session_date);
     CREATE INDEX IF NOT EXISTS idx_rooms_active ON rooms(active, sort_order, name);
-    CREATE INDEX IF NOT EXISTS idx_session_segments_session ON session_segments(session_id, sort_order);
     CREATE INDEX IF NOT EXISTS idx_deliverables_project ON deliverables(project_id);
     CREATE INDEX IF NOT EXISTS idx_deliverables_token ON deliverables(access_token);
     CREATE INDEX IF NOT EXISTS idx_invoices_project ON invoices(project_id);
@@ -482,17 +448,13 @@ function init() {
   addColumn("invoices", "tax_amount", "INTEGER NOT NULL DEFAULT 0");
   addColumn("invoices", "discount_amount", "INTEGER NOT NULL DEFAULT 0"); // 청구 전체 할인(원). 0=할인 없음.
   addColumn("invoices", "tax_status", "TEXT NOT NULL DEFAULT '계산서 미발행'"); // 계산서·입금 상태(청구서 발행과 별개 축): 계산서 미발행 | 계산서 발행 | 입금완료
-  addColumn("rate_items", "category", "TEXT NOT NULL DEFAULT '스튜디오 녹음'"); // 단가표(녹음 종류) 분류: 스튜디오 녹음 | 로케이션 녹음
-  addColumn("sessions", "rate_item_id", "INTEGER REFERENCES rate_items(id) ON DELETE SET NULL"); // 녹음 세션 시간제 단가표 연결
   addColumn("project_managers", "user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"); // 하우스 엔지니어(로그인 사용자)와 링크. null=외주 작업자
   addColumn("project_managers", "contact_id", "INTEGER"); // 연동 연락처(contacts.id). null=미연동
   addColumn("sessions", "booker_name", "TEXT"); // 예약 담당자(담당자 마스터에서 선택, 담당 엔지니어와 별개)
   addColumn("sessions", "gcal_event_id", "TEXT"); // 예약 시 자동 생성한 구글 캘린더 일정 id(수정·삭제 추적)
   addColumn("sessions", "room_id", "INTEGER"); // 룸(스튜디오 공간). FK 없음(ALTER 한계) — 룸별 겹침 검사, 룸 삭제 시 코드가 NULL 처리(SET NULL 의미)
-  addColumn("sessions", "director_contact_id", "INTEGER"); // 담당 디렉터(클라이언트 측 연락처). FK 없음(ALTER 한계) — 연락처 삭제 시 코드가 NULL 처리.
   // room_id 컬럼은 위 addColumn으로 보장되므로 의존 인덱스는 여기서 생성(big exec 블록보다 뒤).
   d.exec("CREATE INDEX IF NOT EXISTS idx_sessions_room ON sessions(room_id);");
-  addColumn("project_tracks", "artist", "TEXT"); // 곡·콘텐츠별 아티스트(한 프로젝트에 여러 아티스트 가능). 미입력 시 프로젝트 아티스트.
   addColumn("track_tasks", "session_id", "INTEGER REFERENCES sessions(id) ON DELETE SET NULL"); // 세션에서 생성된 청구 작업 추적(레거시 전환분)
   addColumn("track_tasks", "worker_paid", "INTEGER NOT NULL DEFAULT 0"); // 외주 작업자 지급(정산) 여부
   addColumn("track_tasks", "worker_paid_date", "TEXT"); // 지급 처리일(YYYY-MM-DD)
@@ -533,17 +495,6 @@ function init() {
   // 컬럼을 빼면 옛 DB와 스키마가 갈리고, rooms_drop_hierarchy_v1이 이 컬럼을 조회하므로 존재해야 한다.
   addColumn("rooms", "parent_id", "INTEGER");
   addColumn("rooms", "bookable", "INTEGER NOT NULL DEFAULT 1");
-  // ── 가격 유형·표시 순서(2026-07-26 과금 체계 개편) ──
-  addColumn("rate_items", "price_type", "TEXT NOT NULL DEFAULT 'fixed'"); // 레거시(2026-07-29 가격 유형 폐기 — 읽는 코드 0)
-  addColumn("rate_items", "sort_order", "INTEGER NOT NULL DEFAULT 100"); // 분류 안 표시 순서(↑↓ 이동). 기존 항목은 이름순 유지(동일 값 → 이름 tiebreak)
-  addColumn("task_types", "price_type", "TEXT NOT NULL DEFAULT 'fixed'"); // 레거시(2026-07-29 가격 유형 폐기 — 읽는 코드 0)
-  // ── 금액 조정 사유(2026-07-26) ──
-  // sessions.surcharge_key/surcharge_memo는 **레거시**(2026-07-27 할증 개념 폐기 — 읽는 코드 없음).
-  // 컬럼은 남긴다(sessions는 큰 테이블이고 DROP COLUMN은 이득 없이 위험만 있다 — director_contact_id와 같은 취급).
-  addColumn("sessions", "surcharge_key", "TEXT");
-  addColumn("sessions", "surcharge_memo", "TEXT");
-  addColumn("sessions", "billing_memo", "TEXT"); // 금액을 산정치와 다르게 조정했을 때의 사유(청구 화면에서 입력)
-  addColumn("track_tasks", "billing_memo", "TEXT"); // 위와 동일(작업 금액 조정 사유)
   addColumn("track_tasks", "work_date", "TEXT"); // 작업일(YYYY-MM-DD, 선택 — 개편 1단계 2026-10-13). 청구 라인 날짜·대기함 기간 필터 기준, NULL=등록일로 폴백
   addColumn("session_directors", "party_id", "INTEGER"); // 다대다 디렉터(parties.id, 기존 contact_id 대체)
   addColumn("parties", "group_id", "INTEGER"); // 아티스트(사람)의 소속 그룹(parties.id, kind='group'). 그룹↔멤버 연결
@@ -553,7 +504,7 @@ function init() {
   addColumn("parties", "biz_item", "TEXT"); // 종목(2026-08-04 사용자 요청) — 세금계산서 발행용, company만
   addColumn("track_tasks", "waived", "INTEGER NOT NULL DEFAULT 0"); // 청구 안 함(무료 처리, 2026-07-06) — 청구 후보에서 되돌리기 가능하게 표시만, 예산·미청구 집계 제외
   addColumn("sessions", "waived", "INTEGER NOT NULL DEFAULT 0"); // 청구 안 함(무료 처리, 2026-07-06) — 위와 동일
-  addColumn("sessions", "billing_amount", "INTEGER"); // 확정 청구액(2026-07-14) — NULL이면 단가표 자동 산정, 값이 있으면 그 금액을 쓴다(청구 폼에서 고치면 즉시 저장 = 작업 total_price와 대칭)
+  addColumn("sessions", "billing_amount", "INTEGER"); // 확정 청구액(2026-07-14) — NULL이면 미정(청구서에서 입력)
   addColumn("project_managers", "id_number", "TEXT"); // 외주 작업자 주민등록번호/사업자등록번호(2026-07-06 사용자 요청) — 암호화 저장(db.encrypt), 정산 세금신고용
   addColumn("project_managers", "bank_name", "TEXT"); // 외주 작업자 정산 계좌 은행명
   addColumn("project_managers", "account_number", "TEXT"); // 외주 작업자 정산 계좌번호 — 암호화 저장(db.encrypt)
@@ -739,12 +690,6 @@ function init() {
     setState("rooms_seed_v1", "done");
   }
   applyPricingRoomsV2();
-  // 할증 개념 폐기(2026-07-27 사용자 결정 — 미장센은 단가 항목으로 표현). 마스터 테이블 제거.
-  // sessions.surcharge_key/memo 컬럼은 레거시로 남기고(읽는 코드 없음) 참조 세션도 없다(제거 전 0건 확인).
-  if (!getState("surcharges_drop_v1")) {
-    d.exec("DROP TABLE IF EXISTS surcharges");
-    setState("surcharges_drop_v1", "done");
-  }
   // 룸 계층 폐지(2026-07-28 사용자 지시). 하위 공간은 예약 대상이 아니라 어떤 판단에도 쓰이지 않고
   // 관리 화면에서 자리만 차지했다 → 계층 코드 제거 + 하위로 만들어 뒀던 행 삭제.
   // ⚠️세션이 그 장소로 잡혀 있으면 room_id를 NULL로 밀어야 하는데(deleteRoom과 같은 의미), 그건
@@ -779,7 +724,6 @@ function init() {
   // 매 부팅 재실행되면 memo 추론으로 유령 곡·작업을 주입한다 → admin_state 플래그로 1회 게이트.
   if (!getState("legacy_backfill_v1")) {
     backfillProjectServices();
-    backfillLegacyServicesToTracks();
     setState("legacy_backfill_v1", "done");
   }
   // 업체 역할 백필(2026-07-01): 기존 업체(비아티스트)의 roles가 비면 kind를 첫 역할로 시드(겸업 태그 기반). 1회 게이트.
@@ -1003,11 +947,9 @@ function init() {
     }
   }
 
-  // 곡 계층 제거(개편 2단계, 2026-10-13 — docs/redesign/02-flatten-tasks.md). 맨 끝에 둔다:
-  // 위의 생성·백필 단계는 옛 구조(track_id)로 쓰고, 여기서 한 번에 평탄화한다(새 DB도 같은 경로 — 테스트가 매번 검증).
-  flattenTasks(d);
-  d.exec("CREATE INDEX IF NOT EXISTS idx_track_tasks_project ON track_tasks(project_id);");
   completeBilledPostprodSessions(d);
+  // 단가표·촬영 구간·곡 테이블과 쓰지 않는 컬럼 삭제(개편 4단계 — docs/redesign/04-cleanup.md). 맨 끝에 둔다.
+  redesignCleanup(d);
 
   // ── 후속 단계 테이블 자리(스키마만; 아직 미사용) ──
   // invoice_items / payments (라인아이템·입금 이력 분리가 필요해지면)
@@ -1049,115 +991,110 @@ function completeBilledPostprodSessions(d) {
 }
 
 /**
- * tasks_flatten_v1 — 작업(track_tasks)을 곡(project_tracks)에서 떼어 프로젝트에 바로 붙인다.
- *  - 추가: project_id(곡의 프로젝트) · song_title(곡 제목) · song_artist(곡 아티스트 — 프로젝트 아티스트와 다를 때만) / 제거: track_id
- *  - **id 보존**(invoice_items.task_id 연결 유지). 테이블 이름은 그대로(쿼리 수십 곳을 바꿀 이유가 이름뿐이라).
- *  - 작업 없는 빈 곡은 **프로젝트 메모 끝에 '곡: A, B'로 보존**(사용자 결정 — 운영 실측상 '세션에서 녹음한 곡' 기록이었다).
- *  - project_tracks는 지우지 않는다(되돌릴 근거, 4단계에서 삭제). 이후 코드는 읽지 않는다.
- *
- * ⚠️ 외래키를 **끈 채로** 재구성해야 한다 — 켜진 상태에서 DROP TABLE track_tasks는 내부적으로 DELETE를 돌려
- *    invoice_items.task_id(ON DELETE SET NULL)를 전부 지운다(청구 라인 ↔ 작업 연결 소멸). PRAGMA는 트랜잭션
- *    안에서 무시되므로 BEGIN 전에 끄고, 끝나면 foreign_key_check로 확인한 뒤 다시 켠다.
- * ⚠️ 전후로 작업 수·청구된 작업 수·지급 완료 수·청구 라인 연결 수를 비교해 하나라도 다르면 롤백하고 **기동을 멈춘다**
- *    (조용히 반쯤 옮겨진 채 서비스하는 것보다 배포 실패가 낫다 — 직전 배포는 그대로 살아 있다).
+ * redesign_cleanup_v1 — 개편 4단계(docs/redesign/04-cleanup.md). 3단계까지 읽지 않게 만든 것을 실제로 지운다.
+ *  ① 버리면 안 되는 값은 메모로 옮긴다: 금액 조정 사유(세션 → 세션 메모, 작업 → 프로젝트 메모), 촬영 구간(세션 메모).
+ *  ② 컬럼 DROP — ⚠️`sessions.rate_item_id`는 테이블보다 **먼저** 지운다. `REFERENCES rate_items`가 남은 채
+ *     부모 테이블이 사라지면 세션 INSERT·DELETE가 'no such table'로 실패한다(UPDATE는 통과해서 눈치채기 어렵다).
+ *  ③ 테이블 DROP.
+ * ⚠️ 지운 것의 CREATE·addColumn이 init에 남아 있으면 **다음 기동에서 되살아난다**(2026-07 legacy_drop_v1이
+ *    지운 director_contact_id가 그렇게 운영 DB에 빈 칸으로 돌아와 있었다) — test/redesign-cleanup.test.js가 잠근다.
+ * 외래키를 끄고 한 트랜잭션에서 한다(켠 채 부모를 DROP하면 자식의 ON DELETE가 돈다). 전후 수·금액·연결이
+ * 하나라도 다르면 롤백하고 **기동을 멈춘다**(2단계 평탄화와 같은 안전장치).
  */
-function flattenTasks(d) {
-  if (getState("tasks_flatten_v1")) return;
-  if (!columnExists("track_tasks", "track_id")) { setState("tasks_flatten_v1", "done"); return; }
+function redesignCleanup(d) {
+  if (getState("redesign_cleanup_v1")) return;
   const counts = () => d.prepare(
-    `SELECT (SELECT COUNT(*) FROM track_tasks) AS tasks,
-            (SELECT COUNT(*) FROM track_tasks WHERE is_invoiced = 1) AS invoiced,
-            (SELECT COUNT(*) FROM track_tasks WHERE worker_paid = 1) AS paid,
-            (SELECT COALESCE(SUM(total_price), 0) FROM track_tasks) AS amount,
-            (SELECT COUNT(*) FROM invoice_items WHERE task_id IS NOT NULL) AS linked`
+    `SELECT (SELECT COUNT(*) FROM sessions) AS sessions,
+            (SELECT COALESCE(SUM(billing_amount), 0) FROM sessions) AS session_amount,
+            (SELECT COUNT(*) FROM track_tasks) AS tasks,
+            (SELECT COALESCE(SUM(total_price), 0) FROM track_tasks) AS task_amount,
+            (SELECT COUNT(*) FROM invoices) AS invoices,
+            (SELECT COALESCE(SUM(amount), 0) FROM invoices) AS invoice_amount,
+            (SELECT COUNT(*) FROM invoice_items) AS lines,
+            (SELECT COUNT(*) FROM invoice_items WHERE session_id IS NOT NULL) AS session_lines,
+            (SELECT COUNT(*) FROM invoice_items WHERE task_id IS NOT NULL) AS task_lines,
+            (SELECT COUNT(*) FROM payments) AS payments,
+            (SELECT COUNT(*) FROM session_engineers WHERE worker_paid = 1) AS paid_sessions,
+            (SELECT COUNT(*) FROM track_tasks WHERE worker_paid = 1) AS paid_tasks`
   ).get();
+  const appendLine = (memo, line) => {
+    const m = String(memo || "");
+    if (m.includes(line)) return m;
+    return (m.trim() ? m.replace(/\s+$/, "") + "\n" : "") + line;
+  };
   const before = counts();
   d.exec("PRAGMA foreign_keys = OFF;");
   try {
     d.exec("BEGIN IMMEDIATE;");
     try {
-      // ① 빈 곡 → 프로젝트 메모(이미 메모에 그 곡명이 있으면 건너뜀)
-      const empty = d.prepare(
-        `SELECT tr.project_id, tr.title FROM project_tracks tr
-         WHERE NOT EXISTS (SELECT 1 FROM track_tasks t WHERE t.track_id = tr.id)
-         ORDER BY tr.project_id, tr.id`
-      ).all();
-      const byProject = new Map();
-      for (const r of empty) {
-        const t = String(r.title || "").trim();
-        if (!t) continue;
-        if (!byProject.has(r.project_id)) byProject.set(r.project_id, []);
-        if (!byProject.get(r.project_id).includes(t)) byProject.get(r.project_id).push(t);
+      const moved = { sessionMemo: 0, taskMemo: 0, segments: 0 };
+      const setSessionMemo = d.prepare("UPDATE sessions SET memo = ? WHERE id = ?");
+      // ① 금액 조정 사유 — 세션
+      if (columnExists("sessions", "billing_memo")) {
+        for (const r of d.prepare("SELECT id, memo, billing_memo FROM sessions WHERE TRIM(COALESCE(billing_memo, '')) <> ''").all()) {
+          setSessionMemo.run(appendLine(r.memo, `금액 조정 사유: ${r.billing_memo.trim()}`), r.id);
+          moved.sessionMemo++;
+        }
       }
-      const getMemo = d.prepare("SELECT memo FROM projects WHERE id = ?");
-      const setMemo = d.prepare("UPDATE projects SET memo = ? WHERE id = ?");
-      let memoProjects = 0;
-      for (const [pid, titles] of byProject) {
-        const row = getMemo.get(pid);
-        if (!row) continue;
-        const memo = String(row.memo || "");
-        const add = titles.filter((t) => !memo.includes(t));
-        if (!add.length) continue;
-        setMemo.run((memo.trim() ? memo.replace(/\s+$/, "") + "\n" : "") + `곡: ${add.join(", ")}`, pid);
-        memoProjects++;
+      // ① 금액 조정 사유 — 작업(작업엔 메모 칸이 없어 프로젝트 메모로)
+      if (columnExists("track_tasks", "billing_memo")) {
+        const rows = d.prepare(
+          `SELECT t.id, t.project_id, t.song_title, t.billing_memo, COALESCE(tt.label, t.task_type) AS label
+           FROM track_tasks t LEFT JOIN task_types tt ON tt.key = t.task_type
+           WHERE TRIM(COALESCE(t.billing_memo, '')) <> '' ORDER BY t.project_id, t.id`
+        ).all();
+        const getP = d.prepare("SELECT memo FROM projects WHERE id = ?");
+        const setP = d.prepare("UPDATE projects SET memo = ? WHERE id = ?");
+        for (const r of rows) {
+          const p = getP.get(r.project_id);
+          if (!p) continue;
+          const what = [r.song_title, r.label].filter(Boolean).join(" ");
+          setP.run(appendLine(p.memo, `금액 조정 사유(${what || `작업 #${r.id}`}): ${r.billing_memo.trim()}`), r.project_id);
+          moved.taskMemo++;
+        }
       }
-      // ② 새 구조로 복사(id 보존)
-      d.exec(`CREATE TABLE track_tasks_new (
-        id               INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id       INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        song_title       TEXT,
-        song_artist      TEXT,
-        task_type        TEXT NOT NULL,
-        billing_type     TEXT NOT NULL DEFAULT 'Fixed_Per_Track',
-        quantity         REAL NOT NULL DEFAULT 1,
-        unit_price       INTEGER NOT NULL DEFAULT 0,
-        total_price      INTEGER NOT NULL DEFAULT 0,
-        engineer_name    TEXT,
-        status           TEXT NOT NULL DEFAULT 'Pending',
-        is_invoiced      INTEGER NOT NULL DEFAULT 0,
-        invoice_id       INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
-        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
-        session_id       INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
-        worker_paid      INTEGER NOT NULL DEFAULT 0,
-        worker_paid_date TEXT,
-        worker_rate      INTEGER NOT NULL DEFAULT 0,
-        engineer_id      INTEGER,
-        waived           INTEGER NOT NULL DEFAULT 0,
-        billing_memo     TEXT,
-        work_date        TEXT
-      );`);
-      const copied = d.prepare(`INSERT INTO track_tasks_new
-        (id, project_id, song_title, song_artist, task_type, billing_type, quantity, unit_price, total_price, engineer_name,
-         status, is_invoiced, invoice_id, created_at, session_id, worker_paid, worker_paid_date, worker_rate, engineer_id,
-         waived, billing_memo, work_date)
-        SELECT t.id, tr.project_id, NULLIF(TRIM(tr.title), ''),
-               -- 옛 곡 생성은 프로젝트 아티스트를 곡에 **복사**했다 → 같으면 비운다(NULL = 프로젝트 아티스트를 따라감).
-               -- 다를 때만(컴필레이션 등, 운영 실측 18곡) 곡 아티스트로 남긴다.
-               CASE WHEN TRIM(COALESCE(tr.artist, '')) = TRIM(COALESCE(p.artist, '')) THEN NULL ELSE NULLIF(TRIM(tr.artist), '') END,
-               t.task_type, t.billing_type, t.quantity,
-               t.unit_price, t.total_price, t.engineer_name, t.status, t.is_invoiced, t.invoice_id, t.created_at, t.session_id,
-               t.worker_paid, t.worker_paid_date, t.worker_rate, t.engineer_id, t.waived, t.billing_memo, t.work_date
-        FROM track_tasks t JOIN project_tracks tr ON tr.id = t.track_id LEFT JOIN projects p ON p.id = tr.project_id`).run().changes;
-      if (copied !== before.tasks) throw new Error(`작업 ${before.tasks}건 중 ${copied}건만 복사됨(곡 없는 작업?)`);
-      d.exec("DROP TABLE track_tasks;");
-      d.exec("ALTER TABLE track_tasks_new RENAME TO track_tasks;");
-      d.exec("CREATE INDEX IF NOT EXISTS idx_track_tasks_invoice ON track_tasks(invoice_id, is_invoiced);");
-      d.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_track_tasks_session ON track_tasks(session_id) WHERE session_id IS NOT NULL;");
-      d.exec("CREATE INDEX IF NOT EXISTS idx_track_tasks_engineer ON track_tasks(engineer_id, is_invoiced);");
-      d.exec("CREATE INDEX IF NOT EXISTS idx_track_tasks_project ON track_tasks(project_id);");
-      // ③ 검사 — 하나라도 어긋나면 롤백
+      // ① 촬영 구간 — 세션 메모(운영 실측 0건이지만 있으면 버리지 않는다)
+      if (tableExists("session_segments")) {
+        const LABEL = { setup: "반입·설치", shoot: "촬영", teardown: "철수" };
+        const segs = d.prepare("SELECT session_id, kind, start_time, end_time FROM session_segments ORDER BY session_id, sort_order, id").all();
+        const bySession = new Map();
+        for (const g of segs) {
+          if (!bySession.has(g.session_id)) bySession.set(g.session_id, []);
+          bySession.get(g.session_id).push(`${LABEL[g.kind] || g.kind} ${g.start_time}–${g.end_time}`);
+        }
+        const getS = d.prepare("SELECT memo FROM sessions WHERE id = ?");
+        for (const [sid, parts] of bySession) {
+          const row = getS.get(sid);
+          if (!row) continue;
+          setSessionMemo.run(appendLine(row.memo, `촬영 구간: ${parts.join(" · ")}`), sid);
+          moved.segments++;
+        }
+      }
+      // ② 컬럼 — rate_item_id가 테이블보다 먼저(위 ⚠️)
+      const COLUMNS = [
+        ["sessions", "rate_item_id"], ["sessions", "surcharge_key"], ["sessions", "surcharge_memo"],
+        ["sessions", "billing_memo"], ["sessions", "director_contact_id"],
+        ["track_tasks", "billing_memo"],
+        ["task_types", "unit_price"], ["task_types", "billing_type"], ["task_types", "price_type"],
+      ];
+      for (const [t, c] of COLUMNS) if (columnExists(t, c)) d.exec(`ALTER TABLE ${t} DROP COLUMN ${c}`);
+      // ③ 테이블
+      for (const t of ["session_segments", "rate_items", "rate_categories", "project_tracks", "surcharges"]) d.exec(`DROP TABLE IF EXISTS ${t}`);
+      // 검사
       const after = counts();
       for (const k of Object.keys(before)) {
         if (before[k] !== after[k]) throw new Error(`검사 불일치 ${k}: ${before[k]} → ${after[k]}`);
       }
       const fk = d.prepare("PRAGMA foreign_key_check").all();
       if (fk.length) throw new Error(`외래키 위반 ${fk.length}건(예: ${JSON.stringify(fk[0])})`);
-      setState("tasks_flatten_v1", "done");
+      setState("redesign_cleanup_v1", "done");
       d.exec("COMMIT;");
-      console.log(`[migrate tasks_flatten_v1] 작업 ${after.tasks}건 평탄화 · 빈 곡 ${empty.length}개 → 프로젝트 메모 ${memoProjects}건`);
+      if (moved.sessionMemo || moved.taskMemo || moved.segments || before.sessions) {
+        console.log(`[migrate redesign_cleanup_v1] 단가표·촬영 구간·곡 테이블과 쓰지 않는 컬럼 삭제 · 메모 이관 — 세션 조정 사유 ${moved.sessionMemo} · 작업 조정 사유 ${moved.taskMemo} · 촬영 구간 ${moved.segments}`);
+      }
     } catch (e) {
       try { d.exec("ROLLBACK;"); } catch (_e) { /* noop */ }
-      throw new Error(`[migrate tasks_flatten_v1] 실패 — 롤백함, 기동 중단: ${e && e.message}`);
+      throw new Error(`[migrate redesign_cleanup_v1] 실패 — 롤백함, 기동 중단: ${e && e.message}`);
     }
   } finally {
     d.exec("PRAGMA foreign_keys = ON;");
@@ -1169,37 +1106,13 @@ function seedDefaultCatalogs() {
   // 작업 종류 카탈로그 1회 시드(이후 치프의 편집·삭제가 영구히 유지되도록 플래그 게이트). ON CONFLICT으로 멱등.
   if (!getState("task_types_seed_v1")) {
     const insTaskType = d.prepare(
-      `INSERT INTO task_types (key, label, task_group, billing_type, unit_price, is_quick, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO NOTHING`
+      `INSERT INTO task_types (key, label, task_group, is_quick, sort_order)
+       VALUES (?, ?, ?, ?, ?) ON CONFLICT(key) DO NOTHING`
     );
     TASK_TYPES.forEach((t, i) =>
-      insTaskType.run(t.key, t.label, t.group, t.billing || "Fixed_Per_Track", t.price || 0, t.quick ? 1 : 0, (i + 1) * 10)
+      insTaskType.run(t.key, t.label, t.group, t.quick ? 1 : 0, (i + 1) * 10)
     );
     setState("task_types_seed_v1", "done");
-  }
-
-  // 단가표 분류 1회 시드(2026-07-05) — config 배열의 4개 기본 분류를 locked=1로. 이후 치프가 추가하는 분류만 수정·삭제 가능.
-  if (!getState("rate_categories_seed_v1")) {
-    const insCat = d.prepare("INSERT INTO rate_categories (name, kind, locked, sort_order) VALUES (?, ?, 1, ?) ON CONFLICT(name) DO NOTHING");
-    RECORDING_CATEGORIES.forEach((name, i) => insCat.run(name, "recording", i));
-    FILMING_CATEGORIES.forEach((name, i) => insCat.run(name, "filming", 100 + i));
-    PERFORMANCE_CATEGORIES.forEach((name, i) => insCat.run(name, "performance", 200 + i));
-    setState("rate_categories_seed_v1", "done");
-  }
-
-  // 분류 순서를 **한 축으로 평탄화**(2026-07-29 — 요금표 2단 트리 전환). 예전 순서는 kind로 먼저 갈렸고
-  // moveRateCategory가 kind별로 (idx+1)*10을 부여해 **sort_order 값이 종류마다 겹쳤다**(녹음 10·촬영 10…).
-  // 종류 묶음을 없앤 뒤 그대로 두면 겹친 값끼리 이름순으로 섞여 순서가 뒤죽박죽이 된다 → 마지막으로 보이던
-  // 순서(녹음 → 촬영 → 공연, 그 안은 sort_order·이름)를 그대로 물질화해 10 간격으로 다시 매긴다.
-  if (!getState("rate_categories_flat_order_v1")) {
-    const rank = { recording: 0, filming: 1, performance: 2 };
-    const rows = d.prepare("SELECT id, kind, sort_order, name FROM rate_categories").all()
-      .sort((a, b) => (rank[a.kind] ?? 99) - (rank[b.kind] ?? 99)
-        || (a.sort_order || 0) - (b.sort_order || 0)
-        || a.name.localeCompare(b.name));
-    const upd = d.prepare("UPDATE rate_categories SET sort_order = ? WHERE id = ?");
-    rows.forEach((r, i) => upd.run((i + 1) * 10, r.id));
-    setState("rate_categories_flat_order_v1", "done");
   }
 
   const hasManager = d.prepare("SELECT id FROM project_managers LIMIT 1").get();
@@ -1209,19 +1122,16 @@ function seedDefaultCatalogs() {
 }
 
 /**
- * 룸 명칭 체계 + 과금 체계 개편 1회 이관(2026-07-26 사용자 지시, 홈페이지와 동일 스펙).
+ * 룸 명칭 체계 1회 이관(2026-07-26 사용자 지시, 홈페이지와 동일 스펙). 새 DB에선 기본 룸 시드 역할도 한다.
+ * (같은 게이트가 단가표·작업 종류 단가도 옮겼지만 개편 4단계에서 그 부분은 테이블·컬럼과 함께 삭제.)
  *
- * **id를 보존하는 UPDATE만 한다** — 룸·단가 항목을 지웠다 만들면 `sessions.room_id`·`sessions.rate_item_id`가
- * 끊겨 기존 예약이 '장소 미지정'이 되고 청구 이력의 근거가 사라진다(그래서 rename + 부족분 INSERT 구조).
+ * **id를 보존하는 UPDATE만 한다** — 룸을 지웠다 만들면 `sessions.room_id`가 끊겨 기존 예약이 '장소 미지정'이
+ * 된다(그래서 rename + 부족분 INSERT 구조).
  *
  * 룸: Studio A / Studio B(편집) / Studio C(믹싱) / Lounge(예약 대상 아님). (계층은 2026-07-28 폐지.)
  * 금지 표기(Hall·Live Booth·Lobby·Room A/B/C·A룸/B룸/C룸)는 **정확 일치하는 것만** 새 명칭으로 옮긴다.
  * Hall·Live Booth는 Studio A로 — 라이브 부스에서의 녹음은 규칙상 Studio A 예약이다. 모르는 이름은 **손대지 않는다**
  * (이제 환경설정에서 이름을 고칠 수 있으니 추측 rename보다 사람이 고치는 게 안전하다 — 남은 목록은 로그로).
- *
- * 포스트(믹싱·보컬튠)는 rate_items가 아니라 **task_types**에 시드한다 — 이 ERP는 세션(대관)=rate_items,
- * 곡·콘텐츠 후반작업=task_types로 청구 경로가 갈려 있어서, 포스트를 rate_items에 넣으면 세션 폼에서
- * 도달할 수 없는 죽은 데이터가 되고 '믹싱'이 두 카탈로그에 동시에 존재하게 된다.
  */
 function applyPricingRoomsV2() {
   if (getState("pricing_rooms_v2")) return;
@@ -1262,47 +1172,6 @@ function applyPricingRoomsV2() {
     }
   }
 
-  // ── 단가 항목(세션 = 녹음·촬영 대관) ──
-  // 초과 요율은 전 서비스 공통 시간당 10만, 1프로 = 210분.
-  // 옛 이름이 있으면 **이름만 바꿔 id를 보존**하고(그 항목으로 잡힌 세션·청구 근거 유지), 없으면 새로 만든다
-  // (rate_items는 db.js 시드 대상이 아니어서 신선 DB엔 아무 항목도 없다 — 운영은 rename, 신규 배포는 insert).
-  const rateByName = (name) => d.prepare("SELECT * FROM rate_items WHERE name = ?").get(name) || null;
-  const RATE_ITEMS = [
-    { legacy: ["보컬 녹음"], name: "솔로 녹음", category: "스튜디오 녹음", base_minutes: 210, base_price: 300000, sort: 10 },
-    { legacy: ["악기+보컬 녹음(그룹)", "악기+보컬 녹음"], name: "드럼 · 합주 녹음", category: "스튜디오 녹음", base_minutes: 210, base_price: 400000, sort: 20 },
-  ];
-  for (const r of RATE_ITEMS) {
-    const cur = rateByName(r.name);
-    const old = cur ? null : r.legacy.map(rateByName).find(Boolean);
-    const target = cur || old;
-    if (target) {
-      d.prepare(
-        `UPDATE rate_items SET name = ?, category = ?, base_minutes = ?, base_price = ?, extra_minutes = 60,
-         extra_price = 100000, price_type = 'fixed', sort_order = ? WHERE id = ?`
-      ).run(r.name, r.category, r.base_minutes, r.base_price, r.sort, target.id);
-      if (old && old.base_price !== r.base_price) skipped.push(`단가 ${old.name} ${old.base_price} → ${r.name} ${r.base_price}`);
-    } else {
-      d.prepare(
-        `INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, price_type, sort_order, active)
-         VALUES (?, ?, ?, ?, 60, 100000, 'fixed', ?, 1)`
-      ).run(r.name, r.category, r.base_minutes, r.base_price, r.sort);
-    }
-  }
-  // 리네임 대상 밖의 기존 항목은 손대지 않는다(사용자가 만든 항목 — price_type DEFAULT 'fixed'가 종전 동작과 같다).
-
-  // ── 포스트(곡·콘텐츠 작업으로 청구) ──
-  // 발행된 청구서는 스냅샷이라 카탈로그 단가를 바꿔도 소급 변동이 없다. 옛 값은 로그로 남긴다.
-  const POST_TYPES = [
-    { key: "Mixing", price: 1000000, price_type: "base" },        // 기준가(작업량에 따라 차등)
-    { key: "Vocal_Tuning", price: 200000, price_type: "minimum" }, // 최소가(작업량에 따라 상향)
-  ];
-  for (const t of POST_TYPES) {
-    const row = d.prepare("SELECT id, label, unit_price FROM task_types WHERE key = ?").get(t.key);
-    if (!row) continue;
-    if (row.unit_price !== t.price) skipped.push(`작업 종류 ${row.label} 단가 ${row.unit_price} → ${t.price}`);
-    d.prepare("UPDATE task_types SET unit_price = ?, price_type = ? WHERE id = ?").run(t.price, t.price_type, row.id);
-  }
-
   if (skipped.length) console.warn("[migrate pricing_rooms_v2] 사람 확인 필요:", skipped.join(" / "));
   setState("pricing_rooms_v2", "done");
 }
@@ -1340,66 +1209,6 @@ function backfillProjectServices() {
     if (/마스터링|마스터/.test(text)) services.push("mastering");
     update.run(JSON.stringify([...new Set(services)]), row.id);
   }
-}
-
-function backfillLegacyServicesToTracks() {
-  const rows = db()
-    .prepare(
-      `SELECT p.id, p.title, p.services
-       FROM projects p
-       WHERE p.services IS NOT NULL
-         AND p.services <> ''
-         AND NOT EXISTS (SELECT 1 FROM project_tracks tr WHERE tr.project_id = p.id)`
-    )
-    .all();
-  const taskMap = {
-    recording: "Vocal_Recording",
-    vocal_tune: "Vocal_Tuning",
-    mixing: "Mixing",
-    mastering: "Mastering",
-  };
-  const insertTrack = db().prepare("INSERT INTO project_tracks (project_id, title, content_type) VALUES (?, ?, 'Music')");
-  const insertTask = db().prepare(
-    `INSERT INTO track_tasks
-     (track_id, task_type, billing_type, quantity, unit_price, total_price, status, is_invoiced)
-     VALUES (?, ?, 'Fixed_Per_Track', 1, ?, ?, ?, 0)`
-  );
-
-  for (const row of rows) {
-    let services;
-    try {
-      services = JSON.parse(row.services);
-    } catch {
-      services = [];
-    }
-    if (!Array.isArray(services) || !services.length) continue;
-
-    const grouped = new Map();
-    for (const item of services) {
-      const key = typeof item === "string" ? item : String(item && item.key ? item.key : "").trim();
-      const taskType = taskMap[key];
-      if (!taskType) continue;
-      const title = String((item && item.track_title) || row.title || "곡·콘텐츠").trim();
-      if (!grouped.has(title)) grouped.set(title, []);
-      grouped.get(title).push({
-        taskType,
-        amount: parsePositiveInt(item && item.amount),
-        status: item && item.completed_at ? "Completed" : "Pending",
-      });
-    }
-
-    for (const [title, tasks] of grouped) {
-      const info = insertTrack.run(row.id, title || row.title || "곡·콘텐츠");
-      for (const task of tasks) {
-        insertTask.run(info.lastInsertRowid, task.taskType, task.amount, task.amount, task.status);
-      }
-    }
-  }
-}
-
-function parsePositiveInt(value) {
-  const n = parseInt(String(value == null ? "" : value).replace(/[^\d-]/g, ""), 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 /**
