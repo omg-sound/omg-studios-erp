@@ -136,10 +136,10 @@ function composeLine(l, i) {
     ? `<input class="input w-full py-1.5 text-sm" type="text" name="line_date" value="${esc(l.date || "")}" placeholder="날짜(선택)" aria-label="날짜" autocomplete="off" />`
     : `<input type="hidden" name="line_date" value="" /><span class="text-sm text-muted tabular">${l.date ? esc(formatYmdShort(l.date)) : "—"}</span>`;
   return `
-    <div class="grid grid-cols-[4.5rem_minmax(0,1fr)_8rem_2rem] items-center gap-2 py-1.5 ${l.kind !== "free" && l.done === false ? "" : ""}" data-compose-line>
+    <div class="grid grid-cols-[minmax(0,1fr)_6.5rem_2rem] items-center gap-x-2 gap-y-1 border-b border-border/50 py-1.5 sm:grid-cols-[4.5rem_minmax(0,1fr)_8rem_2rem] sm:border-0" data-compose-line>
       <input type="hidden" name="line_kind" value="${esc(l.kind)}" />
       <input type="hidden" name="line_id" value="${l.id ? Number(l.id) : ""}" />
-      <div>${dateCell}</div>
+      <div class="col-span-3 sm:col-span-1">${dateCell}</div><!-- 모바일은 날짜를 한 줄 위로(좁은 폭에서 내용 칸이 짜부라지지 않게) -->
       <input class="input w-full py-1.5 text-sm" name="line_desc" value="${esc(l.description != null ? l.description : l.label || "")}" placeholder="${free ? "예: 계약금 · 출장비" : ""}" aria-label="내용" autocomplete="off" />
       <input class="input w-full py-1.5 text-right text-sm tabular" name="line_amount" inputmode="numeric" value="${l.amount != null && l.amount !== "" ? esc(String(l.amount).replace(/\B(?=(\d{3})+(?!\d))/g, ",")) : ""}" placeholder="금액" aria-label="금액" data-compose-amount />
       <button type="button" class="btn-ghost btn-xs px-1 text-muted hover:text-danger" title="이 줄 빼기" aria-label="이 줄 빼기" data-compose-remove>✕</button>
@@ -194,7 +194,7 @@ function composePage({ lines, projects, values = {}, error = "", skipped = 0 }) 
         <div><span class="label mb-0 text-xs">발행일</span><div class="mt-1">${dateCombo("issued_date", issued, { label: "발행일", inputCls: "input w-full" })}</div></div>
       </div>
       <div>
-        <div class="grid grid-cols-[4.5rem_minmax(0,1fr)_8rem_2rem] gap-2 border-b border-border pb-1 text-xs text-muted"><span>날짜</span><span>내용</span><span class="text-right">금액</span><span></span></div>
+        <div class="hidden grid-cols-[4.5rem_minmax(0,1fr)_8rem_2rem] gap-2 border-b border-border pb-1 text-xs text-muted sm:grid"><span>날짜</span><span>내용</span><span class="text-right">금액</span><span></span></div>
         <div data-compose-lines>${lines.map(composeLine).join("")}${composeLine({ kind: "free" }, lines.length)}</div>
         <template data-compose-free-template>${freeTemplate}</template>
         <button type="button" class="btn-ghost btn-xs mt-1" data-compose-add>+ 줄 추가</button>

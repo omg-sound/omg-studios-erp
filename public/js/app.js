@@ -3666,7 +3666,7 @@ document.addEventListener("click", function (e) {
     var tax = !vat || vat.checked ? Math.round(taxable * 0.1) : 0;
     set("[data-compose-supply]", won(sup));
     var row = form.querySelector("[data-compose-discount-row]");
-    if (row) row.hidden = !(d > 0);
+    if (row) row.style.display = d > 0 ? "" : "none"; // hidden 속성은 flex 유틸에 밀린다(함정 #26) — 인라인 display로
     set("[data-compose-discount-amt]", "-" + won(d));
     set("[data-compose-tax]", won(tax));
     set("[data-compose-total]", won(taxable + tax));

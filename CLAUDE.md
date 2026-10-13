@@ -44,6 +44,13 @@
   - 🔒 마이그레이션 `tasks_flatten_v1`(db.js `flattenTasks`, init **맨 끝** — 새 DB도 같은 경로): **외래키를 끄고** 재구성(켠 채 DROP하면 `invoice_items.task_id`가 SET NULL로 전부 지워진다), id 보존, 전후 작업 수·청구·지급·금액·청구 라인 연결 수 비교 + `foreign_key_check` — 어긋나면 롤백하고 **기동 중단**. 빈 곡은 프로젝트 메모 끝 `곡: …`, 곡 아티스트는 프로젝트 아티스트와 다를 때만 남김(옛 곡 생성이 복사해 둔 값은 비움). 운영 백업 리허설에서 프로젝트 집계·매출·외주 정산이 옛 코드와 157건 전부 일치.
   - 곡명 NULL = 표시는 프로젝트 이름(`COALESCE(t.song_title, p.title)`). 작업 추가·`/new`는 곡명 **줄마다 작업 하나**(`createTasks`, withTx). 곡 이름 바꾸기(`renameSong`)는 미청구 작업만(청구된 작업 = 스냅샷 잠금).
   - 테스트의 작업 시드는 `INSERT INTO track_tasks (project_id, …) VALUES ((SELECT project_id FROM project_tracks WHERE id = ?), …)` 꼴이 남아 있다(옛 시드를 인자 위치 그대로 옮긴 것) — 4단계에서 `project_tracks`를 지울 때 함께 정리.
+- **3단계 청구 대기함** (`docs/redesign/03-billing-inbox.md`): 🔒 **청구 생성 경로 = 청구 대기함 하나**(`/invoices/inbox` → `/invoices/new?items=s12,t34` → `POST /invoices`, 데이터 `createInvoice` 라인 배열). 프로젝트 청구 탭은 요약 + 대기함 링크뿐(옛 from-tasks·미리보기 주소는 303). `createInvoiceFromTasks`는 테스트용 호환 어댑터.
+  - 🔒 **금액은 사람이 쓴다** — 단가표 산정·기본가/초과 분해·작업 종류 기본 단가 **폐지**. 세션 금액 = `billing_amount`(확정액)뿐, 없으면 '미정'(0). 발행하면 세션 확정액이 청구 금액으로 기록된다. 요금표 화면·세션 단가 칸·촬영 구간 입력 삭제(테이블·일부 데이터 함수는 4단계에서 삭제).
+  - 🔒 청구 가능 세션 조건은 `BILLABLE_SESSION_SQL` 하나(대관 종류 · 취소 제외 · 시간 또는 종일 · 미청구 · 작업 전환 없음) — 대기함·작성·발행이 같이 쓴다. 믹싱·마스터링 **세션**은 대기함에 없다(작업으로 청구, 작업 없는 완료 후반 세션은 대기함 위 알림 — 사용자 결정).
+  - 여러 프로젝트 청구서 = `invoices.project_id` NULL. 청구서↔프로젝트는 **라인에서 파생**(`listInvoicesForProject`·`projectsForInvoice`·목록의 '여러 프로젝트 (N)'). 프로젝트 할인 합계는 `invoiceDiscountByProject` — 라인 금액 비례 배분(한 프로젝트 청구서는 종전과 같은 값).
+  - 라인 순서 `ITEM_ORDER_SQL` = 세션(날짜) → 작업(등록) → 자유 줄(날짜). 발행 초안(`buildInvoiceDraft`)도 같은 순서. 같은 날짜 세션은 시작 시간을 붙여 구분(2026-08-22 규칙 유지).
+  - 운영 백업(10/13) 비교: 청구서 132건·라인·프로젝트별 청구서·매출 5종·외주 정산 **일치**. 차이는 미청구 항목의 예상 금액(세션 11개·작업 2개 프로젝트 → 0)뿐 — 의도된 변화.
+  - ⚠️ 로컬 미리보기 창(Claude 앱)은 서버 포트를 초당 3회꼴로 두드려 **전역 요청 제한(15분 600회)을 몇 분 만에 소진**한다(ERP 문제 아님 — 운영엔 미리보기 창이 없다). 로컬 확인 중 429가 나면 서버 재시작으로 카운터를 비운다.
 
 ## 현재 상태 — v1.0 (2026-07-01)
 

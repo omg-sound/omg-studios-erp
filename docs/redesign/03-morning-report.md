@@ -21,3 +21,9 @@
 - 자유 줄 날짜는 텍스트 입력("10/3") — dateCombo로 바꾸면 더 낫다
 - 4단계 정리 대상: rate_items·rate_categories·session_segments·project_tracks 테이블과 관련 데이터 함수·설정 POST 라우트, task_types.unit_price·billing_type, sessions.rate_item_id, 세션 폼 JS의 무동작 분기(swapRateOptions·syncTypeScoped), 테스트의 project_tracks 시드
 - 로컬 개발 DB(data/app.db)가 스모크 로드 중 2단계 마이그레이션을 받음(테스트 데이터, 영향 없음)
+
+## 아침 후속 (2026-10-13)
+- 브라우저 확인 완료: 여러 프로젝트 청구서 발행(상세에 두 프로젝트·라인 순서·금액), 발행본·미리보기 PDF 생성, 모바일 대기함·작성 화면.
+- 모바일 작성 화면의 줄 배치(날짜 한 줄 위), 할인 0원 줄 노출(함정 #26) 수정.
+- 운영 백업 비교 완료 — 청구서·매출·외주 정산 일치, 예상 금액만 의도대로 변화.
+- 로컬 429는 미리보기 창의 포트 폴링 때문(ERP 무관).
