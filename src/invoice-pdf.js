@@ -40,6 +40,25 @@ function truncate(s, n) {
 }
 
 /**
+ * 공급자 주소를 최대 두 줄로. 40자가 넘으면 **쉼표 뒤**에서 나눈다(한 줄 최대 54자 — 공급자 칸 폭)
+ * ("…15길 27-3, 지하1층 B101호 …" → 도로명 / 상세 주소). 쉼표가 없으면 54자 안의 마지막 공백에서.
+ * 두 줄로도 넘치면 둘째 줄만 말줄임(공급자 칸 아래 청구처 박스와 겹치지 않게).
+ */
+const ADDRESS_LINE_MAX = 54;
+const ADDRESS_WRAP_AT = 40; // 이보다 길면 두 줄(도로명 / 상세) — 한 줄 한계(54자) 근처에서 호수·동이 잘리던 주소(2026-10-13)
+function addressLines(addr) {
+  const a = String(addr || "").replace(/\s+/g, " ").trim();
+  if (!a) return [];
+  if (a.length <= ADDRESS_WRAP_AT) return [a];
+  const comma = a.indexOf(", ");
+  let cut = comma > 0 && comma <= ADDRESS_LINE_MAX ? comma : a.lastIndexOf(" ", ADDRESS_LINE_MAX);
+  if (cut <= 0) cut = ADDRESS_LINE_MAX;
+  const first = a.slice(0, cut).replace(/,\s*$/, "").trim();
+  const rest = a.slice(cut).replace(/^,?\s*/, "").trim();
+  return [first, truncate(rest, ADDRESS_LINE_MAX)].filter(Boolean);
+}
+
+/**
  * 문서 색(2026-07-30 — 앱 톤 통일). 옛 값은 크림·클레이 시절의 **따뜻한** 회색·베이지였는데, 앱이 흰 바탕·
  * 중립 회색·파랑으로 정리되며 고객에게 나가는 이 문서만 옛 정체성으로 남아 있었다. 역할별로 이름을 붙여
  * 한곳에 모았다(다음 톤 조정은 이 객체만 고치면 된다).
@@ -152,7 +171,7 @@ function drawPages(doc, { studio, client, invoice, items, logo, docType }) {
         p.text(M, 210, studio.studio_biz_name || "공급자", { size: 27, weight: 700 });
         let hy = 250;
         const supplierLines = [
-          studio.studio_address,
+          ...addressLines(studio.studio_address), // 길면 두 줄(2026-10-13 사용자 요청 — 한 줄이면 호수·동이 잘렸다)
           studio.studio_tel,
           studio.studio_biz_no ? `사업자등록번호 : ${studio.studio_biz_no}` : "",
           studio.studio_owner_name ? `대표 : ${studio.studio_owner_name}` : "",
@@ -293,4 +312,5 @@ function renderInvoicePdf(data) {
   });
 }
 
-module.exports = { renderInvoicePdf };
+module.exports = {
+  addressLines, renderInvoicePdf };

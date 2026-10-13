@@ -90,3 +90,15 @@ test("renderInvoicePdf: 할인 있는 청구서(과세표준 분기)도 생성�
   });
   assert.equal(buf.slice(0, 5).toString("latin1"), "%PDF-");
 });
+
+// ── 공급자 주소 두 줄(2026-10-13 사용자 요청 — 한 줄이면 호수·동이 잘렸다) ──
+test("addressLines: 40자 넘으면 쉼표 뒤에서 두 줄, 짧으면 한 줄, 쉼표 없으면 공백에서", () => {
+  const { addressLines } = require("../src/invoice-pdf");
+  assert.deepEqual(addressLines("서울특별시 용산구 이태원로 15길 27-3, 지하1층 B101호 및 지하2층 B201호(이태원동)"),
+    ["서울특별시 용산구 이태원로 15길 27-3", "지하1층 B101호 및 지하2층 B201호(이태원동)"]);
+  assert.deepEqual(addressLines("서울시 용산구 짧은 주소 1"), ["서울시 용산구 짧은 주소 1"]);
+  assert.deepEqual(addressLines(""), []);
+  const noComma = addressLines("쉼표없는아주긴주소 서울특별시 용산구 이태원로 15길 27-3 지하1층 B101호 및 지하2층 B201호 이태원동");
+  assert.equal(noComma.length, 2);
+  assert.ok(noComma.every((l) => l.length <= 54), "각 줄은 공급자 칸 폭(54자) 안");
+});
