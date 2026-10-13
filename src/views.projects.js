@@ -28,7 +28,6 @@ const {
   listProjectManagers,
   activeTaskTypes,
   taskTypeLabel,
-  taskTypeUnitPrice,
   payerDocMeta,
   peekInvoiceNumber,
   listGroupsForPicker,

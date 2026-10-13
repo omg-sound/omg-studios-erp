@@ -72,7 +72,7 @@ test("세션 탭 PM 표기도 비활성 PM의 이름을 보여준다(정보 탭�
 const { tracksSection } = require("../src/views.projects");
 const { sessionBookingFields } = require("../src/views.sessions");
 const { bookingDefaultsSection } = require("../src/views.settings");
-const { listTaskGroupsForProject, listRateItems, listRooms } = require("../src/data");
+const { listTaskGroupsForProject, listRooms } = require("../src/data");
 const USER = { id: 1, role: "chief" };
 const selNamed = (html, name) => (html.match(new RegExp(`<select[^>]*name="${name}"[\\s\\S]*?</select>`)) || [""])[0];
 
@@ -92,7 +92,7 @@ test("세션 담당 엔지니어: 비활성 담당자 배정이 보존된다(PAY
   const sess = D.prepare("INSERT INTO sessions (project_id, session_type, session_date, status, start_time, end_time) VALUES (?, '녹음', '2099-01-01', '예정', '14:00', '18:00')").run(projId).lastInsertRowid;
   D.prepare("INSERT INTO session_engineers (session_id, manager_id) VALUES (?, ?)").run(sess, goneId);
   const s = D.prepare("SELECT * FROM sessions WHERE id = ?").get(sess);
-  const html = sessionBookingFields(s, listProjectManagers(), listRateItems(), listRooms());
+  const html = sessionBookingFields(s, listProjectManagers(), listRooms());
   assert.match(html, new RegExp(`<option value="${goneId}" selected[^>]*>퇴사엔지 \\(목록에 없음\\)`));
 });
 
@@ -105,7 +105,6 @@ test("예약 기본값: 비활성 담당자 설정이 보존된다(설정 저장
 test("과잉 보존 방지: 값이 목록에 있거나 비어 있으면 보존 옵션을 만들지 않는다", () => {
   const s = D.prepare("INSERT INTO sessions (project_id, session_type, session_date, status) VALUES (?, '녹음', '2099-03-03', '예정')").run(projId).lastInsertRowid;
   const row = D.prepare("SELECT * FROM sessions WHERE id = ?").get(s);
-  const html = sessionBookingFields(row, listProjectManagers(), listRateItems(), listRooms());
-  assert.ok(!/목록에 없음|사용 안 함/.test(selNamed(html, "rate_item_id")), "단가 미지정 세션");
+  const html = sessionBookingFields(row, listProjectManagers(), listRooms());
   assert.ok(!/목록에 없음/.test(selNamed(html, "engineer_ids")), "엔지니어 미배정 세션");
 });

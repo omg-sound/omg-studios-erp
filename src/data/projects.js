@@ -5,7 +5,6 @@
  * data.js에서 분리한 모듈(도메인 모듈화). data.js가 재export하므로 소비자 무변경.
  *
  * (세션 예상액은 확정액만 — 단가표 산정은 개편 3단계에서 제거.)
- * rate-items는 projects를 호출하지 않으므로(무순환) ./rate-items를 직접 require한다.
  * sessionAmountsByProject는 내부 헬퍼(공개 API 미노출). getProjectForUser는 다수 도메인이 공유.
  */
 

@@ -11,7 +11,6 @@ const {
   listProjects,
   getProjectForUser,
   listProjectManagers,
-  listRateItems,
   listRooms,
   createSession,
   createTasks,
@@ -73,7 +72,6 @@ function renderForm(req, res, { type, project = null, title = "", values = {}, r
     dupRows,
     error,
     managers: listProjectManagers(),
-    rateItems: listRateItems(),
     rooms: listRooms({ bookableOnly: true }),
     defaultBooker: (req.user && req.user.name) || "",
   });

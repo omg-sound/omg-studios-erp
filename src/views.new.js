@@ -115,7 +115,7 @@ function taskFields({ values, managers, projectInfoHtml, projectSummary }) {
  * @param {Array} [o.dupRows] 같은 이름 후보(서버 안전망 경로)
  * @param {string} [o.error]
  */
-function newPage({ type, project, title = "", values = {}, ret = "", dupRows = [], error = "", managers = [], rateItems = [], rooms, defaultBooker = "" }) {
+function newPage({ type, project, title = "", values = {}, ret = "", dupRows = [], error = "", managers = [], rooms, defaultBooker = "" }) {
   const optionsRef = "pc-shared-contacts";
   const sharedOpts = personComboOptionsScript(optionsRef, contactOptions()) + personComboCompanyScript("pc-company-shared", partyOptions({ role: "company" }));
   const projectInfoHtml = projectInfoFields(project || values, { existing: !!project, optionsRef });
@@ -129,7 +129,7 @@ function newPage({ type, project, title = "", values = {}, ret = "", dupRows = [
     ? taskFields({ values, managers, projectInfoHtml, projectSummary })
     : sessionBookingFields(
         { session_date: values.session_date || todayYmd(), start_time: values.start_time, end_time: values.end_time, end_date: values.end_date, all_day: values.all_day === "1" ? 1 : 0, session_type: values.session_type, room_id: values.room_id ? Number(values.room_id) : undefined, booker_name: values.booker_name, memo: values.memo },
-        managers, rateItems, rooms, defaultBooker, "", optionsRef,
+        managers, rooms, defaultBooker, "", optionsRef,
         { projectInfoHtml, projectSummary },
       );
   return `

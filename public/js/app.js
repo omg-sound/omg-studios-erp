@@ -595,7 +595,6 @@ function sortCellValue(cell) {
 
   function initSessionForm(form) {
   var dateInput = form.querySelector("[data-session-date]");
-  var rateSel = null; // 단가 항목 칸은 개편 3단계에서 삭제 — 1Pro 기준은 예약 기본값의 기본 세션 시간(proDefaultMinutes)
   var startInput = form.querySelector("[data-start-input]"); // 구글식 시작 시간 타이핑 박스(name=start_time, 2026-07-04 그리드 폐지)
   var endInput = form.querySelector("[data-end-input]"); // 종료 시간 박스(name=end_time) — 슬라이더와 양방향 동기
   var endDate = form.querySelector("[data-end-date]"); // 종료 날짜(자동 표시 — 자정 넘김이면 +1일, 저장 필드 아님)
@@ -609,13 +608,6 @@ function sortCellValue(cell) {
   var roomSel = form.querySelector('select[name="room_id"]');
   var externalLoc = form.querySelector("[data-external-loc]"); // 외부 장소 주소 입력(장소=외부일 때만 노출)
   var showWhenRec = form.querySelectorAll('[data-show-when="rec"]');
-  // (세션 종류별 노출/숨김 — 촬영 구간용이었고 개편 3단계에서 삭제)
-  // data-show-when-type 요소는 보이고 data-hide-when-type 요소는 숨는다(반대로도).
-  // 촬영 구간(반입·설치/촬영/철수) 입력은 개편 3단계에서 삭제(운영 사용 0건) — 관련 분기는 빈 값으로 무동작.
-  var showWhenType = [];
-  var hideWhenType = [];
-  var segBlock = null;
-  var segTimes = [];
   var conflictWarn = form.querySelector("[data-conflict-warn]");
   var overrideField = form.querySelector("[data-override-conflict]");
   var SLIDER_MAX = slider ? parseInt(slider.max, 10) || 960 : 960;
@@ -623,24 +615,17 @@ function sortCellValue(cell) {
 
   var durGroup = form.querySelector("[data-duration-group]");
   function pad(n) { return (n < 10 ? "0" : "") + n; }
-  // 대관(단가 청구) 세션 판정 — 세션 종류 select의 data-rec-types(예: "녹음,촬영") 참조. 녹음 단가 필드·프리셋 노출 기준.
+  // 대관 세션 판정 — 세션 종류 select의 data-rec-types(예: "녹음,촬영 대관") 참조. 1Pro 프리셋 노출 기준.
   function isRecType() {
     if (!sessionTypeSel) return false;
     var raw = sessionTypeSel.getAttribute("data-rec-types") || "녹음";
     return raw.split(",").indexOf(sessionTypeSel.value) !== -1;
   }
-  // 1Pro/2Pro 버튼 기준시간 = 녹음 단가 항목 기준시간(rateSel data-minutes). 버튼은 녹음일 때만 노출.
-  function baseMinutes() {
-    if (!rateSel) return 0;
-    var o = rateSel.options[rateSel.selectedIndex];
-    return o ? parseInt(o.getAttribute("data-minutes"), 10) || 0 : 0;
-  }
-  // 비녹음(믹싱 등) 슬라이더 기본 소요시간(분) — 스튜디오 설정(data-pro-default).
+  // 1Pro 기준시간(분) = 예약 기본값의 기본 세션 시간(data-pro-default).
   function proDefaultMinutes() { return durGroup ? parseInt(durGroup.getAttribute("data-pro-default"), 10) || 0 : 0; }
-  // 세션 종류별 슬라이더 기본값: 녹음=1Pro(녹음 단가 기준시간), 그 외=기본 세션 시간. 사용자가 조정해 쓴다.
+  // 슬라이더 기본값 = 1Pro(기본 세션 시간). 사용자가 조정해 쓴다.
   function applyTypeDefault() {
-    // 1Pro 기본: 단가 기준시간 우선, 없으면(미지정 포함) 스튜디오 기본 블록 — 프리셋과 동일 폴백(새 작성 종료 프리필의 기준).
-    var def = baseMinutes() || proDefaultMinutes();
+    var def = proDefaultMinutes();
     if (def > 0) setDuration(def);
   }
   function currentStart() { return startInput ? startInput.value : ""; }
@@ -693,34 +678,10 @@ function sortCellValue(cell) {
     var h = parseInt(p[0], 10), m = parseInt(p[1], 10);
     return isNaN(h) || isNaN(m) ? null : h * 60 + m;
   }
-  // 촬영 구간이 보이는 상태면 점유 시간을 **구간 span**에서 계산한다(서버 sessionFields와 같은 규칙).
-  // 이걸 안 하면 겹침 경고가 숨겨진 시작/소요 칸의 옛 값을 보게 되고, 그 순간 '경고 조건 ≡ 차단 조건'
-  // 불변식이 깨진다(경고에 길들여진 사용자가 승인을 눌러 진짜 이중 예약이 통과하던 2026-07-23 결함과 같은 클래스).
-  function segSpanMin() {
-    if (!segBlock || segBlock.hidden || !segTimes.length) return null;
-    var first = null, last = null, cursor = null;
-    for (var i = 0; i < segTimes.length; i += 2) {
-      var st = toMin(segTimes[i].value), en = toMin(segTimes[i + 1] ? segTimes[i + 1].value : "");
-      if (st == null || en == null) continue;
-      if (first == null) { first = st; cursor = st; last = st; }
-      while (st < cursor) st += 1440; // 앞 구간보다 이르면 다음 날로
-      while (en <= st) en += 1440;
-      cursor = st;
-      if (en > last) last = en;
-    }
-    return first == null ? null : { start: first, end: last };
-  }
   // 선택한 시작+소요가 그 룸의 점유 구간과 겹치면 그 구간을 반환(없으면 null).
   // busy = 서버 busySessionRanges 결과([{start,end,label}] — 기준일 자정 절대 분축, 전날 야간분은 start 음수).
   // 서버의 겹침 차단과 같은 데이터·같은 반열린 비교라 경고와 차단이 어긋나지 않는다(2026-07-23).
   function overlapDetected() {
-    var span = segSpanMin();
-    if (span) {
-      for (var k = 0; k < busy.length; k++) {
-        if (span.start < busy[k].end && busy[k].start < span.end) return busy[k];
-      }
-      return null;
-    }
     var sMin = toMin(currentStart());
     if (sMin == null) return null;
     var dur = durationMinutes();
@@ -737,38 +698,24 @@ function sortCellValue(cell) {
     if (hit && hit.label) conflictWarn.textContent = "⚠ 같은 룸에 예약이 있습니다 — " + hit.label; // 어느 세션인지 명시
   }
 
-  // 세션 종류에 맞춰 단가 select 옵션을 녹음/촬영 템플릿으로 교체 — 촬영 고르면 촬영 단가만 보이게.
-  function swapRateOptions() { /* 단가 항목 칸 삭제(개편 3단계) — 교체할 옵션이 없다 */ }
-  // 대관 세션(녹음·촬영)일 때만 [data-show-when="rec"] 요소 표시 + 종류에 맞는 단가 옵션으로 교체.
+  // 대관 세션일 때만 [data-show-when="rec"] 요소(1Pro 프리셋) 표시.
   function syncRecFields() {
-    swapRateOptions();
     var isRec = isRecType();
     Array.prototype.forEach.call(showWhenRec, function (el) { el.hidden = !isRec; });
-    syncTypeScoped();
   }
-  // ⚠️`hidden` 속성만으로는 안 숨는다 — 시작·종료 줄이 `class="flex …"`라 [hidden]{display:none}이 Tailwind
-  //   display 유틸에 밀린다(함정 #26). 그래서 인라인 display도 함께 세팅한다. **hidden 속성은 유지**한다 —
-  //   segSpanMin()·applyAllDay 등이 `el.hidden`으로 상태를 읽으므로 지우면 그쪽 판정이 깨진다.
-  function setTypeHidden(el, on) {
-    el.hidden = on;
-    el.style.display = on ? "none" : "";
-  }
-  function syncTypeScoped() { /* 촬영 구간 입력 삭제(개편 3단계) — 종류별로 켜고 끌 요소가 없다 */ }
-
-  // 1Pro~4Pro 프리셋: 녹음 단가 기준시간이 있으면 그걸, 없으면 스튜디오 기본 블록(proDefault)을 기준으로 항상 활성.
-  // positionTicks도 같은 폴백으로 위치를 잡으므로 일관. 세션 종류·룸 예약과 무관하게 프리셋 클릭 가능(사용자 요청).
+  // 1Pro~4Pro 프리셋: 기본 세션 시간(proDefault)이 기준. 세션 종류·룸 예약과 무관하게 프리셋 클릭 가능(사용자 요청).
   function updateProAvailability() {
-    var base = baseMinutes() || proDefaultMinutes();
+    var base = proDefaultMinutes();
     var off = !!(allDay && allDay.checked); // 종일이면 소요 개념이 없다 — 프리셋도 함께 잠근다.
     Array.prototype.forEach.call(presets, function (b) { b.disabled = off || base <= 0; });
     positionTicks();
   }
-  // Pro 눈금을 슬라이더 값 위치에 맞춰 재배치: 1Pro=기준시간, 2Pro=×2…(기준=녹음 단가 기준시간, 없으면 스튜디오 기본).
+  // Pro 눈금을 슬라이더 값 위치에 맞춰 재배치: 1Pro=기본 세션 시간, 2Pro=×2….
   // 양 끝(0%/100%)은 잘리지 않게 정렬 기준(translateX)을 바꾼다. 서버 초기 렌더와 동일 규칙.
   function positionTicks() {
     // 모바일(<640px): 절대배치 안 함 — 인라인 위치 제거하고 정적 흐름(flex)으로 앞에서부터 정렬(사용자 요청).
     var desktop = !window.matchMedia || window.matchMedia("(min-width: 640px)").matches;
-    var base = baseMinutes() || proDefaultMinutes();
+    var base = proDefaultMinutes();
     Array.prototype.forEach.call(presets, function (b) {
       if (!desktop) { b.style.left = ""; b.style.transform = ""; return; }
       if (!(base > 0)) return;
@@ -829,8 +776,6 @@ function sortCellValue(cell) {
     var opt = roomSel.options[roomSel.selectedIndex];
     externalLoc.hidden = !(opt && opt.getAttribute("data-external") === "1");
   }
-  // 구간 시각을 고치면 점유 span이 바뀌므로 경고를 다시 판정한다(hidden 값은 app.js가 세팅하므로 input으로 잡는다).
-  if (segBlock) segBlock.addEventListener("input", function () { updateConflictWarn(); });
   if (roomSel) roomSel.addEventListener("change", syncExternalLoc);
   syncExternalLoc();
   if (dateInput) dateInput.addEventListener("change", function () { refreshAvailability(); updatePreview(); });
@@ -845,9 +790,7 @@ function sortCellValue(cell) {
     else updatePreview(); // 표현 불가(0 이하·24h 이상) → canonical로 되돌림
   });
   if (roomSel) roomSel.addEventListener("change", refreshAvailability); // 룸 변경 시 해당 룸 기준으로 가용성 재조회(날짜 변경과 동일)
-  // 단가 항목 선택은 소요시간을 바꾸지 않는다(시간 흐름 우선·사용자 요청 2026-07-05). 1Pro는 프리셋 버튼으로 수동 적용.
-  if (rateSel) rateSel.addEventListener("change", function () { updateProAvailability(); updatePreview(); }); // Pro 눈금 위치만 갱신
-  // 세션 종류 변경: 단가 옵션/버튼 노출 갱신. 소요는 이미 잡혀 있으면(사용자 시간 흐름) 건드리지 않고, 미설정일 때만 기본값 채움.
+  // 세션 종류 변경: 프리셋 노출 갱신. 소요는 이미 잡혀 있으면(사용자 시간 흐름) 건드리지 않고, 미설정일 때만 기본값 채움.
   if (sessionTypeSel) sessionTypeSel.addEventListener("change", function () { syncRecFields(); updateProAvailability(); if (durationMinutes() === 0) applyTypeDefault(); });
   // 슬라이더 드래그(30분 단위) → curDur.
   if (slider) slider.addEventListener("input", function () { setDuration(parseInt(slider.value, 10) || 0); });
@@ -857,7 +800,7 @@ function sortCellValue(cell) {
   // change를 쏴 동기화(<form> 자체엔 .form 프로퍼티가 없어 recOf가 못 찾으므로 폼이 아니라 필드에 쏜다).
   Array.prototype.forEach.call(presets, function (b) {
     b.addEventListener("click", function () {
-      var base = baseMinutes() || proDefaultMinutes(); // 단가 없으면 스튜디오 기본 블록 기준(녹음이면 단가 기준시간)
+      var base = proDefaultMinutes();
       if (base <= 0) return;
       var mult = parseInt(String(b.getAttribute("data-duration-preset") || "pro1").replace("pro", ""), 10) || 1;
       setDuration(base * mult);
@@ -948,9 +891,6 @@ function sortCellValue(cell) {
       }
     });
   });
-  // 촬영 구간 시각도 같은 처리를 붙인다 — **필수**: 보이는 입력은 nameless라 attachTimeFormat의
-  // syncTimeHidden이 없으면 제출용 hidden이 비어 구간이 저장되지 않는다(콜론 자동 포맷도 함께 얻는다).
-  Array.prototype.forEach.call(segTimes, function (el) { attachTimeFormat(el); });
   attachTimeFormat(startInput); // 시작 변경 → 소요 유지, 종료 자동 재계산(updatePreview)
   // 종료 입력 → 소요 역산(자정 넘김 = 종료<시작이면 +24h). 슬라이더·직접입력과 양방향 동기.
   attachTimeFormat(endInput, function () {
@@ -966,12 +906,10 @@ function sortCellValue(cell) {
   function applyAllDay(on) {
     // 종일이면 시간(콤보)은 숨기고 소요 블록은 **비활성**으로 둔다(2026-07-29 사용자 요청 — 라벨이 '종일'로
     // 바뀌어 맥락이 남고, 만질 수 없으니 서버가 시간을 무시한다는 사실과 화면이 일치한다).
-    // ⚠️예전엔 durationWrap을 hidden으로 감췄는데 **세션 종류 판정(syncTypeScoped)이 같은 요소의 hidden을
-    // 각자 세팅**해, 초기화에서 나중에 도는 종류 쪽이 덮어써 종일 세션을 열면 슬라이더가 그대로 보였다
-    // (실제 발생). disabled는 그쪽과 속성이 겹치지 않아 소유권 충돌이 없다.
+    // ⚠️durationWrap을 hidden으로 감추지 않는다 — 예전에 세션 종류 판정이 같은 요소의 hidden을 덮어써
+    // 종일 세션을 열면 슬라이더가 그대로 보였다(실제 발생). disabled는 속성이 겹치지 않는다.
     // 날짜 2개(시작·종료)는 남긴다 — 다일 종일(예: 2/5~2/9)을 지정할 수 있어야 하므로.
     Array.prototype.forEach.call(form.querySelectorAll("[data-time-combo]"), function (w) { w.hidden = on; });
-    if (segBlock && on) segBlock.hidden = true; // 종일엔 구간이 성립하지 않는다(서버도 종일이면 구간을 지운다). 해제 시 syncTypeScoped가 종류로 다시 판정.
     syncDurationEnabled();
     if (durLabel) durLabel.textContent = on ? "종일" : fmtDuration(curDur);
     if (on) updateConflictWarn(); // 시간 없음 → 겹침 경고 해제
@@ -983,7 +921,7 @@ function sortCellValue(cell) {
     if (durationWrap) durationWrap.classList.toggle("opacity-50", off);
     updateProAvailability();
   }
-  if (allDay) allDay.addEventListener("change", function () { applyAllDay(allDay.checked); if (!allDay.checked) syncTypeScoped(); });
+  if (allDay) allDay.addEventListener("change", function () { applyAllDay(allDay.checked); });
   // 편집 진입 시 서버가 체크(all_day 세션)해 뒀으면 UI 반영.
   if (allDay && allDay.checked) applyAllDay(true);
   // 겹침이 감지되면 제출 직전 확인 → 승인 시 override_conflict=1로 그대로 등록(서버가 겹침 허용). 취소면 제출 중단.
@@ -1045,8 +983,8 @@ function sortCellValue(cell) {
 // 금액 입력 천단위 콤마: 표시용 콤마 + 제출 시 순수 숫자 복원(서버는 정수 '원'). 표시 텍스트는 formatKRW가 담당.
 (function () {
   "use strict";
-  // 천단위 콤마 대상 금액칸: 청구 총액·입금·할인, 단가표, 외주 지급단가, 작업·세션별 청구 금액(task_amount_<id>·session_amount_<id> 동적 name).
-  var MONEY = /^(unit_price|base_price|extra_price|amount|paid_amount|discount_amount|worker_rate|engineer_rates|purchase_price|line_amount|task_amount_\d+|session_amount_\d+|unit_price_\d+|base_price_\d+|extra_price_\d+)$/; // line_amount = 청구서 작성 줄(개편 3단계)
+  // 천단위 콤마 대상 금액칸: 청구 총액·입금·할인, 작업 금액(unit_price), 외주 지급단가, 장비 매입가, 청구서 작성 줄.
+  var MONEY = /^(unit_price|amount|paid_amount|discount_amount|worker_rate|engineer_rates|purchase_price|line_amount)$/; // line_amount = 청구서 작성 줄(개편 3단계)
   function fmt(v) {
     var d = String(v == null ? "" : v).replace(/[^\d]/g, "");
     return d ? Number(d).toLocaleString("en-US") : "";

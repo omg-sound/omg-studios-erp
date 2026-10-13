@@ -20,8 +20,6 @@ const revenue = require("./data/revenue"); // 매출 집계
 const deliverables = require("./data/deliverables"); // 자료 전달
 const rooms = require("./data/rooms"); // 룸
 const equipment = require("./data/equipment"); // 장비 대장(보유 자산 목록)
-const rateItems = require("./data/rate-items"); // 단가표
-const rateCategories = require("./data/rate-categories"); // 단가표 분류(2026-07-05 — DB 기반 커스텀 분류)
 const taskTypes = require("./data/task-types"); // 작업 종류 카탈로그(모듈 캐시 포함)
 const parties = require("./data/parties"); // 당사자(사람·조직·그룹) 통합 마스터 — clients/contacts 대체
 const projects = require("./data/projects"); // 프로젝트
@@ -34,7 +32,7 @@ const workerSummary = require("./data/worker-summary"); // 외주 정산 요약(
 const search = require("./data/search"); // 전역 통합 검색 집계(searchAll)
 
 // 작업 종류 카탈로그: 공개 API는 아래 함수만 재export(normalizeTaskTypeDb는 내부전용이므로 spread하지 않고 명시 나열).
-const { listTaskTypes, activeTaskTypes, taskTypeLabel, taskTypeUnitPrice, createTaskType, updateTaskType, bulkUpdateTaskTypes, moveTaskType, deleteTaskType } = taskTypes;
+const { listTaskTypes, activeTaskTypes, taskTypeLabel, createTaskType, updateTaskType, bulkUpdateTaskTypes, moveTaskType, deleteTaskType } = taskTypes;
 
 module.exports = {
   ...parties, // src/data/parties.js — 당사자 통합(사람/조직/아티스트/담당자연동)
@@ -42,12 +40,9 @@ module.exports = {
   ...search, // src/data/search.js — 전역 통합 검색(searchAll)
   ...rooms, // src/data/rooms.js
   ...equipment, // src/data/equipment.js — 장비 대장
-  ...rateItems, // src/data/rate-items.js
-  ...rateCategories, // src/data/rate-categories.js
   listTaskTypes, // src/data/task-types.js (normalizeTaskTypeDb 내부전용 제외)
   activeTaskTypes,
   taskTypeLabel,
-  taskTypeUnitPrice,
   createTaskType,
   updateTaskType,
   bulkUpdateTaskTypes,

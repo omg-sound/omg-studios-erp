@@ -4,8 +4,6 @@ const express = require("express");
 const { requireAuth, requireEditor, canEdit } = require("../auth");
 const {
   listProjectManagers,
-  listRateItems,
-  getRateItem,
   listRooms,
   upcomingSessions,
   pastSessions,
@@ -24,11 +22,10 @@ const {
   sessionAttendeeEmails,
   listSessionDirectors,
   listSessionEngineers,
-  listSessionSegments,
   contactOptions,
   partyOptions,
 } = require("../data");
-const { config, RENTAL_SESSION_TYPES, SESSION_SEGMENT_LABELS } = require("../config");
+const { config } = require("../config");
 const { layout, pageHeader, esc, flashBanner, errorPage, emptyState, tabBar, searchBox, personLabel, personComboOptionsScript, personComboCompanyScript } = require("../views");
 const { sessionProjectCard, monthCalendar, sessionCardModal } = require("../views.sessions");
 const { safePath } = require("../lib/nav");
@@ -41,21 +38,10 @@ const calendar = require("../calendar");
 const router = express.Router();
 
 /** 세션+프로젝트 → 구글 캘린더 일정 입력(제목=제작사·아티스트, 제작사 없으면 레이블(소속사)·아티스트, 장소=관리 기본값). */
-/**
- * 캘린더 이벤트 '종류' 표기 — 녹음이면 녹음 단가 항목명(예: '녹음 · 보컬녹음'),
- * 그 외 세션 종류는 '{종류} 세션'(믹싱 세션·마스터링 세션 등). 사용자 요청.
- */
+/** 캘린더 이벤트 '종류' 표기 — '{종류} 세션'(믹싱만 '믹스 세션'). 사용자 요청. */
 function sessionTypeLabel(session) {
   const t = session.session_type;
   if (!t) return "";
-  if (RENTAL_SESSION_TYPES.includes(t)) { // 녹음·촬영 대관·작업 대관·공연 = 시간제 대관 매출 → 단가 항목명 병기
-    const ri = session.rate_item_id ? getRateItem(session.rate_item_id) : null;
-    if (!ri || !ri.name) return `${t} 세션`;
-    // ⚠️이름이 겹치면 종류를 떼고 항목명만 쓴다 — '촬영 대관 · 촬영 대관'·'녹음 · 솔로 녹음'처럼 같은 말이
-    // 두 번 나오던 것(2026-07-30 종류 개명으로 눈에 띔). 항목명이 이미 무엇인지 말하므로 그것만으로 충분하다.
-    const dup = ri.name.includes(t) || t.includes(ri.name);
-    return dup ? ri.name : `${t} · ${ri.name}`;
-  }
   if (t === "믹싱") return "믹스 세션"; // 사용자 표기 선호(믹싱 → 믹스)
   return `${t} 세션`;
 }
@@ -81,16 +67,9 @@ function eventInputForSession(session, project) {
   const directors = session.id ? listSessionDirectors(session.id).map((d) => personLabel(d.name, d.activity_name)).filter(Boolean) : [];
   // 담당 엔지니어(다대다, 2026-07-05) — 배정된 전원을 콤마로 병기(레거시 engineer_name은 첫 명뿐이라 여러 명일 때 누락됨).
   const engineers = session.id ? listSessionEngineers(session.id).map((e) => e.name).filter(Boolean) : [];
-  // 촬영 구간(2026-07-26): 일정은 **하나**(반입 시작 ~ 철수 종료 전체 점유 — 그 사이 방을 계속 쓰므로)이고,
-  // 구간 내역은 설명에 적는다. 일정을 3개로 쪼개면 gcal_event_id 추적·취소·삭제 경로가 셋으로 늘고
-  // 구간 사이 공백이 '예약 가능'으로 보인다(사용자 결정).
-  const segments = session.id
-    ? listSessionSegments(session.id).map((g) => `${SESSION_SEGMENT_LABELS[g.kind] || g.kind} ${g.start_time}–${g.end_time}`)
-    : [];
   const description = [
     project.title ? `프로젝트: ${project.title}` : "", // 맨 앞에 프로젝트명(2026-07-05 사용자 요청 — 캘린더 공유 시 식별용)
     session.session_type ? `종류: ${sessionTypeLabel(session)}` : "",
-    segments.length ? `구간: ${segments.join(" · ")}` : "",
     session.booker_name ? `예약: ${session.booker_name}` : "",
     engineers.length ? `엔지니어: ${engineers.join(", ")}` : "",
     directors.length ? `디렉터: ${directors.join(", ")}` : "",
@@ -163,7 +142,6 @@ router.get("/sessions", requireAuth, (req, res) => {
     content = monthCalendar(ym, sessionsForCalendar(req.user, ym), { canEdit: editable, openId: Number(req.query.open) || null }); // 앞뒤 달 넘침 포함(구글식). 카드 래퍼 없이 — 그리드 라인으로 화면 끝까지(full)
   } else {
     const managers = editable ? listProjectManagers() : [];
-    const rateItems = editable ? listRateItems() : [];
     const rooms = editable ? listRooms({ bookableOnly: true }) : []; // 예약은 최상위 단위로만(하위 공간·Lounge 제외)
     // 이름/프로젝트 검색(?q=): 조회된 목록을 프로젝트명·예약자·엔지니어·종류·메모로 필터(인메모리, 대소문자 무시).
     const q = String(req.query.q || "").trim();
@@ -205,7 +183,7 @@ router.get("/sessions", requireAuth, (req, res) => {
     const optionsRef = editable && activeSess.length ? "pc-shared-contacts" : "";
     const sharedOpts = optionsRef ? personComboOptionsScript(optionsRef, contactOptions()) + personComboCompanyScript("pc-company-shared", partyOptions({ role: "company" })) : "";
     const listHtml = activeSess.length
-      ? `${sharedOpts}<div class="space-y-3">${groups.map((g) => sessionProjectCard(g, { isAdmin: editable, managers, rateItems, rooms, optionsRef })).join("")}</div>`
+      ? `${sharedOpts}<div class="space-y-3">${groups.map((g) => sessionProjectCard(g, { isAdmin: editable, managers, rooms, optionsRef })).join("")}</div>`
       : emptyState(
           stab === "past" ? "지난 세션이 없습니다." : q ? "검색 결과가 없습니다." : "다가오는 세션이 없습니다. ‘+ 새로 만들기’로 예약하세요.",
           { card: true }

@@ -11,17 +11,6 @@ const {
   moveRoom,
   deleteRoom,
   bulkUpdateRooms,
-  createRateItem,
-  updateRateItem,
-  setRateItemActive,
-  moveRateItem,
-  deleteRateItem,
-  bulkUpdateRateItems,
-  createRateCategory,
-  updateRateCategory,
-  bulkUpdateRateCategories,
-  moveRateCategory,
-  deleteRateCategory,
   createTaskType,
   updateTaskType,
   moveTaskType,
@@ -42,7 +31,6 @@ const {
 const { layout, pageHeader, esc, flashBanner } = require("../views");
 const {
   peopleTab,
-  ratesPane,
   taskTypesPane,
   driveStorageSection,
   studioCalendarSection,
@@ -80,6 +68,7 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
     const q = new URLSearchParams(req.query); q.delete("tab"); q.set("s", TAB_MAP[req.query.tab]);
     return res.redirect(`/settings?${q.toString()}`);
   }
+  if (req.query.s === "rates") return res.redirect("/settings?s=rooms"); // 요금표 화면 삭제(개편 3·4단계) — 옛 북마크
   // cur(그릴 화면)과 hasSelection(모바일에서 메뉴/화면 중 뭘 보일지)은 분리 — ?s= 없으면 데스크톱은
   // 기본 화면(rooms)을 오른쪽에 채우지만, 모바일은 메뉴부터 보여야 한다(연락처·업체의 상세 id 유무와 동일한 판정).
   const hasSelection = !!req.query.s && SETTINGS_KEYS.includes(req.query.s);
@@ -102,10 +91,10 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
   else if (cur === "alerts") pane = alertsSection(chief);
   else pane = systemTab(chief);
 
-  // 읽기 폭 해제는 **여러 열의 인라인 편집 표가 있는 화면만**(장소·요금표·작업 종류) — 그 표는 768px 안에서
+  // 읽기 폭 해제는 **여러 열의 인라인 편집 표가 있는 화면만**(장소·작업 종류) — 그 표는 768px 안에서
   // 열이 잘려 순서·삭제 버튼에 손이 안 닿는다. 나머지는 폼·상태판이라 읽기 폭(max-w-content)이 맞다
   // (전 화면을 열었더니 스튜디오 정보 같은 폼이 화면 끝까지 늘어나 시선이 흩어졌다 — 2026-07-29 사용자 지적).
-  const TABLE_SCREENS = new Set(["rooms", "rates", "tasks"]);
+  const TABLE_SCREENS = new Set(["rooms", "tasks"]);
 
   const left = `<div class="p-2">${settingsMenu(cur, warnCount)}</div>`; // card 없이 여백만 — 연락처·업체 좌측 목록과 같은 평평한 모양(.cl-listwrap .card 평탄화는 그 래퍼 안에서만 적용돼 여기선 안 먹는다)
   const right = `<div class="space-y-3">${flashBanner(req.query)}${pane}</div>`;
@@ -381,98 +370,6 @@ router.post("/users/:id/edit", requireChief, (req, res) => {
     ensurePartyForManager(mgr.id); // 미연결이면 연락처 생성·연결(+성·이름 백필)
   }
   res.redirect("/settings?s=users&flash=saved");
-});
-
-// ── 단가표(과금 항목) 관리 ──
-router.post("/rate-items", requireStaff, (req, res) => {
-  try {
-    createRateItem(req.body);
-  } catch (e) {
-    if (!["RATE_NAME_REQUIRED", "RATE_PRICE_REQUIRED"].includes(e.message)) throw e; // 이름·가격 누락은 조용히 생성 안 함
-  }
-  res.redirect("/settings?s=rates&flash=saved");
-});
-
-// 통합 저장(2026-07-27 인라인 편집) — 섹션 전 행을 한 번에. 행별 검증·건너뜀은 데이터 계층(bulkUpdateRateItems) 규약.
-// 요금표 트리 통합 저장 — 한 폼에 분류 행(cat_name_*/kind_*)과 항목 행(rate_name_* …)이 함께 온다.
-// 각 bulk 함수가 자기 접두의 필드만 보고, 요청에 없는 id는 건너뛴다(화면에 없던 행은 무변경).
-router.post("/rates/bulk", requireStaff, (req, res) => {
-  bulkUpdateRateCategories(req.body);
-  bulkUpdateRateItems(req.body);
-  res.redirect("/settings?s=rates&flash=saved");
-});
-
-router.post("/rate-items/bulk", requireStaff, (req, res) => {
-  bulkUpdateRateItems(req.body);
-  res.redirect("/settings?s=rates&flash=saved");
-});
-
-router.post("/rate-items/:id", requireStaff, (req, res) => {
-  try {
-    updateRateItem(Number(req.params.id), req.body);
-  } catch (e) {
-    if (!["RATE_NAME_REQUIRED", "RATE_PRICE_REQUIRED"].includes(e.message)) throw e; // 이름·가격 누락은 조용히 생성 안 함
-  }
-  res.redirect("/settings?s=rates&flash=saved");
-});
-
-// 표시 순서 이동(같은 분류 안에서 위/아래) — 분류·작업 종류와 같은 ↑↓(2026-07-26, 이전엔 이름순 강제).
-router.post("/rate-items/:id/move", requireStaff, (req, res) => {
-  moveRateItem(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect(`/settings?s=rates#rate-item-${req.params.id}`);
-});
-
-// 활성/비활성 토글(2026-07-26) — active 컬럼은 있었는데 라우트가 없어 한 번 비활성이 되면 되살릴 수 없었다.
-router.post("/rate-items/:id/active", requireStaff, (req, res) => {
-  setRateItemActive(Number(req.params.id), req.body.active === "1");
-  res.redirect(`/settings?s=rates&flash=saved#rate-item-${req.params.id}`);
-});
-
-router.post("/rate-items/:id/delete", requireStaff, (req, res) => {
-  deleteRateItem(Number(req.params.id));
-  res.redirect("/settings?s=rates&flash=deleted");
-});
-
-// ── 단가표 분류 관리(2026-07-05) — 기본 분류는 잠금(locked), 치프가 추가한 분류만 수정·삭제 ──
-router.post("/rate-categories", requireStaff, (req, res) => {
-  try {
-    createRateCategory({ name: req.body.cat_name, kind: req.body.kind });
-  } catch (e) {
-    if (e.message !== "CATEGORY_NAME_REQUIRED") throw e; // 이름 누락은 조용히 생성 안 함
-  }
-  res.redirect("/settings?s=rates&flash=saved");
-});
-
-// 분류 인라인 통합 저장 — ⚠️`/:id`보다 먼저 선언해야 한다(뒤에 두면 :id가 "bulk"를 먹는다).
-router.post("/rate-categories/bulk", requireStaff, (req, res) => {
-  bulkUpdateRateCategories(req.body);
-  res.redirect("/settings?s=rates&flash=saved");
-});
-
-router.post("/rate-categories/:id", requireStaff, (req, res) => {
-  try {
-    updateRateCategory(Number(req.params.id), { name: req.body.cat_name, kind: req.body.kind });
-  } catch (e) {
-    if (e.message === "CATEGORY_NAME_REQUIRED") return res.redirect("/settings?s=rates");
-    throw e;
-  }
-  res.redirect("/settings?s=rates&flash=saved");
-});
-
-// 분류 순서 이동(위/아래) — 정렬 UI(2026-07-09 관리 개선).
-router.post("/rate-categories/:id/move", requireStaff, (req, res) => {
-  moveRateCategory(Number(req.params.id), req.body.dir === "up" ? "up" : "down");
-  res.redirect(`/settings?s=rates#rate-cat-${req.params.id}`);
-});
-
-router.post("/rate-categories/:id/delete", requireStaff, (req, res) => {
-  try {
-    deleteRateCategory(Number(req.params.id));
-  } catch (e) {
-    if (e.message === "CATEGORY_IN_USE") return res.redirect("/settings?s=rates&notice=" + encodeURIComponent("이 분류를 쓰는 단가 항목이 있어 삭제할 수 없습니다. 먼저 그 항목들을 다른 분류로 옮기거나 삭제하세요.") + "&notice_warn=1");
-    throw e;
-  }
-  res.redirect("/settings?s=rates&flash=deleted");
 });
 
 // ── 룸(스튜디오 공간) 관리(추가·수정·순서·삭제) ──

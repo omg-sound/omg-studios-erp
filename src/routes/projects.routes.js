@@ -17,7 +17,6 @@ const {
   deleteProject,
   getParty,
   listProjectManagers,
-  listRateItems,
   listDeliverablesForProject,
   listInvoicesForProject,
   listInvoiceItemsForInvoice,
@@ -313,9 +312,8 @@ function renderProjectDetail(req, res, p, formState = null, err = "") {
     const liveCount = items.filter((i) => !i.waived).length;
     tabContent = invoicesSection({ project: p, rows: invoiceRows, isAdmin: showInvoice, collapsed: false, unbilledForm, unbilledCount: liveCount + (needsPostprodBilling ? 1 : 0), openId: Number(req.query.open) || null });
   } else {
-    const rateItems = editable ? listRateItems() : [];
     const sessionBundle2 = listSessionsForProject(req.user, p.id);
-    tabContent = sessionsSection({ project: p, rows: sessionBundle2 ? sessionBundle2.rows : [], isAdmin: editable, managers, rateItems, defaultBooker: (req.user && req.user.name) || "", openId: Number(req.query.open) || null });
+    tabContent = sessionsSection({ project: p, rows: sessionBundle2 ? sessionBundle2.rows : [], isAdmin: editable, managers, defaultBooker: (req.user && req.user.name) || "", openId: Number(req.query.open) || null });
   }
 
   const errorModal = req.query.error === "session_invoiced" ? sessionInvoicedModal(p.id) : "";

@@ -54,8 +54,7 @@ test("옛 탭 이름이 사용자 노출 문구에 남아 있지 않다", () => 
 const countSaves = (html) => (html.match(/<button[^>]*>[^<]*저장<\/button>/g) || []).length;
 
 test("화면당 값-편집 저장 버튼은 표 하나에 하나", () => {
-  // 요금표만 2 — 한 화면에 독립된 표가 둘(단가 항목 / 접이식 '분류 관리')이고 각자 통합 저장 하나다.
-  const panes = [["장소", V.roomsSection(), 1], ["요금표", V.ratesPane(), 2], ["작업 종류", V.taskTypesPane(), 1],
+  const panes = [["장소", V.roomsSection(), 1], ["작업 종류", V.taskTypesPane(), 1],
     ["예약 기본값", V.bookingDefaultsSection(), 1], ["알림", V.alertsSection(true), 1], ["스튜디오 정보", V.studioInfoSection(), 1]];
   for (const [name, html, max] of panes) {
     assert.ok(countSaves(html) <= max, `${name}: 저장 버튼 ${countSaves(html)}개(${max}개 이하여야 함)`);
@@ -67,13 +66,11 @@ test("화면당 값-편집 저장 버튼은 표 하나에 하나", () => {
 // (기본 분류 잠금을 푼 2026-07-29에 실제로 분류 행마다 저장 버튼이 되살아났었다).
 test("저장 버튼 수는 행 수와 무관하다(행마다 저장 금지)", () => {
   const D = require("../src/data");
-  const before = { rates: countSaves(V.ratesPane()), tasks: countSaves(V.taskTypesPane()), rooms: countSaves(V.roomsSection()) };
-  D.createRateItem({ rate_name: "행수검사 녹음", category: "스튜디오 녹음", base_hours: "1", base_price: "100000" });
-  D.createRateCategory({ name: "행수검사 분류", kind: "recording" });
-  D.createTaskType({ label: "행수검사 작업", billing_type: "Fixed_Per_Track", unit_price: "10000" });
+  const before = { tasks: countSaves(V.taskTypesPane()), rooms: countSaves(V.roomsSection()) };
+  D.createTaskType({ label: "행수검사 작업" });
   D.createRoom({ room_name: "행수검사 룸", bookable: "1" });
   assert.deepStrictEqual(
-    { rates: countSaves(V.ratesPane()), tasks: countSaves(V.taskTypesPane()), rooms: countSaves(V.roomsSection()) },
+    { tasks: countSaves(V.taskTypesPane()), rooms: countSaves(V.roomsSection()) },
     before, "행을 추가해도 저장 버튼 수는 그대로여야 한다");
 });
 
@@ -81,7 +78,7 @@ test("저장 버튼 수는 행 수와 무관하다(행마다 저장 금지)", ()
 // 다른 설정으로 옮기면 경고가 뜬다. 재설계 직후 실측에서 예약 기본값·알림·스튜디오 정보 세 화면이 저장 버튼은
 // 있는데 마커가 없어 둘 다 안 됐다(약속의 절반이 조용히 빠진 상태). 폼·버튼 양쪽 마커를 함께 잠근다.
 test("값-편집 저장 폼은 dirty 패턴(폼 마커 + 저장 버튼 마커)을 쓴다", () => {
-  const panes = { 장소: V.roomsSection(), 요금표: V.ratesPane(), "작업 종류": V.taskTypesPane(), "예약 기본값": V.bookingDefaultsSection(), 알림: V.alertsSection(true), "스튜디오 정보": V.studioInfoSection() };
+  const panes = { 장소: V.roomsSection(), "작업 종류": V.taskTypesPane(), "예약 기본값": V.bookingDefaultsSection(), 알림: V.alertsSection(true), "스튜디오 정보": V.studioInfoSection() };
   for (const [name, html] of Object.entries(panes)) {
     assert.ok(/<button[^>]*data-dirty-save/.test(html), `${name}: 저장 버튼에 data-dirty-save`);
     assert.ok(/<form[^>]*data-dirty-form/.test(html), `${name}: 저장 폼에 data-dirty-form`);
@@ -93,7 +90,7 @@ test("값-편집 저장 폼은 dirty 패턴(폼 마커 + 저장 버튼 마커)�
 // 장소가 그랬고 최종 리뷰가 잡았다). 렌더 결과에 카드가 있는지로 잠근다.
 test("모든 설정 화면이 카드 안에 렌더된다(맨바닥 렌더 방지)", () => {
   const wrapped = (html) => /class="[^"]*\bcard\b/.test(html);
-  const selfCarded = { 요금표: V.ratesPane(), "작업 종류": V.taskTypesPane(), "예약 기본값": V.bookingDefaultsSection(), 알림: V.alertsSection(true) };
+  const selfCarded = { "작업 종류": V.taskTypesPane(), "예약 기본값": V.bookingDefaultsSection(), 알림: V.alertsSection(true) };
   for (const [name, html] of Object.entries(selfCarded)) assert.ok(wrapped(html), `${name}: 스스로 카드를 두른다`);
   // 아래 셋은 라우터가 감싸 준다 — 함수 자체엔 카드가 없다는 사실을 명시적으로 잠가, 나중에 누가 라우터의
   // 래퍼를 지우면 이 테스트가 '왜 감싸야 하는지'를 알려 준다.

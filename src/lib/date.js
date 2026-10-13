@@ -180,7 +180,7 @@ function calendarMonthCells(ym) {
 
 /**
  * 분 → "3시간 30분" / "7시간" / "40분". 0 이하면 빈 문자열.
- * 청구 근거 문구(computeCharge)와 화면 라벨이 같은 표기를 쓰도록 공용화(views.sessions.fmtDurationKo는
+ * 화면 라벨 공용 표기(views.sessions.fmtDurationKo는
  * 값 없을 때 '설정 안 함'을 보여야 해서 이걸 감싼다).
  */
 function durationKo(mins) {

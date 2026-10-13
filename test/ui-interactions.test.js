@@ -116,18 +116,9 @@ test("personCombo: IME 조합 중 Enter는 무시, 조합 아닌 Enter는 선택
 
 // ── ③ 세션 폼: 세션 종류 변경 → 단가 옵션 스왑(녹음/촬영/공연) + 대관 아닐 때 숨김 ──
 createCompany({ name: "UI테스트상사", roles: "소속사/레이블" }); // personCombo 기본 companyOptions 조회용(빈 DB 방지)
-const RATE_ROWS = [
-  ["보컬 녹음 UI", "스튜디오 녹음"],
-  ["뮤직비디오 촬영 UI", "스튜디오 촬영"],
-  ["플레이백 세션 UI", "공연"],
-];
-for (const [name, cat] of RATE_ROWS) {
-  db().prepare("INSERT INTO rate_items (name, category, base_minutes, base_price, extra_minutes, extra_price, active) VALUES (?, ?, 210, 300000, 60, 100000, 1)").run(name, cat);
-}
 // ── ③b 구글식 시간 입력(2026-07-04 그리드 폐지): 시작/종료 타이핑 ↔ 슬라이더 양방향 + 종일 ──
 test("세션 폼(구글식): 시간 콤보(전체선택·30분 목록)·양방향 역산·종료날짜 편집·종일(하루 종일·복원)", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({}, [], rateItems, [], "")}</form>`;
+  const html = `<form data-session-form>${sessionBookingFields({}, [], [], "")}</form>`;
   const { win, doc } = mountDom(html);
   const start = doc.querySelector("[data-start-input]");
   const end = doc.querySelector("[data-end-input]");
@@ -197,8 +188,7 @@ test("세션 폼(구글식): 시간 콤보(전체선택·30분 목록)·양방�
 // 바꿔도 세션 저장 버튼이 안 켜짐) — setDuration이 custom_hours(hidden)를 직접 대입할 뿐 input/change를
 // 안 쏘므로, 합성 change로 통지하지 않으면 dirty 감시가 못 본다(엔지니어 행 제거와 같은 함정 #23 클래스).
 test("세션 폼: 2Pro 프리셋 클릭 시 세션 저장 버튼이 활성화된다(dirty-form 통지)", async () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form data-session-id="1" data-dirty-form>${sessionBookingFields({}, [], rateItems, [], "")}<button type="submit" data-dirty-save disabled>저장</button></form>`;
+  const html = `<form data-session-form data-session-id="1" data-dirty-form>${sessionBookingFields({}, [], [], "")}<button type="submit" data-dirty-save disabled>저장</button></form>`;
   const { win, doc } = mountDom(html);
   await tick(); // dirty-form 감시가 초기화 후(setTimeout 0) 기준 스냅샷을 다시 잡을 때까지 대기
   const saveBtn = doc.querySelector("[data-dirty-save]");
@@ -212,8 +202,7 @@ test("세션 폼: 2Pro 프리셋 클릭 시 세션 저장 버튼이 활성화된
 
 // ── ③a2 시간 부분 입력 확정(칸을 떠날 때 부족한 자리를 채운다 — 2026-08-03 사용자 요청) ──
 test("세션 폼: 시간은 네 자리를 다 안 쳐도 칸을 떠나면 확정된다(12→12:00, 123→12:30)", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({}, [], rateItems, [], "")}</form>`;
+  const html = `<form data-session-form>${sessionBookingFields({}, [], [], "")}</form>`;
   const { win, doc } = mountDom(html);
   const start = doc.querySelector("[data-start-input]");
   const hidden = start.closest("[data-time-combo]").querySelector("[data-time-hidden]");
@@ -236,8 +225,7 @@ test("세션 폼: 시간은 네 자리를 다 안 쳐도 칸을 떠나면 확정
 // 종료 칸은 시작+소요 자동 계산의 대상이라, 치는 도중 덮어쓰이면 부분 입력이 성립하지 않는다.
 // (updatePreview의 `document.activeElement !== endInput` 가드가 그걸 막는다 — 여기서 그 가드까지 함께 잠근다.)
 test("세션 폼: 종료 시간도 부분 입력으로 확정되고 소요가 역산된다(치는 도중 자동계산이 덮지 않는다)", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({}, [], rateItems, [], "")}</form>`;
+  const html = `<form data-session-form>${sessionBookingFields({}, [], [], "")}</form>`;
   const { win, doc } = mountDom(html);
   const start = doc.querySelector("[data-start-input]");
   const end = doc.querySelector("[data-end-input]");
@@ -254,8 +242,7 @@ test("세션 폼: 종료 시간도 부분 입력으로 확정되고 소요가 �
 
 // ── ③a3 시간 칸 텍스트 드래그 금지(포커스 시 전체선택이라 그대로 끌면 다른 칸에 떨어졌다) ──
 test("세션 폼: 시간 칸은 값을 끌어 옮길 수 없다(dragstart 차단)", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({ start_time: "14:00" }, [], rateItems, [], "")}</form>`;
+  const html = `<form data-session-form>${sessionBookingFields({ start_time: "14:00" }, [], [], "")}</form>`;
   const { win, doc } = mountDom(html);
   const times = [doc.querySelector("[data-start-input]"), doc.querySelector("[data-end-input]")];
   times.forEach((el) => {
@@ -266,8 +253,7 @@ test("세션 폼: 시간 칸은 값을 끌어 옮길 수 없다(dragstart 차단
 
 // ── ③b1 날짜/시간 콤보 팝오버 버튼 = tabindex=-1(날짜 타이핑 후 Tab이 팝오버 버튼 아닌 다음 필드[시간]로) ──
 test("세션 폼: 날짜·시간 콤보 팝오버 버튼은 tabindex=-1(Tab이 다음 필드로 넘어감)", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({}, [], rateItems, [], "")}</form>`;
+  const html = `<form data-session-form>${sessionBookingFields({}, [], [], "")}</form>`;
   const { doc } = mountDom(html);
   // 날짜 콤보(session_date): 포커스 → 월 그리드 팝오버 렌더 → 버튼(‹ › 및 날짜) 전부 tab 순서 밖
   const dcWrap = doc.querySelector("[data-session-date]").closest("[data-date-combo]");
@@ -289,11 +275,10 @@ test("세션 폼: 날짜·시간 콤보 팝오버 버튼은 tabindex=-1(Tab이 �
   assert.ok(Array.prototype.every.call(timePops, (p) => p.getAttribute("tabindex") === "-1"), "시간 목록 컨테이너 전부 tabindex=-1");
 });
 
-// ── ③b2 단가 항목 선택은 소요시간을 바꾸지 않는다(시간 흐름 우선 — 2026-07-05 사용자 요청) ──
 // ── ③f 장소=외부 선택 시 주소 입력 노출(2026-07-05) ──
 test("세션 폼: 장소가 외부(is_external)면 주소 입력 노출, 스튜디오 룸이면 숨김", () => {
   const rooms = [{ id: 1, name: "A룸", is_external: 0 }, { id: 2, name: "외부일정", is_external: 1 }];
-  const html = `<form data-session-form>${sessionBookingFields({}, [], [], rooms, "")}</form>`;
+  const html = `<form data-session-form>${sessionBookingFields({}, [], rooms, "")}</form>`;
   const { win, doc } = mountDom(html);
   const roomSel = doc.querySelector('select[name="room_id"]');
   const locWrap = doc.querySelector("[data-external-loc]");
@@ -310,8 +295,7 @@ test("세션 폼: 장소가 외부(is_external)면 주소 입력 노출, 스튜�
 
 // ── ③c 새 작성 프리필 + 자동완성 차단(hidden 제출) ──
 test("세션 폼(새 작성): 시작=지금 기준 30분 슬롯 프리필·종료=+1Pro 자동, 보이는 입력 nameless+hidden 동기", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({}, [], rateItems, [], "")}</form>`; // data-session-id 없음 = 생성 폼
+  const html = `<form data-session-form>${sessionBookingFields({}, [], [], "")}</form>`; // data-session-id 없음 = 생성 폼
   const { doc, win } = mountDom(html);
   const start = doc.querySelector("[data-start-input]");
   const end = doc.querySelector("[data-end-input]");
@@ -340,7 +324,7 @@ test("세션 편집 폼: 기존 담당 디렉터가 칩으로 채워짐(id·본�
   db().prepare("INSERT INTO session_directors (session_id, party_id) VALUES (?, ?)").run(sid, p2);
 
   const s = db().prepare("SELECT * FROM sessions WHERE id = ?").get(sid);
-  const html = `<form data-session-form data-session-id="${sid}">${sessionBookingFields(s, [], [], [], "")}</form>`;
+  const html = `<form data-session-form data-session-id="${sid}">${sessionBookingFields(s, [], [], "")}</form>`;
   const { doc } = mountDom(html);
   const combo = doc.querySelector("[data-person-combo][data-pc-multi]");
   assert.ok(combo, "디렉터 = 칩 personCombo 하나(행 UI 없음)");
@@ -984,8 +968,7 @@ test("아티스트 모달: 개인 등록 시 소속 그룹·소속사가 payload
 // ── 날짜 콤보(2026-07-14 사용자 요청 — 브라우저 기본 date 입력이 타이핑을 방해하던 것) ──
 // 자유 타이핑 파싱 + 월 그리드 팝오버 + 키보드 이동. 값은 hidden(YYYY-MM-DD, 기존 로직·서버 계약 불변).
 test("세션 폼: 날짜 콤보 — 자유 타이핑(317·12/31·3월 17일) → hidden YYYY-MM-DD", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({ session_date: "2026-03-05" }, [], rateItems, [], "")}</form>`;
+  const html = `<form data-session-form>${sessionBookingFields({ session_date: "2026-03-05" }, [], [], "")}</form>`;
   const { win, doc } = mountDom(html);
   const combo = doc.querySelector("[data-date-combo]");
   const inp = combo.querySelector("[data-date-input]");
@@ -1017,8 +1000,7 @@ test("세션 폼: 날짜 콤보 — 자유 타이핑(317·12/31·3월 17일) →
 });
 
 test("세션 폼: 날짜 콤보 — 월 그리드 팝오버(클릭·‹ ›)와 키보드 이동(↓ +7일, Enter 확정)", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({ session_date: "2026-03-05" }, [], rateItems, [], "")}</form>`;
+  const html = `<form data-session-form>${sessionBookingFields({ session_date: "2026-03-05" }, [], [], "")}</form>`;
   const { win, doc } = mountDom(html);
   const combo = doc.querySelector("[data-date-combo]");
   const inp = combo.querySelector("[data-date-input]");
@@ -1047,8 +1029,7 @@ test("세션 폼: 날짜 콤보 — 월 그리드 팝오버(클릭·‹ ›)와 
 });
 
 test("세션 폼: 날짜 콤보 — IME 조합 중 Enter는 무시(함정 #18)", () => {
-  const rateItems = db().prepare("SELECT * FROM rate_items").all();
-  const html = `<form data-session-form>${sessionBookingFields({ session_date: "2026-03-05" }, [], rateItems, [], "")}</form>`;
+  const html = `<form data-session-form>${sessionBookingFields({ session_date: "2026-03-05" }, [], [], "")}</form>`;
   const { win, doc } = mountDom(html);
   const inp = doc.querySelector("[data-date-combo] [data-date-input]");
   const hid = doc.querySelector("[data-date-combo] [data-date-hidden]");
@@ -1864,7 +1845,7 @@ test("프로젝트 목록 정렬: 키보드(Enter)로도 정렬, IME 조합 중 
 function mountSessionForm(busy, { sessionId = "" } = {}) {
   const rooms = [{ id: 1, name: "A룸", is_external: 0 }];
   const idAttr = sessionId ? ` data-session-id="${sessionId}"` : "";
-  const html = `<form data-session-form${idAttr}>${sessionBookingFields({ session_date: "2026-03-05" }, [], [], rooms, "")}<input type="hidden" data-override-conflict name="override_conflict" /></form>`;
+  const html = `<form data-session-form${idAttr}>${sessionBookingFields({ session_date: "2026-03-05" }, [], rooms, "")}<input type="hidden" data-override-conflict name="override_conflict" /></form>`;
   return mountDom(html, {
     fetchImpl: (url) =>
       Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(String(url).indexOf("/sessions/availability") >= 0 ? { date: "2026-03-05", busy } : {}) }),
@@ -1956,8 +1937,6 @@ test("제안 칩 클릭: 대상 입력칸에 값을 채우고 change를 발화�
   assert.equal(input.value, "창고", "칩 클릭 시 대상 입력칸에 값이 채워진다");
   assert.ok(changeFired, "change 이벤트가 발화되어야 dirty-form 감시가 반응한다(함정 #23)");
 });
-
-// (촬영 3구간 테스트 헬퍼는 개편 3단계에서 구간 입력과 함께 제거)
 
 // ── 소속 칩 콤보(2026-07-31): 겸직을 폼에서 직접 관리 ──
 // 서버·데이터 테스트가 못 보는 층 — 칩이 실제로 담기고 지워지는지, 제출 쌍이 맞는지,

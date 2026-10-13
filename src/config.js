@@ -169,11 +169,6 @@ const TASK_TYPES = [
   { key: "SFX_Foley", label: "SFX/Foley", group: "Video_Audio", billing: "Fixed_Per_Track", price: 0, quick: false },
 ];
 
-const BILLING_TYPES = ["Time_Charge", "Fixed_Per_Track"];
-const BILLING_TYPE_LABELS = {
-  Time_Charge: "시간 과금",
-  Fixed_Per_Track: "트랙/콘텐츠 고정",
-};
 // 세션(스튜디오 일정). 청구 시간 산정의 기반.
 // ⚠️이 값이 **그대로 DB(`sessions.session_type`)에 저장**된다 — 이름을 바꾸면 기존 행 마이그레이션이 필요하다
 // (2026-07-30 '촬영' → **'촬영 대관' + '작업 대관'** 분리: db.js `session_type_rental_split_v1`).
@@ -250,8 +245,6 @@ module.exports = {
   TRACK_CONTENT_TYPES,
   TASK_TYPES,
 
-  BILLING_TYPES,
-  BILLING_TYPE_LABELS,
   TASK_STATUSES,
   TASK_STATUS_LABELS,
   TASK_STATUS_BADGE,
@@ -271,7 +264,6 @@ module.exports = {
   normalizeSessionStatus: (v) => normalize(v, SESSION_STATUSES),
   normalizeDeliverableKind: (v) => normalize(v, DELIVERABLE_KINDS),
   normalizeTrackContentType: (v) => normalize(v, TRACK_CONTENT_TYPES),
-  normalizeBillingType: (v) => normalize(v, BILLING_TYPES),
   normalizeTaskStatus: (v) => normalize(v, TASK_STATUSES),
   normalize,
 };

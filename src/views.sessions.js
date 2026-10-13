@@ -2,10 +2,10 @@
 
 /** 세션(스튜디오 일정) 렌더 — 프로젝트 상세 섹션 + 전역 일정에서 공유. */
 
-const { config, SESSION_TYPES, RENTAL_SESSION_TYPES, SESSION_STATUS_BADGE, SESSION_TYPE_RATE_KIND, SESSION_SEGMENT_KINDS, SESSION_SEGMENT_LABELS } = require("./config");
+const { config, SESSION_TYPES, RENTAL_SESSION_TYPES, SESSION_STATUS_BADGE } = require("./config");
 const { esc, formatKRW, emptyState, detailsChevron, explain, dirtyActionRow, personCombo, personComboOptionsScript, personComboCompanyScript, personLabel, dateCombo } = require("./views");
 const { formatYmdShort, ddayLabel, todayYmd, minutesBetween, durationKo, calendarMonthCells } = require("./lib/date");
-const { listRooms, getRoom, listSessionSegments, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listProjectManagers, listRateItems, listRateCategories, rateCategoryKind } = require("./data");
+const { listRooms, getRoom, getDefaultBooker, getProMinutes, contactOptions, partyOptions, listSessionDirectors, listSessionEngineers, listProjectManagers } = require("./data");
 
 /**
  * 룸 목록 보장 — 인자로 받으면 그대로, 아니면 **예약 대상 장소**만 조회(폴백).
@@ -131,62 +131,13 @@ function durationButtons(initMinutes = 0) {
 }
 
 /**
- * '녹음 종류' 옵션 HTML — 단가표 항목(rate_items)을 분류(스튜디오/로케이션 녹음)로 묶는다. data-minutes로 1Pro 계산.
- * 세션 종류에 따라 녹음/촬영 항목만 넘겨 렌더 — app.js가 종류 변경 시 이 옵션을 통째로 교체.
- */
-function rateOptionsHtml(rateItems, currentId) {
-  const catOrder = listRateCategories().map((c) => c.name); // DB 순서(kind→sort_order→이름) — 2026-07-05 config 하드코딩에서 전환
-  const groups = {};
-  rateItems.forEach((r) => {
-    const c = r.category || catOrder[0] || "";
-    (groups[c] = groups[c] || []).push(r);
-  });
-  const cats = [...catOrder.filter((c) => groups[c]), ...Object.keys(groups).filter((c) => !catOrder.includes(c))];
-  const opt = (r) => `<option value="${r.id}" data-minutes="${Number(r.base_minutes) || 0}" ${String(r.id) === String(currentId || "") ? "selected" : ""}>${esc(r.name)}</option>`;
-  // 🔒 비활성 처리된 단가 항목이 이미 걸린 세션은 목록에 없다 → 보존 옵션(2026-08-02 전수 점검).
-  // 없으면 폼이 '미지정'으로 열리고 시간만 고쳐 저장해도 **rate_item_id가 null**이 된다(실측) → 그 세션은
-  // '단가 미선택'으로 떨어져 청구 발행이 막히는데 미청구 집계에는 남는다(조용히 매출이 새는 형태).
-  // `data-minutes`도 함께 살린다 — app.js가 1Pro 기준시간·소요 계산에 쓴다.
-  const cur = String(currentId || "");
-  const missing = cur && !rateItems.some((r) => String(r.id) === cur)
-    ? listRateItems({ includeInactive: true }).find((r) => String(r.id) === cur) || null
-    : null;
-  const missingOpt = missing
-    ? `<option value="${missing.id}" data-minutes="${Number(missing.base_minutes) || 0}" selected>${esc(missing.name)} (사용 안 함)</option>`
-    : "";
-  return `<option value="" data-minutes="0">미지정</option>` + missingOpt + cats.map((c) => `<optgroup label="${esc(c)}">${groups[c].map(opt).join("")}</optgroup>`).join("");
-}
-
-/**
- * 세션 종류 select 표시 순서 — 요금표 분류(환경설정) 배치 순서를 따라간다(2026-08-05 사용자 요청,
- * 환경설정에서 분류 순서를 바꾸면 이 목록도 자동으로 따라감). 분류로 표현되지 않는 종류(믹싱·마스터링·기타)는
- * SESSION_TYPES 원래 순서 그대로 뒤에 붙는다 — 값(session_type) 자체는 무변경, 표시 순서만 이 함수가 정한다.
- */
-function orderedSessionTypes() {
-  const kindToType = {};
-  for (const [t, k] of Object.entries(SESSION_TYPE_RATE_KIND)) kindToType[k] = t;
-  const seen = new Set();
-  const fromRates = [];
-  for (const c of listRateCategories()) {
-    const t = kindToType[c.kind];
-    if (t && !seen.has(t)) { seen.add(t); fromRates.push(t); }
-  }
-  return [...fromRates, ...SESSION_TYPES.filter((t) => !seen.has(t))];
-}
-
-/**
- * 예약(생성)용 폼 필드 — 시작 버튼 그리드 + 소요시간 버튼. 종료는 서버가 계산.
- * 녹음 프로젝트: '녹음 종류'(단가표 항목을 분류로 묶음) 한 필드 + session_type='녹음' 고정.
- * 그 외(믹스 등): '세션 종류'(session_type) + '녹음 종류'(단가표 항목) 두 필드. 라벨은 편집 폼과 통일.
- */
-/**
  * 세션 입력 칸 묶음(추가·편집·`/new` 공용).
- * 개편 1단계(2026-10-13): 본문 = 날짜·시간 + 종류·장소, 나머지(단가·디렉터·메모·예약 담당자·엔지니어)는
+ * 개편 1단계(2026-10-13): 본문 = 날짜·시간 + 종류·장소, 나머지(디렉터·메모·예약 담당자·엔지니어)는
  * **▸ 상세 정보** 접힘 섹션으로. 접혀 있어도 채워진 값은 summary 옆 한 줄 요약으로 보인다.
  * @param {object} [opts] projectInfoHtml = 상세 섹션 맨 위에 넣을 '프로젝트 정보' 칸(`/new` 전용),
  *   projectSummary = 그 요약 조각(문자열 배열), openDetails = 상세를 펼친 채 렌더
  */
-function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker = "", pmName = "", optionsRef = "", opts = {}) {
+function sessionBookingFields(s, managers, rooms, defaultBooker = "", pmName = "", optionsRef = "", opts = {}) {
   const initMins = s && s.start_time && s.end_time ? minutesBetween(s.start_time, s.end_time) : 0;
   const roomList = resolveRooms(rooms);
   // 담당 엔지니어 다대다(2026-07-05 — 여러 명 가능): 배정된 엔지니어 수만큼 행(select) + '담당 엔지니어 추가하기' 버튼(template 복제, app.js).
@@ -200,7 +151,7 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
     </div>`;
   // 본문 줄 = 세션 종류 + 장소(개편 1단계). 둘 다 기본값이 있지만 캘린더 표시·룸 겹침 판정에 직결돼 접지 않는다.
   const typeRateRow = `<div class="grid gap-2 sm:grid-cols-2">
-         <div><label class="label-sm mb-0">세션 종류<select class="input mt-1 block py-1.5 text-sm" name="session_type" data-rec-types="${esc(RENTAL_SESSION_TYPES.join(","))}">${orderedSessionTypes().map((t) => `<option value="${esc(t)}" ${t === s.session_type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label></div>
+         <div><label class="label-sm mb-0">세션 종류<select class="input mt-1 block py-1.5 text-sm" name="session_type" data-rec-types="${esc(RENTAL_SESSION_TYPES.join(","))}">${SESSION_TYPES.map((t) => `<option value="${esc(t)}" ${t === s.session_type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label></div>
          <div><label class="label-sm mb-0">장소${roomSelect(roomList, s.room_id)}</label></div>
        </div>
        <div class="mt-2" data-external-loc ${s.room_id && roomList.some((r) => Number(r.id) === Number(s.room_id) && r.is_external) ? "" : "hidden"}>
@@ -214,9 +165,6 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
            <div class="absolute left-0 right-0 z-30 mt-1 hidden max-h-64 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg" data-place-pop role="listbox"></div>
          </div>
        </div>`;
-  // 단가 항목은 접힌 상세로(개편 1단계 — 없어도 수동 금액으로 청구된다). 단가표 자체는 3단계에서 제거.
-  // 단가 항목 칸은 개편 3단계에서 삭제(단가표 제거 — 금액은 청구서에서 직접). 기존 rate_item_id는 읽지 않는다.
-  const rateField = "";
   // 담당 디렉터 — 콤마로 여러 명(2026-07-05, 아티스트 콤보와 동일 UX·옛 행 복제(+추가/✕) 폐지):
   // personCombo(multi) 하나 — 마지막 콤마 뒤 조각으로 검색, 선택·간이등록은 이어붙임, 제출=director_name 콤마 텍스트(라벨 포함).
   // 서버 resolveDirectorIds가 콤마 split 후 이름별 해석(resolvePersonByName 라벨 안전망 — '박수한 대표님 (워터멜론)'도 그 사람으로).
@@ -243,12 +191,6 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
              크롬이 '포커스 가능한 스크롤러'로 보고 Tab 대상으로 삼는다(함정 #30). -->
         <div class="absolute left-0 z-30 mt-1 hidden max-h-56 w-24 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg" tabindex="-1" data-time-pop role="listbox"></div>
       </div>`;
-  // ── 촬영 구간(2026-07-26) — 반입·설치 / 촬영 / 철수를 각각 시작·종료 시각으로 ──
-  // 노출 조건은 **단가 kind로 파생**한다(화면에 '촬영'을 하드코딩하지 않음 — config가 종류↔kind의 진실원천).
-  // 구간이 보이면 위의 [시작]–[종료]·소요 슬라이더는 숨는다(점유 시간은 구간 span에서 서버가 파생 —
-  // 같은 시간을 두 번 입력하게 두면 어느 쪽이 진짜인지 알 수 없다).
-  // 촬영 구간(반입·촬영·철수) 입력은 개편 3단계에서 삭제(운영 사용 0건 — 단가표와 함께). 시작~종료 시간만 받는다.
-  const segmentBlock = "";
   const endDateInit = (() => {
     const d = s.session_date || todayYmd();
     if (s.all_day && s.end_date && s.end_date > d) return s.end_date; // 종일 다일 일정: 저장된 종료 날짜 복원
@@ -261,7 +203,7 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
   })();
   // 레이아웃 = 구글 캘린더 일정 편집기 모사(2026-07-04 사용자 요청 — 항목은 그대로, 배치만):
   //  ① 최상단 전폭 = 시간 블록(날짜 → 시작 시간 그리드 → 소요 슬라이더) — 구글의 날짜·시간 줄
-  //  ② 좌측 상자 = '세션 세부정보'(종류·단가·룸·디렉터·메모) — 구글의 일정 세부정보 카드
+  //  ② 좌측 상자 = '세션 세부정보'(종류·룸·디렉터·메모) — 구글의 일정 세부정보 카드
   //  ③ 우측 사이드 = 사람(PM 표기[프로젝트에서 지정·읽기 전용] + 예약 담당자·담당 엔지니어) — 구글의 참석자 패널
   //  md 미만은 소스 순서대로 세로 스택(시간 → 세부정보 → 사람).
   // 접힘 요약 줄 — 접혀 있어도 무엇이 채워져 있는지 보이게(편집 화면에서 내용이 숨지 않도록).
@@ -290,7 +232,6 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
           <input type="checkbox" name="all_day" value="1" class="h-4 w-4 rounded border-border text-primary" data-all-day ${s.all_day ? "checked" : ""} /> 종일
         </label>
       </div>
-      ${segmentBlock}
       <p class="text-xs text-warning" data-conflict-warn hidden>⚠ 같은 룸에 이 시간대 예약이 이미 있습니다.</p>
       <input type="hidden" name="override_conflict" value="" data-override-conflict />
       <div data-duration-wrap>
@@ -309,7 +250,6 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
     ${opts.projectInfoHtml ? '<div class="text-xs font-semibold text-muted">이 세션 정보</div>' : ""}
     <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
       <div class="space-y-2">
-        ${rateField}
         ${directorField}
         <input class="input mt-1 py-1.5 text-sm" name="memo" placeholder="메모(선택)" value="${esc(s.memo || "")}" />
       </div>
@@ -328,11 +268,11 @@ function sessionBookingFields(s, managers, rateItems = [], rooms, defaultBooker 
 }
 
 /** 프로젝트 상세용 세션 추가 폼(버튼형 예약 UX). */
-function sessionCreateForm(project, managers, rateItems = [], rooms, defaultBooker = "", pmName = "", optionsRef = "") {
+function sessionCreateForm(project, managers, rooms, defaultBooker = "", pmName = "", optionsRef = "") {
   return `
     <form method="post" action="/sessions" class="rounded-lg border border-border bg-bg p-3" data-session-form>
       <input type="hidden" name="project_id" value="${project.id}" />
-      ${sessionBookingFields({}, managers, rateItems, rooms, defaultBooker, pmName, optionsRef)}
+      ${sessionBookingFields({}, managers, rooms, defaultBooker, pmName, optionsRef)}
       <div class="mt-4 flex justify-end">
         <button class="btn-primary btn-sm" type="submit">+ 세션 추가</button>
       </div>
@@ -340,7 +280,7 @@ function sessionCreateForm(project, managers, rateItems = [], rooms, defaultBook
 }
 
 /** 세션 한 행. showProject=true면 프로젝트명 링크 표시(전역 일정). tracks 전달 시 청구 작업 생성 폼 노출. */
-function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, showProject = false, projectTitle = "", pmName = "", optionsRef = "", openId = null } = {}) {
+function sessionRow(s, { isAdmin = false, managers = [], rooms, showProject = false, projectTitle = "", pmName = "", optionsRef = "", openId = null } = {}) {
   const typeBadge = `<span class="badge bg-bg text-muted">${esc(s.session_type)}</span>`;
   // 상태 배지: 예정·완료는 배지 없음(완료 버튼 토글이 상태를 나타냄 — 라벨 불필요). 취소 등만 배지 표시.
   const statusBadge = s.status === "예정" || s.status === "완료"
@@ -384,7 +324,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
         ? '<span class="whitespace-nowrap text-success">청구 가능</span>'
         : '<span class="whitespace-nowrap text-muted">완료 시 청구</span>';
   // 확정 청구액(billing.fixed = 청구 폼에서 사람이 고쳐 저장한 값)은 '예상'과 구분해 표시한다 —
-  // 안 그러면 세션 시간·단가를 바꿔도 옛 확정액이 그대로 뜨는데 단가표 산정치로 오인한다(2026-07-14 점검).
+  // 안 그러면 사람이 확정한 금액인지 아닌지 구분이 안 된다(2026-07-14 점검).
   const amountChunk = s.billing && s.billing.fixed
     ? `<span class="whitespace-nowrap text-success">확정 청구액 ${formatKRW(s.billing.amount)}</span>`
     : s.billing && s.billing.amount > 0
@@ -397,7 +337,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
          ${billStatusChunk}
        </div>`
     : "";
-  // 청구 결핍 사유: 완료된 녹음 세션이 단가항목/시간이 없어 산정 불가하면 침묵하지 않고 사유를 옅게 안내(미청구·미전환 한정).
+  // 청구 결핍 사유: 완료된 대관 세션에 시간이 없어 청구 정보를 못 만들면 침묵하지 않고 사유를 옅게 안내(미청구·미전환 한정).
   const billReason = !s.billing && RENTAL_SESSION_TYPES.includes(s.session_type) && s.status === "완료" && !s.invoiced && !s.billed_task_id
     ? "청구하려면 시작·소요 시간을 입력하세요"
     : "";
@@ -471,7 +411,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
       <div class="border-t border-border p-3">
         <form id="del-sess-${s.id}" method="post" action="/sessions/${s.id}/delete" data-confirm="이 세션을 삭제할까요?" class="hidden"></form>
         <form method="post" action="/sessions/${s.id}" data-session-form data-session-id="${s.id}" data-dirty-form>
-          ${sessionBookingFields(s, managers, rateItems, rooms, "", pmName, optionsRef)}
+          ${sessionBookingFields(s, managers, rooms, "", pmName, optionsRef)}
           <div class="mt-3 border-t border-border/50"></div>
           ${dirtyActionRow({ deleteFormId: `del-sess-${s.id}`, deleteLabel: "삭제", saveLabel: "세션 저장" })}
         </form>
@@ -483,7 +423,7 @@ function sessionRow(s, { isAdmin = false, managers = [], rateItems = [], rooms, 
  * 전역 일정 목록용 — 한 프로젝트의 세션들을 한 카드(판)에 묶는다(프로젝트 목록과 통일감, 2026-07-04 사용자 요청).
  * 헤더 = 프로젝트 제목 + 아티스트·회사 링크(프로젝트 목록 카드와 동일 톤), 본문 = 세션 행(showProject=false, 프로젝트는 헤더에).
  */
-function sessionProjectCard(sessions, { isAdmin = false, managers = [], rateItems = [], rooms, optionsRef = "" } = {}) {
+function sessionProjectCard(sessions, { isAdmin = false, managers = [], rooms, optionsRef = "" } = {}) {
   const p = sessions[0] || {};
   const company = String(p.production_company || p.artist_company || "").trim();
   const artist = String(p.artist || "").trim();
@@ -498,13 +438,13 @@ function sessionProjectCard(sessions, { isAdmin = false, managers = [], rateItem
         <span class="shrink-0 pl-2 text-sm text-muted">세션 ${sessions.length}</span>
       </div>
       <div class="space-y-2 border-t border-border/40 p-3">
-        ${sessions.map((s) => sessionRow(s, { isAdmin, managers, rateItems, rooms, showProject: false, optionsRef })).join("")}
+        ${sessions.map((s) => sessionRow(s, { isAdmin, managers, rooms, showProject: false, optionsRef })).join("")}
       </div>
     </div>`;
 }
 
 /** 프로젝트 상세용 세션 섹션. 유형 구분 없이 항상 펼친 <section>으로 렌더(목록 + '새 세션 추가' 폼). */
-function sessionsSection({ project, rows, isAdmin, managers = [], rateItems = [], rooms, defaultBooker = "", openId = null }) {
+function sessionsSection({ project, rows, isAdmin, managers = [], rooms, defaultBooker = "", openId = null }) {
   // PM(프로젝트 담당 엔지니어) — 세션 폼 우측 사이드에 읽기 전용 표기(구글 캘린더식 레이아웃, 수정은 프로젝트 탭에서).
   // managers는 **활성만**이라 퇴사·비활성 담당자가 PM이면 여기서 못 찾는다 → 그때만 비활성 포함으로 되짚는다.
   // 안 그러면 정보 탭은 'OOO (목록에 없음)'으로 기록을 보여주는데 세션 탭만 빈칸이 되는 비대칭이 생긴다
@@ -518,7 +458,7 @@ function sessionsSection({ project, rows, isAdmin, managers = [], rateItems = []
   const optionsRef = isAdmin ? "pc-shared-contacts" : "";
   const sharedOpts = isAdmin ? personComboOptionsScript(optionsRef, contactOptions()) + personComboCompanyScript("pc-company-shared", partyOptions({ role: "company" })) : "";
   const list = rows.length
-    ? rows.map((s) => sessionRow(s, { isAdmin, managers, rateItems, rooms: roomList, projectTitle: project.title, pmName, optionsRef, openId })).join("")
+    ? rows.map((s) => sessionRow(s, { isAdmin, managers, rooms: roomList, projectTitle: project.title, pmName, optionsRef, openId })).join("")
     : emptyState("등록된 세션이 없습니다.");
   const badge = rows.length ? `<span class="text-sm font-normal text-muted">${upcoming ? "예정 " + upcoming : rows.length}</span>` : "";
   return `
@@ -532,9 +472,9 @@ function sessionsSection({ project, rows, isAdmin, managers = [], rateItems = []
         ? rows.length
           ? `<details class="group border-t border-border pt-3">
                <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-muted hover:text-fg">${detailsChevron()} 새 세션 추가</summary>
-               <div class="mt-2">${sessionCreateForm(project, managers, rateItems, roomList, defaultBooker, pmName, optionsRef)}</div>
+               <div class="mt-2">${sessionCreateForm(project, managers, roomList, defaultBooker, pmName, optionsRef)}</div>
              </details>`
-          : `<div class="border-t border-border pt-3"><div class="mb-2 text-sm font-medium text-muted">새 세션 추가</div>${sessionCreateForm(project, managers, rateItems, roomList, defaultBooker, pmName, optionsRef)}</div>`
+          : `<div class="border-t border-border pt-3"><div class="mb-2 text-sm font-medium text-muted">새 세션 추가</div>${sessionCreateForm(project, managers, roomList, defaultBooker, pmName, optionsRef)}</div>`
         : ""}
     </section>`;
 }
@@ -662,9 +602,6 @@ function sessionCardModal(s, { canEdit = false } = {}) {
   ].filter(Boolean).join(" · ");
   if (bookerEng) lines.push(bookerEng);
   if (directors.length) lines.push(`디렉터 ${directors.map((d) => esc(personLabel(d.name, d.activity_name))).join(", ")}`);
-  // 촬영 구간 — 팝오버의 시간 줄은 점유 전체(반입~철수)라, 그 안이 어떻게 쪼개졌는지 여기서 보여준다.
-  const segs = listSessionSegments(s.id);
-  if (segs.length) lines.push(segs.map((g) => `${esc(SESSION_SEGMENT_LABELS[g.kind] || g.kind)} ${esc(g.start_time)}–${esc(g.end_time)}`).join(" · "));
   if (s.memo) lines.push(esc(s.memo));
   const bill = s.billing
     ? `${s.billing.fixed ? `확정 청구액 ${formatKRW(s.billing.amount)}` : s.billing.amount > 0 ? `예상 청구액 ${formatKRW(s.billing.amount)}` : "청구액 미정"} · ${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}`

@@ -202,17 +202,6 @@ function ensureSessions() {
 }
 ensureSessions();
 
-// 단가표(과금 항목) 기본값 — 보컬녹음 1Pro 3.5h=30만, 초과 1h당 10만 / 그룹 35만
-function ensureRateItems() {
-  if (d.prepare("SELECT id FROM rate_items LIMIT 1").get()) return;
-  const ins = d.prepare(
-    "INSERT INTO rate_items (name, base_minutes, base_price, extra_minutes, extra_price, active) VALUES (?,?,?,?,?,1)"
-  );
-  ins.run("보컬 녹음", 210, 300000, 60, 100000);
-  ins.run("악기+보컬 녹음(그룹)", 210, 350000, 60, 100000);
-  console.log("  + 단가 항목 2건(보컬 녹음 · 그룹)");
-}
-ensureRateItems();
 
 console.log("✅ 시드 완료.");
 console.log("");

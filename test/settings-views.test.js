@@ -60,21 +60,14 @@ test("룸: 인라인 필드 + bulk 폼, 계층 UI 없음, 중첩 폼 없음", ()
 
 // ⚠️ 이 파일의 마지막 테스트여야 한다 — 위 두 테스트가 만든 행(+기본 시드)을 전부 지워 진짜 0건 상태를
 // 재현하므로, 뒤에 행을 전제하는 테스트가 오면 깨진다. 파일 정리 후 temp DB 자체가 버려지므로 복구는 불필요.
-test("빈 목록: 단가표·작업 종류·룸이 0건이어도 예외 없이 렌더 + bulk 폼 대신 빈 안내", () => {
-  db().exec("DELETE FROM rate_items; DELETE FROM rooms;");
+test("빈 목록: 작업 종류·룸이 0건이어도 예외 없이 렌더 + bulk 폼 대신 빈 안내", () => {
+  db().exec("DELETE FROM rooms;");
   // task_types는 모듈 캐시가 있어 raw DELETE로는 캐시가 무효화되지 않는다 — D.deleteTaskType로 지워야
   // invalidateTaskTypeCache가 함께 호출돼 listTaskTypes가 실제로 빈 목록을 본다.
   for (const t of D.listTaskTypes({ includeInactive: true })) D.deleteTaskType(t.id);
 
-  // 항목만 0인 상태 — 분류는 남아 있으므로 트리는 그려지고 각 분류가 '항목 없음'을 보여준다.
-  assert.ok(V.ratesPane().includes("항목 없음"), "항목 0인 분류는 '항목 없음'");
-
-  db().exec("DELETE FROM rate_categories;");
-  const contentHtml = V.ratesPane() + V.taskTypesPane();
-  // 트리 전환 후 요금표의 '비었다'는 **분류가 하나도 없을 때**다(항목은 분류 아래에 붙는다).
-  assert.ok(contentHtml.includes("등록된 분류가 없습니다."), "요금표 빈 안내(emptyState)");
+  const contentHtml = V.taskTypesPane();
   assert.ok(contentHtml.includes("등록된 작업 종류가 없습니다."), "작업 종류 빈 안내(emptyState)");
-  // 분류가 0개여도 트리 폼 자체는 남는다(빈 안내를 그 안에 그린다) — 분류 추가 폼으로 곧장 이어지게.
   assert.ok(!contentHtml.includes('id="task-types-bulk-form"'), "작업 종류 bulk 폼은 행이 있을 때만 렌더");
 
   const roomsHtml = V.roomsSection();

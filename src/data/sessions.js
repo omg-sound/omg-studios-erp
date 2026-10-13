@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * 세션(스튜디오 일정) 도메인 — 예약 CRUD·룸별 겹침 검사·단가 자동 산정·담당 디렉터(다대다)·
+ * 세션(스튜디오 일정) 도메인 — 예약 CRUD·룸별 겹침 검사·확정 청구액·담당 디렉터(다대다)·
  * 캘린더 참석자·다가오는/지난/월별 조회.
  * data.js에서 분리한 모듈(도메인 모듈화). data.js가 재export하므로 소비자 무변경.
  *
@@ -16,7 +16,7 @@ const { todayYmd, isValidYmd, cleanTime, timeToMin, minutesBetween, daysSpan, ca
 const { withTx } = require("../lib/tx");
 const { parseMoney } = require("../lib/forms");
 const { MAX_LEN: PLACE_LABEL_MAX } = require("../lib/place-label"); // 캘린더 제목 라벨 길이 상한(계산은 라우트가 함)
-const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES, SESSION_SEGMENT_KINDS } = require("../config");
+const { normalizeSessionType, normalizeSessionStatus, RENTAL_SESSION_TYPES } = require("../config");
 const { getProjectForUser } = require("./projects"); // 무순환
 const { resolvePersonByName } = require("./parties"); // 무순환 — 디렉터=parties.id(사람)
 const { listRooms } = require("./rooms"); // 무순환
@@ -30,9 +30,7 @@ function listSessionsForProject(user, projectId) {
     .prepare("SELECT * FROM sessions WHERE project_id = ? ORDER BY session_date ASC, start_time ASC, id ASC")
     .all(projectId);
   if (!rows.length) return { project, rows: [] };
-  // N+1 회피(감사 L9 — 전역 목록 upcomingSessions와 통일): rate_items 1회 로드(withBilling) +
-  // 청구 작업(세션당 1건, 부분 유니크)·청구여부를 세션 id IN 배치 1쿼리씩(행마다 단건 조회 폐지).
-  const bill = withBilling(rows.map((r) => r.id));
+  // N+1 회피(감사 L9): 청구 작업(세션당 1건, 부분 유니크)·청구여부를 세션 id IN 배치 1쿼리씩(행마다 단건 조회 폐지).
   const ids = rows.map((r) => r.id);
   const ph = ids.map(() => "?").join(",");
   const taskBySession = new Map();
@@ -42,7 +40,7 @@ function listSessionsForProject(user, projectId) {
   return {
     project,
     rows: rows.map((row) => ({
-      ...bill(row),
+      ...withBilling(row),
       billed_task_id: taskBySession.get(row.id) || null,
       invoiced: invoicedSet.has(row.id),
     })),
@@ -94,14 +92,8 @@ function sessionFields(input) {
   // 종일 다일 일정: 종료 날짜(end_date)가 시작보다 뒤일 때만 저장(단일일이면 NULL). 시간 세션은 end_date 무시(야간=end<start로 표현).
   const endDateRaw = String(input.end_date || "").trim();
   const endDate = allDay && isValidYmd(endDateRaw) && endDateRaw > date ? endDateRaw : null;
-  // 촬영 구간(2026-07-26): 반입·설치/촬영/철수가 들어오면 **점유 시간(start~end)을 구간 span에서 파생**한다.
-  // 사람이 같은 시간을 두 번 입력하지 않게 하고, 구간 사이에 빈 시간이 있어도 그 방은 계속 잡혀 있으므로
-  // 점유는 아우르는 한 덩어리다(요금 시간만 구간 합산 — sessionBillableMinutes).
-  const segs = allDay ? null : segmentsFromInput(input);
-  const span = segs && segs.length ? segmentsSpan(segs) : null;
   // 직접입력(그리드 밖 시간)이 있으면 우선, 없으면 그리드에서 고른 시작.
-  const start = allDay ? null : span ? span.start : cleanTime(input.start_time_custom) || cleanTime(input.start_time);
-  const rateItemId = Number(input.rate_item_id) || null;
+  const start = allDay ? null : cleanTime(input.start_time_custom) || cleanTime(input.start_time);
   const roomId = validRoomId(input.room_id); // 활성 룸 검증 — 없거나 삭제된 id는 null
   const { isExternalRoom } = require("./rooms"); // 무순환(rooms는 sessions를 require하지 않음)
   // 외부 장소(is_external)일 때만 주소(location) 저장 — 스튜디오 룸이면 null(기본 장소 사용).
@@ -122,11 +114,10 @@ function sessionFields(input) {
     // 시작 없이 종료만 오면(2026-08-22 감사) end_time도 함께 null로 떨군다 — 종일이 아닌데 시작이 없는
     // 세션이 저장되면 겹침 검사(busySessionRanges는 start·end 둘 다 있어야 점유로 본다)에서 통째로
     // 빠져 그 룸이 실제로는 예약돼 있는데도 이중 예약 경고가 안 뜬다.
-    end_time: allDay ? null : span ? span.end : (start ? resolveEndTime(input, start) : null),
+    end_time: allDay ? null : (start ? resolveEndTime(input, start) : null),
     booker_name: String(input.booker_name || "").trim() || null,
     engineer_name: null,
     status: normalizeSessionStatus(input.status),
-    rate_item_id: rateItemId,
     room_id: roomId,
     location,
     location_label: locationLabel,
@@ -291,84 +282,6 @@ function sessionAttendeeEmails(session, project) {
   return [...emails];
 }
 
-/**
- * 세션 구간 목록(정렬 순). 촬영의 반입·설치 / 촬영 / 철수(2026-07-26).
- * 구간이 없는 세션(대부분)은 빈 배열 — 그때는 시작~종료 span이 곧 요금 시간이다.
- */
-function listSessionSegments(sessionId) {
-  if (!sessionId) return [];
-  return db()
-    .prepare("SELECT * FROM session_segments WHERE session_id = ? ORDER BY sort_order, id")
-    .all(Number(sessionId));
-}
-
-/**
- * 세션 구간 통째 교체(폼 제출 = 그 세션 구간의 전체 상태). 빈 배열이면 행을 전부 지운다
- * (= 구간 없는 일반 세션으로 되돌리기). `segments`는 `segmentsFromInput`이 정제한 배열을 받는다.
- *
- * **트랜잭션은 열지 않는다** — setSessionDirectors·setSessionEngineers와 같은 규약으로,
- * createSession/updateSession이 세션 행과 함께 한 트랜잭션으로 감싼다(반쪽 저장 방지).
- */
-function setSessionSegments(sessionId, segments) {
-  const sid = Number(sessionId);
-  if (!sid) return [];
-  const d = db();
-  d.prepare("DELETE FROM session_segments WHERE session_id = ?").run(sid);
-  const ins = d.prepare("INSERT INTO session_segments (session_id, kind, start_time, end_time, sort_order) VALUES (?, ?, ?, ?, ?)");
-  (segments || []).forEach((r, i) => ins.run(sid, r.kind, r.start_time, r.end_time, i * 10));
-  return listSessionSegments(sid);
-}
-
-/**
- * 폼 입력 → 유효 구간 배열. 이름 규칙: `seg_<kind>_start` / `seg_<kind>_end`.
- * 순서는 config.SESSION_SEGMENT_KINDS(반입·설치 → 촬영 → 철수) 고정 — 사람이 칸을 건너뛰어 입력해도
- * 표시·합산 순서가 흔들리지 않는다. 시작·종료가 둘 다 있는 구간만 담는다(한쪽만 채운 칸은 입력 중일 수 있다).
- *
- * 구간 필드가 요청에 **아예 없으면 null**을 돌려 호출부가 구간을 건드리지 않게 한다 —
- * 구간을 모르는 폼·API가 저장할 때 기존 구간이 조용히 사라지는 것을 막는다.
- */
-function segmentsFromInput(input = {}) {
-  let present = false;
-  const out = [];
-  for (const kind of SESSION_SEGMENT_KINDS) {
-    const rawStart = input[`seg_${kind}_start`];
-    const rawEnd = input[`seg_${kind}_end`];
-    if (rawStart != null || rawEnd != null) present = true;
-    const start = cleanTime(rawStart);
-    const end = cleanTime(rawEnd);
-    if (start && end) out.push({ kind, start_time: start, end_time: end });
-  }
-  return present ? out : null;
-}
-
-/**
- * 구간의 시작~종료 span('HH:MM' 쌍). 구간이 없으면 null. 세션의 **점유 시간**(캘린더·겹침)을 구간에서 파생한다.
- * 요금 시간은 여기가 아니라 sessionBillableMinutes(구간 합산) — 구간 사이 공백은 점유이되 과금 대상은 아니다.
- */
-function segmentsSpan(segments) {
-  const list = (segments || []).filter((s) => s && s.start_time && s.end_time);
-  if (!list.length) return null;
-  // 자정을 넘기는 구간(end < start)도 다루기 위해 첫 구간 시작을 0분 기준으로 절대 분축에 올린다.
-  const base = timeToMin(list[0].start_time);
-  let cursor = base;
-  let last = base;
-  for (const s of list) {
-    let st = timeToMin(s.start_time);
-    while (st < cursor) st += 1440; // 앞 구간보다 이르면 다음 날로
-    let en = timeToMin(s.end_time);
-    while (en <= st) en += 1440;
-    cursor = st;
-    if (en > last) last = en;
-  }
-  return { start: list[0].start_time, end: minToTime(last % 1440) };
-}
-
-/** 분(0~1439) → 'HH:MM'. */
-function minToTime(m) {
-  const v = ((Math.round(m) % 1440) + 1440) % 1440;
-  return `${String(Math.floor(v / 60)).padStart(2, "0")}:${String(v % 60).padStart(2, "0")}`;
-}
-
 /** 세션의 담당 디렉터(연락처) 목록. */
 function listSessionDirectors(sessionId) {
   return db()
@@ -385,23 +298,16 @@ function listSessionDirectors(sessionId) {
  * room 미지정(undefined)이면 전 룸 합산(기존 동작), 지정 시 같은 룸만(IFNULL=0=레거시/미지정 가상룸).
  */
 
-/** 녹음 세션의 진행시간 → 단가표 자동 산정. 시간제 대상(녹음+단가+시간)이 아니면 null. */
-function sessionRateAmount(session, _itemOverride, batch = {}) {
-  if (!session || !RENTAL_SESSION_TYPES.includes(session.session_type)) return null;
-  // 단가표 제거(개편 3단계, 2026-10-13) — 금액은 사람이 적은 확정액(billing_amount)뿐, 없으면 0(청구서에서 입력).
-  // 함수 이름·반환 모양은 그대로 둬 뷰(예상/확정 청구액 표시)가 분기 없이 쓴다.
-  const fixed = session.billing_amount != null ? Math.round(session.billing_amount) : null;
-  return manualSessionAmount(session, fixed, batch);
-}
-
 /**
- * 단가 항목 없는 대관 세션의 청구 정보(개편 1단계). sessionRateAmount와 같은 모양으로 돌려줘 뷰·청구 경로가
- * 분기 없이 쓰게 한다 — `item.name`은 세션 종류, 금액은 확정액 또는 0(청구 폼에서 입력). `manual: true`로 구분.
- * 시간 세션인데 소요가 0 이하면 null(산정 경로와 같은 규칙 — 시간을 먼저 고쳐야 한다).
+ * 대관 세션의 청구 정보 — 금액은 사람이 적은 확정액(billing_amount)뿐, 없으면 0(청구서에서 입력).
+ * 대관 종류가 아니면 null, 시간 세션인데 소요가 0 이하면 null(시간을 먼저 고쳐야 한다).
+ * (단가표 산정은 개편 3단계에서 폐지, 4단계에서 코드 삭제 — 반환 모양은 뷰·청구 경로가 그대로 쓴다.)
  */
-function manualSessionAmount(session, fixed, batch = {}) {
+function sessionRateAmount(session) {
+  if (!session || !RENTAL_SESSION_TYPES.includes(session.session_type)) return null;
+  const fixed = session.billing_amount != null ? Math.round(session.billing_amount) : null;
   const allDay = !!session.all_day;
-  const minutes = allDay ? 0 : sessionBillableMinutes(session, batch.segments ? batch.segments.get(session.id) || [] : undefined);
+  const minutes = sessionBillableMinutes(session);
   if (!allDay && minutes <= 0) return null;
   const amount = fixed != null ? fixed : 0;
   return {
@@ -416,24 +322,15 @@ function manualSessionAmount(session, fixed, batch = {}) {
   };
 }
 
-/**
- * 요금 산정의 기준이 되는 분(2026-07-26). 촬영처럼 구간(session_segments)이 등록된 세션은
- * **구간 합산**이고(반입·설치 + 촬영 + 철수), 구간이 없으면 종전대로 시작~종료 span이다.
- * 룸 점유·캘린더는 span(sessions.start_time~end_time)을 그대로 쓴다 — 구간 사이에 빈 시간이 있어도
- * 그 방은 계속 잡혀 있으므로 점유는 아우르는 한 덩어리이고, 요금만 실제 쓴 구간의 합으로 센다.
- */
-function sessionBillableMinutes(session, segmentsOverride) {
-  if (!session) return 0;
-  if (session.all_day) return 0;
-  // segmentsOverride: 배치 조회가 미리 읽어 넘긴 구간 배열(빈 배열 = 구간 없음 → 재조회 금지).
-  const segs = segmentsOverride !== undefined ? segmentsOverride : listSessionSegments(session.id);
-  if (segs.length) return segs.reduce((sum, g) => sum + minutesBetween(g.start_time, g.end_time), 0);
+/** 세션 소요 분(시작~종료). 종일은 0. */
+function sessionBillableMinutes(session) {
+  if (!session || session.all_day) return 0;
   return minutesBetween(session.start_time, session.end_time);
 }
 
 /**
  * 세션 확정 청구액 저장(청구 폼 금액칸 즉시 저장 — 작업의 setTaskAmount와 대칭).
- * amount=null이면 컬럼을 비워 **단가표 자동 산정으로 복귀**(빈 칸 = 되돌리기). 0은 '0원 청구'로 유효한 값.
+ * amount=null이면 컬럼을 비워 **'미정'으로 되돌린다**(빈 칸). 0은 '0원 청구'로 유효한 값.
  * 이미 청구된 세션은 거부(invoice_items 스냅샷이 잠금).
  */
 function setSessionAmount(user, sessionId, amount) {
@@ -534,7 +431,6 @@ function createSession(user, projectId, input = {}) {
   const project = getProjectForUser(user, projectId);
   if (!project) return null;
   const f = sessionFields(input);
-  const segments = f.all_day ? [] : segmentsFromInput(input); // 종일은 시간이 없어 구간도 없다(있으면 지운다)
   const directorIds = resolveDirectorIds(input);
   f.director_party_id = directorIds[0] || null; // 첫 디렉터(party id)
   const engineerAssignments = resolveEngineerAssignments(input);
@@ -552,14 +448,13 @@ function createSession(user, projectId, input = {}) {
   withTx(() => {
     const info = d
       .prepare(
-        `INSERT INTO sessions (project_id, session_type, session_date, all_day, end_date, start_time, end_time, booker_name, engineer_name, status, rate_item_id, room_id, location, location_label, director_party_id, memo)
-         VALUES (@project_id, @session_type, @session_date, @all_day, @end_date, @start_time, @end_time, @booker_name, @engineer_name, @status, @rate_item_id, @room_id, @location, @location_label, @director_party_id, @memo)`
+        `INSERT INTO sessions (project_id, session_type, session_date, all_day, end_date, start_time, end_time, booker_name, engineer_name, status, room_id, location, location_label, director_party_id, memo)
+         VALUES (@project_id, @session_type, @session_date, @all_day, @end_date, @start_time, @end_time, @booker_name, @engineer_name, @status, @room_id, @location, @location_label, @director_party_id, @memo)`
       )
       .run({ project_id: project.id, ...f });
     newId = info.lastInsertRowid;
     setSessionDirectors(newId, directorIds); // 다대다 디렉터 저장
     setSessionEngineers(newId, engineerAssignments); // 다대다 엔지니어 저장(+ 외주 지급단가)
-    if (segments) setSessionSegments(newId, segments); // 촬영 구간 — 폼에 구간 칸이 없으면 null이라 건드리지 않는다
   });
   return d.prepare("SELECT * FROM sessions WHERE id = ?").get(newId);
 }
@@ -570,7 +465,6 @@ function updateSession(user, sessionId, input = {}) {
   if (!s) return null;
   if (isSessionInvoiced(s.id)) throw new Error("SESSION_INVOICED");
   const f = sessionFields(input);
-  const segments = f.all_day ? [] : segmentsFromInput(input); // 종일은 시간이 없어 구간도 없다(있으면 지운다)
   const directorIds = resolveDirectorIds(input);
   f.director_party_id = directorIds[0] || null; // 첫 디렉터(party id)
   const engineerAssignments = resolveEngineerAssignments(input);
@@ -589,13 +483,12 @@ function updateSession(user, sessionId, input = {}) {
       .prepare(
         `UPDATE sessions SET session_type=@session_type, session_date=@session_date, all_day=@all_day, end_date=@end_date, start_time=@start_time,
          end_time=@end_time, booker_name=@booker_name, engineer_name=@engineer_name, status=@status,
-         rate_item_id=@rate_item_id, room_id=@room_id, location=@location, location_label=@location_label, director_party_id=@director_party_id,
+         room_id=@room_id, location=@location, location_label=@location_label, director_party_id=@director_party_id,
          memo=@memo WHERE id=@id`
       )
       .run({ id: s.id, ...f });
     setSessionDirectors(s.id, directorIds); // 다대다 디렉터 교체
     setSessionEngineers(s.id, engineerAssignments); // 다대다 엔지니어 교체(+ 외주 지급단가, worker_paid 보존)
-    if (segments) setSessionSegments(s.id, segments); // 촬영 구간 교체(구간 칸이 없는 요청은 기존 구간 보존)
     d.exec("COMMIT;");
   } catch (e) {
     d.exec("ROLLBACK;");
@@ -647,22 +540,14 @@ function deleteSession(user, sessionId) {
   return { project_id: s.project_id };
 }
 
-/** rate_items를 1회 로드해 행별 billing을 계산하는 mapper — 목록 .map(sessionRateAmount) N+1 제거(2026-07-09 감사). */
-/**
- * 행별 billing 계산 mapper — rate_items를 1회 로드(N+1 제거, 2026-07-09 감사 L9).
- * `ids`(그 목록의 세션 id)를 주면 **구간도 1회 배치 로드**한다(2026-07-27 메인터넌스 —
- * 촬영 구간 도입이 행당 `listSessionSegments` 단건 조회를 되살려 놨다: 실측 행당 1.5쿼리).
- * ids 없이 쓰면 종전처럼 행당 조회로 폴백(단건 경로).
- */
-function withBilling(_ids) {
-  // 단가표·촬영 구간 제거(개편 3단계) — 소요 시간은 시작~종료 span, 금액은 확정액뿐이라 추가 조회가 없다.
-  const noSegments = new Map();
-  return (row) => ({ ...row, billing: sessionRateAmount(row, null, { segments: noSegments }) });
+/** 세션 행 + billing(청구 정보). */
+function withBilling(row) {
+  return { ...row, billing: sessionRateAmount(row) };
 }
 
 /** 행 배열에 billing 부착 — 목록 조회 공용. */
 function attachBilling(rows) {
-  return rows.map(withBilling(rows.map((r) => r.id)));
+  return rows.map(withBilling);
 }
 
 /** 다가오는 세션(오늘 이후, 취소 제외) — 전역 일정/대시보드. */
@@ -763,7 +648,7 @@ function getSessionCard(_user, id) {
        JOIN projects p ON p.id = s.project_id WHERE s.id = ?`
     )
     .get(Number(id));
-  return row ? withBilling()(row) : null;
+  return row ? withBilling(row) : null;
 }
 
 module.exports = {
@@ -778,10 +663,6 @@ module.exports = {
   busySessionRanges,
   sessionRateAmount,
   sessionBillableMinutes,
-  listSessionSegments,
-  setSessionSegments,
-  segmentsFromInput,
-  segmentsSpan,
   createSession,
   updateSession,
   setSessionEventId,

@@ -80,7 +80,7 @@ function updateRoom(id, input = {}) {
 }
 
 /**
- * 통합 저장(2026-07-27 인라인 편집) — rate-items의 bulkUpdateRateItems와 같은 규약.
+ * 통합 저장(2026-07-27 인라인 편집) — 작업 종류의 bulkUpdateTaskTypes와 같은 규약.
  * 검증은 2단 구조: 이름 입력이 `required`라 정상 브라우저에서는 빈 이름 행이 있으면 제출 자체가 막힌다.
  * 여기의 이름 누락 skip은 required를 우회한 경우(JS-off·직접 제출)를 위한 안전망이다.
  */

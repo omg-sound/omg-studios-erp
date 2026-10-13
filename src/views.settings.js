@@ -4,12 +4,10 @@
 
 const { db } = require("./db");
 const { isChief } = require("./auth");
-const { config, ROLES, ROLE_LABELS, BILLING_TYPES, BILLING_TYPE_LABELS, RECORDING_CATEGORIES } = require("./config");
+const { config, ROLES, ROLE_LABELS } = require("./config");
 const {
   listProjectManagers,
   listRooms,
-  listRateItems,
-  listRateCategories,
   listTaskTypes,
   getStudioInfo,
   getStudioLogo,
@@ -28,10 +26,6 @@ const { backupDir } = require("./lib/maintenance");
 const { listAudit } = require("./lib/audit");
 const { kstDateTime, kstYmd, todayYmd } = require("./lib/date"); // DB는 UTC — 표시는 KST(2026-07-20)
 const { getState } = require("./db");
-
-// 세션 종류 라벨 — **config의 session_type 값과 같은 말**이어야 한다(요금표 분류가 어느 세션 종류에 붙는지 고르는 select).
-// 순서 = 요금표 분류 select·optgroup 순서(녹음 → 촬영 대관 → 작업 대관 → 공연).
-const RATE_KIND_LABELS = { recording: "녹음", filming: "촬영 대관", workspace: "작업 대관", performance: "공연" };
 
 // 감사 로그 action → 화면 라벨(2026-07-20 인증 기록 추가와 함께). 여기 없는 action은 원문 그대로 보인다 —
 // 새 action을 추가할 때 이 맵을 안 고쳐도 화면이 깨지지 않게(라벨은 읽기 편의일 뿐 진실원천은 action 문자열).
@@ -95,16 +89,6 @@ function saveRow(label = "저장") {
   </div>`;
 }
 
-/** 단가 항목 카테고리 select 옵션 — kind(녹음/대관/공연)별 optgroup, DB 분류 순서(2026-07-05 config 하드코딩에서 전환). current 선택 반영. */
-function rateCategoryOptions(current = "") {
-  const byKind = {};
-  listRateCategories().forEach((c) => { (byKind[c.kind] = byKind[c.kind] || []).push(c); });
-  return Object.keys(RATE_KIND_LABELS)
-    .filter((k) => byKind[k] && byKind[k].length)
-    .map((k) => `<optgroup label="${esc(RATE_KIND_LABELS[k])}">${byKind[k].map((c) => `<option value="${esc(c.name)}" ${c.name === current ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</optgroup>`)
-    .join("");
-}
-
 /** 부트스트랩 치프(ADMIN_EMAIL)는 강등/비활성 불가 — 잠금 방지. */
 function isBootstrapChief(user) {
   return Boolean(config.adminEmail) && user && user.email === config.adminEmail;
@@ -148,124 +132,6 @@ function peopleTab(currentUser) {
       //  사이드바에 외주 작업자 메뉴가 상시 노출돼 중복. 담당자 탭 = 로그인 계정 관리로 정체성 정리.)
 }
 
-/**
- * 요금표 트리 — **분류(어미) → 단가 항목(하위)** 2단(2026-07-29 사용자 결정, 지메일 라벨식).
- * 옛 구조는 목록이 분류로 묶여 있으면서 정작 분류 자체는 아래쪽 접이식 '분류 관리'에서 따로 고쳐야 했고,
- * 순서는 종류(녹음/촬영/공연)로 먼저 갈려 자유롭게 배치할 수 없었다 — 한 화면에서 다 되게 합쳤다.
- * 분류 행이 곧 편집 행(이름·종류·↑↓·삭제)이고, 그 아래에 그 분류의 항목들과 '+ 항목 추가' 줄이 붙는다.
- * ⚠️저장 버튼은 트리 전체에 하나(호출부의 통합 저장) — 행마다 저장을 두지 않는다.
- * 반환 {list, actionForms}: actionForms는 ↑↓·삭제용 형제 hidden 폼(중첩 폼 금지라 통합 저장 폼 밖에 둔다).
- */
-function ratesTree(rates) {
-  const cats = listRateCategories();
-  const byCat = {};
-  rates.forEach((r) => { (byCat[r.category || ""] = byCat[r.category || ""] || []).push(r); });
-  // 등록된 분류에 속하지 않는 항목(분류를 지웠거나 옛 데이터)도 잃어버리지 않게 맨 아래 묶음으로 보여준다.
-  const known = new Set(cats.map((c) => c.name));
-  const orphanNames = Object.keys(byCat).filter((n) => !known.has(n));
-
-  const itemRows = (name) => {
-    const items = byCat[name] || [];
-    return `<div class="space-y-1.5">${items.map((r) => rateItemRow(r)).join("")
-      || `<p class="px-2 py-1 text-xs text-muted">항목 없음</p>`}</div>`;
-  };
-
-  const list = cats.map((c) => `
-    <div class="rounded-lg border border-border">
-      ${rateCategoryRow(c)}
-      <!-- 하위 항목은 왼쪽 선 + 들여쓰기로 어미와 구분한다(지메일 라벨식 계층 표시). -->
-      <div class="space-y-1.5 border-t border-border py-2 pl-2 pr-1 sm:pl-6">
-        ${itemRows(c.name)}
-        ${rateItemAddRow(c)}
-      </div>
-    </div>`).join("")
-    + orphanNames.map((n) => `
-    <div class="rounded-lg border border-warning/40">
-      <div class="flex items-center gap-2 px-3 py-2 text-sm">
-        <span class="font-medium">${esc(n)}</span>
-        <span class="badge badge-warning">등록되지 않은 분류</span>
-        <span class="text-xs text-muted">아래 항목의 분류를 바꾸거나 같은 이름으로 분류를 추가하세요.</span>
-      </div>
-      <div class="space-y-1.5 border-t border-border p-2">${itemRows(n)}</div>
-    </div>`).join("");
-
-  const actionForms = rates.map((r) => rateItemActionForms(r)).join("") + cats.map(rateCategoryActionForms).join("");
-  return { list: list || emptyState("등록된 분류가 없습니다. 아래에서 분류를 먼저 추가하세요."), actionForms };
-}
-
-/**
- * 분류 관리 행 — 기본 분류도 같은 편집 행을 쓴다(2026-07-29 잠금 해제. 근거였던 '코드가 이름에 의존'이
- * 사실이 아니었고, 남은 보호인 '사용 중이면 삭제 거부'는 데이터 계층이 지킨다).
- * ⚠️저장 버튼은 행에 없다 — 섹션 하나에 통합 저장 하나(단가 항목·룸·작업 종류와 같은 규칙). 행 액션
- * (↑↓·삭제)만 `form=`으로 형제 hidden 폼을 가리킨다(중첩 폼 금지).
- */
-function rateCategoryRow(c) {
-  const kindOpts = Object.entries(RATE_KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === c.kind ? "selected" : ""}>${esc(l)}</option>`).join("");
-  return `<div class="flex flex-wrap items-center gap-2 rounded-t-lg bg-elevated px-3 py-2" id="rate-cat-${c.id}">
-    <input class="input w-48 py-1.5 text-sm font-semibold" name="cat_name_${c.id}" value="${esc(c.name)}" aria-label="분류명" autocomplete="off" required />
-    <select class="input w-28 py-1.5 text-sm" name="kind_${c.id}" aria-label="세션 종류">${kindOpts}</select>
-    <span class="ml-auto flex shrink-0 items-center gap-1">
-      <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="cat-del-${c.id}">분류 삭제</button>
-      ${moveButtons(`cat-mv-u-${c.id}`, `cat-mv-d-${c.id}`)}
-    </span>
-  </div>`;
-}
-
-/**
- * 분류 안의 '+ 항목 추가' 줄 — 분류가 정해져 있으므로 분류 select 없이 hidden으로 넘긴다(옛 전역 추가 행은
- * 매번 분류를 골라야 했다). 편집 행과 같은 2줄 모양이라 추가할 때와 추가된 뒤가 같아 보인다.
- */
-function rateItemAddRow(cat) {
-  // ⚠️트리 전체가 통합 저장 폼 안이라 여기에 <form>을 두면 중첩 폼이 된다(브라우저가 내부 폼을 버려
-  // '추가'가 통합 저장을 제출해 버린다) — 행 액션(↑↓·삭제)과 같은 form= 참조 방식으로 뺀다.
-  const f = `form="rate-add-${cat.id}"`;
-  return `
-    <div class="space-y-1 rounded-lg border border-dashed border-border p-2">
-      <div class="flex flex-wrap items-center gap-2">
-        <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[16rem]" ${f} name="rate_name" placeholder="+ 새 항목 이름" aria-label="단가 항목명" autocomplete="off" />
-        <span class="text-xs text-muted">이 분류에 추가</span>
-        <span class="ml-auto shrink-0"><button class="btn-ghost btn-xs whitespace-nowrap" type="submit" ${f}>추가</button></span>
-      </div>
-      ${chargeLine({ baseHours: "base_hours", basePrice: "base_price", extraHours: "extra_hours", extraPrice: "extra_price" },
-                   { baseHours: "", basePrice: "", extraHours: 1, extraPrice: "" }, f)}
-    </div>`;
-}
-
-/** 분류 행의 형제 hidden 액션 폼(↑↓·삭제) — 통합 저장 폼 밖에 렌더해 중첩 폼 회피. */
-function rateCategoryActionForms(c) {
-  return `
-    <form id="cat-mv-u-${c.id}" method="post" action="/settings/rate-categories/${c.id}/move" hidden><input type="hidden" name="dir" value="up" /></form>
-    <form id="cat-mv-d-${c.id}" method="post" action="/settings/rate-categories/${c.id}/move" hidden><input type="hidden" name="dir" value="down" /></form>
-    <form id="cat-del-${c.id}" method="post" action="/settings/rate-categories/${c.id}/delete" hidden data-confirm="'${esc(c.name)}' 분류를 삭제할까요? 이 분류를 쓰는 단가 항목이 있으면 삭제할 수 없습니다."></form>
-    <form id="rate-add-${c.id}" method="post" action="/settings/rate-items" hidden><input type="hidden" name="category" value="${esc(c.name)}" /></form>`;
-}
-
-/**
- * 요금표 화면 — 분류(어미) → 단가 항목(하위) 2단 트리 하나(2026-07-29). 옛 '분류 관리' 접이식 섹션은
- * 폐지했다(같은 대상을 두 곳에서 고치게 만들던 구조).
- */
-function ratesPane() {
-  const rates = listRateItems({ includeInactive: true });
-  const t = ratesTree(rates);
-  const kindOpts = Object.entries(RATE_KIND_LABELS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("");
-  return `
-      <section class="card space-y-4" id="rates-section">
-        <div>
-          <h2 class="font-display text-lg font-semibold">요금표 · 녹음/대관 종류${settingHint(`대관 세션의 시간제 단가입니다. <b>분류</b>가 어미고 그 아래에 단가 항목이 들어갑니다 — 분류의 <b>세션 종류</b>(녹음·촬영·공연)가 세션 예약 폼에서 어떤 항목을 보여줄지 정합니다. 기준 시간(1Pro) 안은 기준가, 초과는 단위 시간당 추가 과금 — <b>기준 시간을 비우면 정액(회당)</b>, 가격까지 비우면 <b>금액 미정</b>(청구 시 입력).<br>↑↓ 순서는 자유이고(분류끼리 종류가 달라도 섞어 배치 가능) 이 순서가 세션 예약 폼의 항목 순서가 됩니다.`, "요금표 설정 설명")}</h2>
-        </div>
-        ${scrollX(`        <form method="post" action="/settings/rates/bulk" id="rates-bulk-form" class="space-y-2" data-dirty-form>
-          ${t.list}
-          ${saveRow("통합 저장")}
-        </form>`)}
-        ${t.actionForms}
-        <form method="post" action="/settings/rate-categories" class="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
-          <input class="input w-48 py-1.5 text-sm" name="cat_name" placeholder="+ 새 분류 이름" aria-label="분류명" autocomplete="off" required />
-          <select class="input w-28 py-1.5 text-sm" name="kind" aria-label="세션 종류">${kindOpts}</select>
-          <button class="btn-ghost btn-xs shrink-0" type="submit">분류 추가</button>
-        </form>
-      </section>`;
-}
-
 /** 작업 종류 화면 — 곡·콘텐츠 후반작업 카탈로그. 옛 contentTab의 뒷부분(2026-07-28 분리). */
 function taskTypesPane() {
   const taskTypes = listTaskTypes({ includeInactive: true });
@@ -275,14 +141,11 @@ function taskTypesPane() {
           <h2 class="font-display text-lg font-semibold">작업 종류 <span class="text-sm font-normal text-muted">(후반작업)</span>${settingHint(`후반작업 종류(보컬튠·믹싱·마스터링 등)를 관리합니다. '빠른추가'를 켜면 프로젝트 작업 탭의 빠른 추가 버튼에 노출됩니다. 금액은 종류마다 정해 두지 않고 청구서에서 직접 적습니다.`, "작업 종류 설정 설명")}</h2>
         </div>
         ${(() => {
-          // 단가표와 같은 규칙 — 추가 폼은 목록의 첫 행이고 편집 행과 같은 2줄 모양이다(열 제목 줄 없음).
+          // 추가 폼은 목록의 첫 행이고 편집 행과 같은 모양이다(열 제목 줄 없음).
           const addRow = `
         <form method="post" action="/settings/task-types" class="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-2">
           <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[14rem]" name="label" placeholder="+ 새 작업 종류 이름 (예: 보컬튠)" aria-label="작업 종류명" required />
-          <select class="input w-36 py-1.5 text-sm" name="billing_type" aria-label="과금">
-            ${BILLING_TYPES.map((b) => `<option value="${esc(b)}">${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
-          </select>
-          ${taskPriceInline({ unitPrice: "unit_price", isQuick: "is_quick" }, {})}
+          ${quickAddToggle("is_quick", false)}
           <span class="ml-auto shrink-0"><button class="btn-ghost btn-xs whitespace-nowrap" type="submit">추가</button></span>
         </form>`;
           if (!taskTypes.length) return scrollX(addRow, "space-y-1.5") + emptyState("등록된 작업 종류가 없습니다.");
@@ -618,77 +481,12 @@ function userRow(u, currentUser, chief = true) {
     </div>`;
 }
 
-/** 단가표 행 = 한 줄 인라인 편집 필드(2026-07-27 통합 저장). 액션 버튼은 form=으로 형제 hidden 폼 참조(중첩 폼 금지). */
-function rateItemRow(r) {
-  const baseHours = r.base_minutes ? r.base_minutes / 60 : "";
-  const extraHours = r.extra_minutes ? r.extra_minutes / 60 : 1;
-  // 분류가 비어 있을 때의 기본 선택값 — 첫 등록 분류(없으면 시드 상수). ⚠️config 상수를 그대로 쓰면
-  // 기본 분류를 개명·삭제할 수 있게 된 뒤(2026-07-29) DB에 없는 이름을 고르게 된다.
-  const cat = r.category || (listRateCategories()[0] || {}).name || RECORDING_CATEGORIES[0];
-  return `
-    <div class="space-y-1 rounded-lg p-2 ${r.active ? "" : "opacity-60"}" id="rate-item-${r.id}">
-      <div class="flex flex-wrap items-center gap-2">
-        <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[16rem]" name="rate_name_${r.id}" value="${esc(r.name)}" aria-label="단가 항목명" autocomplete="off" required />
-        <select class="input w-40 py-1.5 text-sm" name="category_${r.id}" aria-label="분류 이동(다른 분류로 옮기기)">${rateCategoryOptions(cat)}</select>
-        <span class="ml-auto flex shrink-0 items-center gap-1">
-          ${r.active ? "" : '<span class="text-xs text-muted">(비활성)</span>'}
-          <button class="btn-ghost btn-xs whitespace-nowrap" type="submit" form="rate-act-${r.id}">${r.active ? "비활성" : "활성"}</button>
-          <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="rate-del-${r.id}">삭제</button>
-          ${moveButtons(`rate-mv-u-${r.id}`, `rate-mv-d-${r.id}`)}
-        </span>
-      </div>
-      ${chargeLine({ baseHours: `base_hours_${r.id}`, basePrice: `base_price_${r.id}`, extraHours: `extra_hours_${r.id}`, extraPrice: `extra_price_${r.id}` },
-                   { baseHours, basePrice: r.base_price || "", extraHours, extraPrice: r.extra_price || "" })}
-    </div>`;
-}
-
-/**
- * 요금 줄(둘째 줄) — `기준 [3.5]시간 [300,000]원 · 초과 [1]시간마다 [100,000]원`.
- * 2026-07-29 사용자 결정: 옛 7열 표는 ①열 제목이 맨 위에 한 번뿐이라 아래쪽 분류를 입력할 땐 위를
- * 올려다봐야 했고 ②기준(h)/기준가·초과(h)/초과가가 쌍인데 네 열로 흩어져 매번 관계를 되짚어야 했으며
- * ③헤더가 트리 밖이라 들여쓰기된 행과 17px 어긋나 있었다. 단위·접속사를 칸 사이에 넣어 **행 자체가
- * 설명하게** 하고 열 제목 줄은 없앴다. 입력 폭은 고정이라 행끼리 세로 정렬은 그대로 유지된다.
- * @param names 필드명 묶음(편집 행은 `_<id>` 접미, 추가 행은 접미 없음)
- * @param vals  현재 값(추가 행은 빈 값 + 초과 단위 기본 1)
- * @param formAttr 추가 행처럼 폼 밖 형제 폼을 가리켜야 할 때의 `form="..."`(중첩 폼 금지)
- */
-function chargeLine(names, vals = {}, formAttr = "") {
-  const num = (name, value, label, width, ph = "") =>
-    `<input class="input ${width} py-1.5 text-right text-sm" ${formAttr} name="${name}" inputmode="${/price/.test(name) ? "numeric" : "decimal"}" value="${esc(String(value == null ? "" : value))}" aria-label="${esc(label)}" placeholder="${esc(ph)}" />`;
-  return `
-      <div class="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-        <span>기준</span>
-        ${num(names.baseHours, vals.baseHours, "기준 시간(시간)", "w-14", "3.5")}
-        <span>시간</span>
-        ${num(names.basePrice, vals.basePrice, "기준 가격(원)", "w-28", "300000")}
-        <span>원</span>
-        <span class="px-2 text-muted">·</span>
-        <span>초과</span>
-        ${num(names.extraHours, vals.extraHours, "초과 단위(시간)", "w-14", "1")}
-        <span>시간마다</span>
-        ${num(names.extraPrice, vals.extraPrice, "초과 단가(원)", "w-28", "100000")}
-        <span>원</span>
-      </div>`;
-}
-
-/** 단가표 행의 형제 hidden 액션 폼(↑↓·활성 토글·삭제) — bulk 폼 밖에 렌더해 중첩 폼 회피. */
-function rateItemActionForms(r) {
-  return `
-    <form id="rate-mv-u-${r.id}" method="post" action="/settings/rate-items/${r.id}/move" hidden><input type="hidden" name="dir" value="up" /></form>
-    <form id="rate-mv-d-${r.id}" method="post" action="/settings/rate-items/${r.id}/move" hidden><input type="hidden" name="dir" value="down" /></form>
-    <form id="rate-act-${r.id}" method="post" action="/settings/rate-items/${r.id}/active" hidden><input type="hidden" name="active" value="${r.active ? "0" : "1"}" /></form>
-    <form id="rate-del-${r.id}" method="post" action="/settings/rate-items/${r.id}/delete" hidden data-confirm="'${esc(r.name)}' 단가 항목을 삭제할까요? 이미 발행된 청구서는 금액이 따로 저장돼 그대로 남지만, 이 항목으로 잡힌 세션은 단가 항목이 비워져 청구할 수 없게 됩니다. 잠시 안 쓰는 것뿐이면 '비활성으로'를 쓰세요."></form>`;
-}
-
 /** 작업 종류 행 = 한 줄 인라인 편집(2026-07-27 통합 저장). */
 function taskTypeRow(t) {
   return `
     <div class="flex flex-wrap items-center gap-2 rounded-lg p-2" id="task-type-${t.id}">
       <input class="input min-w-0 flex-1 py-1.5 text-sm sm:max-w-[14rem]" name="label_${t.id}" value="${esc(t.label)}" aria-label="작업 종류명" required />
-      <select class="input w-36 py-1.5 text-sm" name="billing_type_${t.id}" aria-label="과금">
-        ${BILLING_TYPES.map((b) => `<option value="${esc(b)}" ${b === t.billing_type ? "selected" : ""}>${esc(BILLING_TYPE_LABELS[b] || b)}</option>`).join("")}
-      </select>
-      ${taskPriceInline({ unitPrice: `unit_price_${t.id}`, isQuick: `is_quick_${t.id}` }, { unitPrice: t.unit_price || "", isQuick: t.is_quick })}
+      ${quickAddToggle(`is_quick_${t.id}`, t.is_quick)}
       <span class="ml-auto flex shrink-0 items-center gap-1">
         <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="tt-del-${t.id}">삭제</button>
         ${moveButtons(`tt-mv-u-${t.id}`, `tt-mv-d-${t.id}`)}
@@ -696,14 +494,11 @@ function taskTypeRow(t) {
     </div>`;
 }
 
-/**
- * 작업 종류의 빠른추가 토글. '기본 단가' 칸은 개편 3단계(2026-10-13)에서 삭제 — 작업 금액은 청구서에서 직접 쓴다
- * (사용자 결정: 금액은 항상 직접 기입). task_types.unit_price 컬럼은 읽지 않는다(4단계 정리).
- */
-function taskPriceInline(names, vals = {}, formAttr = "") {
+/** 작업 종류의 빠른추가 토글(켜면 프로젝트 작업 탭의 빠른 추가 버튼에 노출). */
+function quickAddToggle(name, checked) {
   return `
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-xs text-muted">
-        <input type="checkbox" ${formAttr} name="${names.isQuick}" value="1" ${vals.isQuick ? "checked" : ""} /> 빠른추가
+        <input type="checkbox" name="${name}" value="1" ${checked ? "checked" : ""} /> 빠른추가
       </label>`;
 }
 
@@ -941,7 +736,6 @@ function settingsMenu(current, warnCount = 0) {
 
 module.exports = {
   peopleTab,
-  ratesPane,
   taskTypesPane,
   driveStorageSection,
   studioCalendarSection,
@@ -956,4 +750,4 @@ module.exports = {
   SETTINGS_NAV,
   SETTINGS_KEYS,
   settingsMenu,
-}; // 내부 전용: rateCategoryOptions·listUsers·ratesTree·rateCategoryRow·rateCategoryActionForms·rateItemAddRow·roomRow·roomActionForms·userRow·rateItemRow·rateItemActionForms·taskTypeRow·taskTypeActionForms(위 export 함수들이 클로저로 사용)
+}; // 내부 전용: listUsers·roomRow·roomActionForms·userRow·taskTypeRow·taskTypeActionForms(위 export 함수들이 클로저로 사용)
