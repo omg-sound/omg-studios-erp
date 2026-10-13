@@ -394,7 +394,8 @@ const BILLABLE_SESSION_SQL = `s.status <> '취소' AND s.session_type IN (${RENT
 
 /**
  * 청구 대기함(개편 3단계) — **모든 프로젝트**의 미청구 세션·작업을 프로젝트별로 묶어 반환.
- * 내부 지원 프로젝트는 뺀다. 금액은 사람이 적어 둔 값만(세션 확정액·작업 금액) — 산정치 없음.
+ * 내부 지원 프로젝트는 뺀다. 금액은 싣지 않는다 — 금액은 청구서 작성 화면에서 정한다(2026-10-14 사용자 결정:
+ * 미리 적힌 금액이 헷갈린다). DB에 옛 작업 금액·세션 확정액이 남아 있어도 청구 전에는 읽지 않는다.
  * 개편 5단계: 완료 상태가 없다 — 날짜가 안 된(오늘 이후) 세션만 future=true(화면이 흐리게·확인). 작업은 등록=수주라 늘 청구 가능.
  * @param {object} f q=프로젝트·아티스트·제작/운영·소속 검색, from/to=날짜(YYYY-MM-DD), pastOnly=지난 일정만(오늘 포함),
  *   showWaived='청구 안 함'도 보기, projectId=한 프로젝트만
@@ -440,7 +441,6 @@ function listBillableItems(_user, f = {}) {
     g.items.push({
       kind: "session", id: s.id, key: `s${s.id}`, date: s.session_date, future: s.session_date > today, waived: !!s.waived,
       label: sessionLineLabel(s, g.project.artist), time: [s.start_time, s.end_time].filter(Boolean).join("–"),
-      amount: s.billing_amount != null ? Math.round(s.billing_amount) : null,
     });
   }
   for (const t of tasks) {
@@ -448,7 +448,6 @@ function listBillableItems(_user, f = {}) {
     g.items.push({
       kind: "task", id: t.id, key: `t${t.id}`, date: t.work_date || null, future: false, waived: !!t.waived,
       label: taskLineLabel(t, g.project.title), time: "", engineer: t.engineer_name || "",
-      amount: t.total_price > 0 ? t.total_price : null,
     });
   }
   // 프로젝트 순서 = 가장 오래된 미청구 항목 날짜(먼저 끝난 일부터 청구).
@@ -471,6 +470,7 @@ function listBillableItems(_user, f = {}) {
 
 /**
  * 대기함에서 고른 키("s12"·"t34")를 청구서 작성 화면의 라인으로(청구 가능한 것만 — 이미 청구됐거나 취소된 건 빠지고 skipped로).
+ * 금액칸은 비워서 연다 — 금액은 여기서 처음 정한다(2026-10-14, 옛 작업 금액·세션 확정액으로 미리 채우지 않는다).
  * @returns {{lines:Array, projects:Array, skipped:number}}
  */
 function composeLinesForKeys(keys) {
@@ -487,12 +487,12 @@ function composeLinesForKeys(keys) {
       const s = d.prepare(`SELECT s.*, p.artist AS p_artist FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.id = ? AND ${BILLABLE_SESSION_SQL}`).get(id);
       if (!s) { skipped++; continue; }
       pids.add(s.project_id);
-      lines.push({ kind: "session", id, key: k, project_id: s.project_id, date: s.session_date, future: s.session_date > todayYmd(), label: sessionLineLabel(s, s.p_artist), amount: s.billing_amount != null ? Math.round(s.billing_amount) : null, _s: s });
+      lines.push({ kind: "session", id, key: k, project_id: s.project_id, date: s.session_date, future: s.session_date > todayYmd(), label: sessionLineLabel(s, s.p_artist), amount: null, _s: s });
     } else {
       const t = d.prepare("SELECT t.*, p.title AS p_title FROM track_tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ? AND t.is_invoiced = 0").get(id);
       if (!t) { skipped++; continue; }
       pids.add(t.project_id);
-      lines.push({ kind: "task", id, key: k, project_id: t.project_id, date: t.work_date || null, future: false, label: taskLineLabel(t, t.p_title), amount: t.total_price > 0 ? t.total_price : null });
+      lines.push({ kind: "task", id, key: k, project_id: t.project_id, date: t.work_date || null, future: false, label: taskLineLabel(t, t.p_title), amount: null });
     }
   }
   // 같은 날짜 세션이 둘 이상이면 그 세션들 설명에 시작 시간을 붙인다(발행될 청구서에서 구분되게).

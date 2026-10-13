@@ -323,13 +323,10 @@ function sessionRow(s, { isAdmin = false, managers = [], rooms, showProject = fa
       : s.session_date <= todayYmd()
         ? '<span class="whitespace-nowrap text-success">청구 가능</span>'
         : '<span class="whitespace-nowrap text-muted">일정 전</span>';
-  // 확정 청구액(billing.fixed = 청구 폼에서 사람이 고쳐 저장한 값)은 '예상'과 구분해 표시한다 —
-  // 안 그러면 사람이 확정한 금액인지 아닌지 구분이 안 된다(2026-07-14 점검).
-  const amountChunk = s.billing && s.billing.fixed
-    ? `<span class="whitespace-nowrap text-success">확정 청구액 ${formatKRW(s.billing.amount)}</span>`
-    : s.billing && s.billing.amount > 0
-      ? `<span class="whitespace-nowrap text-success">예상 청구액 ${formatKRW(s.billing.amount)}</span>`
-      : `<span class="whitespace-nowrap text-muted">청구액 미정 <span class="text-muted/70">(청구 시 입력)</span></span>`;
+  // 금액은 청구된 세션만(발행 때 정한 금액) — 청구 전엔 금액이 없다(2026-10-14 사용자 결정, 청구서 작성 화면에서 정한다).
+  const amountChunk = s.invoiced && s.billing && s.billing.fixed
+    ? `<span class="whitespace-nowrap text-success">청구액 ${formatKRW(s.billing.amount)}</span>`
+    : "";
   const billLine = s.billing
     ? `<div class="mt-1 flex flex-wrap items-baseline justify-end gap-x-2.5 gap-y-0.5 break-keep text-xs tabular">
          ${amountChunk}
@@ -591,7 +588,7 @@ function sessionCardModal(s, { canEdit = false } = {}) {
   if (directors.length) lines.push(`디렉터 ${directors.map((d) => esc(personLabel(d.name, d.activity_name))).join(", ")}`);
   if (s.memo) lines.push(esc(s.memo));
   const bill = s.billing
-    ? `${s.billing.fixed ? `확정 청구액 ${formatKRW(s.billing.amount)}` : s.billing.amount > 0 ? `예상 청구액 ${formatKRW(s.billing.amount)}` : "청구액 미정"} · ${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}`
+    ? `${s.invoiced && s.billing.fixed ? `청구액 ${formatKRW(s.billing.amount)} · ` : ""}${s.billing.allDay ? "종일" : `${Math.floor(s.billing.minutes / 60)}시간 ${s.billing.minutes % 60}분`} · ${esc(s.billing.item.name)}`
     : "";
   const statusBadge = s.status === "취소"
     ? `<span class="badge ${SESSION_STATUS_BADGE[s.status] || "bg-muted/10 text-muted"}">${esc(s.status)}</span>` : "";
@@ -625,7 +622,7 @@ function sessionCardModal(s, { canEdit = false } = {}) {
           <button type="button" class="btn-ghost btn-xs shrink-0" data-modal-close aria-label="닫기">✕</button>
         </div>
         ${lines.length ? `<div class="mt-2 space-y-0.5 text-sm text-muted">${lines.map((l) => `<div>${l}</div>`).join("")}</div>` : ""}
-        ${bill ? `<div class="mt-2 text-sm tabular ${s.billing.amount > 0 ? "text-success" : "text-muted"}">${bill}</div>` : ""}
+        ${bill ? `<div class="mt-2 text-sm tabular ${s.invoiced && s.billing.fixed ? "text-success" : "text-muted"}">${bill}</div>` : ""}
         <div class="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
           <a href="/projects/${s.project_id}?tab=sessions" class="btn-ghost btn-sm">프로젝트로 ↗</a>
           <span class="flex items-center gap-2">${cancelForm}</span>

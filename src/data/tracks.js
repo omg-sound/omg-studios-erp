@@ -102,15 +102,6 @@ function resolveTaskEngineer(input) {
   return { engineer_id: null, engineer_name: null, is_external: false };
 }
 
-/** 청구 폼에서 입력한 작업 금액을 즉시 작업에 저장(초안이 아니라 기록 — 목록·청구 폼 기본값 반영). 청구된 작업은 거부. */
-function setTaskAmount(user, taskId, amount) {
-  const task = getTaskForUser(user, taskId);
-  if (!task) return null;
-  if (task.is_invoiced) throw new Error("TASK_LOCKED");
-  const amt = amount > 0 ? Math.round(amount) : 0;
-  db().prepare("UPDATE track_tasks SET unit_price = ?, total_price = ? WHERE id = ?").run(amt, amt, task.id);
-  return db().prepare("SELECT t.*, t.project_id FROM track_tasks t WHERE t.id = ?").get(task.id);
-}
 
 /** 작업 수정. 이미 청구된 작업은 거부(라인아이템 스냅샷이 잠금). total_price는 재계산. */
 function updateTask(user, taskId, input = {}) {
@@ -236,7 +227,6 @@ module.exports = {
   cleanSongTitle,
   renameSong,
   getTaskForUser,
-  setTaskAmount,
   updateTask,
   setTaskWaived,
   deleteTask,

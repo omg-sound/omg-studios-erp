@@ -25,7 +25,6 @@ const {
   createTasks,
   renameSong,
   updateTask,
-  setTaskAmount,
   setTaskWaived,
   deleteTask,
   getClientFile,
@@ -51,7 +50,7 @@ const {
   sessionInvoicedModal,
 } = require("../views.projects");
 const { kstHms, utcStampFromKst } = require("../lib/date");
-const { parseMoney, formatBizNo, cleanYmd } = require("../lib/forms");
+const { formatBizNo, cleanYmd } = require("../lib/forms");
 
 const router = express.Router();
 
@@ -414,17 +413,6 @@ router.post("/tasks/:taskId/waive", requireEditor, (req, res) => {
   }
 });
 
-// 청구 폼에서 입력한 작업 금액을 즉시 작업에 저장(AJAX) — 초안이 아니라 바로 기록되어 목록·청구 폼 기본값에 반영.
-router.post("/tasks/:taskId/amount", requireEditor, (req, res) => {
-  try {
-    const task = setTaskAmount(req.user, Number(req.params.taskId), parseMoney(req.body.amount));
-    if (!task) return res.status(404).json({ ok: false });
-    return res.json({ ok: true, amount: task.total_price });
-  } catch (e) {
-    if (e.message === "TASK_LOCKED") return res.status(400).json({ ok: false, error: "이미 청구된 작업은 금액을 바꿀 수 없습니다." });
-    throw e;
-  }
-});
 
 router.post("/tasks/:taskId/delete", requireEditor, (req, res) => {
   try {

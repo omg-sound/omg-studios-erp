@@ -94,11 +94,10 @@ function taskFields({ values, managers, projectInfoHtml, projectSummary }) {
       <div class="space-y-3 border-t border-border p-3">
         ${projectInfoHtml}
         <div class="text-xs font-semibold text-muted">이 작업 정보</div>
-        <div class="grid gap-3 sm:grid-cols-3">
+        <div class="grid gap-3 sm:grid-cols-2">
           <div><label class="label mb-0">담당 엔지니어<select class="input mt-1 block" name="engineer_id">${engineerSelect(managers, {})}</select></label>
             <p class="mt-1 text-xs text-muted">비우면 나로 지정됩니다.</p></div>
           <div data-worker-rate><label class="label mb-0">외주 지급단가 <span class="font-normal text-muted">(원)</span><input class="input mt-1 block" name="worker_rate" inputmode="numeric" placeholder="0" /></label></div>
-          <div><label class="label mb-0">금액 <span class="font-normal text-muted">(선택 · 청구 때 입력해도 됨)</span><input class="input mt-1 block" name="unit_price" inputmode="numeric" placeholder="종류 기본 단가" /></label></div>
         </div>
         <div><label class="label mb-0">곡 아티스트 <span class="font-normal text-muted">(프로젝트 아티스트와 다를 때만 — 컴필레이션 등)</span><input class="input mt-1 block" name="song_artist" value="${esc(values.song_artist || "")}" autocomplete="off" /></label></div>
       </div>

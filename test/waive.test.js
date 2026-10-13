@@ -31,7 +31,7 @@ test("setTaskWaived: 토글 + 예산·미청구 집계에서 제외, 되돌리�
 
   let rows = listProjects(CHIEF, {});
   let row = rows.find((r) => r.id === projectId);
-  assert.strictEqual(row.task_total, 300000, "무료 처리 전에는 예산에 포함");
+  assert.strictEqual(row.task_total, 0, "미청구 작업 금액은 예산에 없다(2026-10-14 — 금액은 청구서에서 정한다)");
   assert.strictEqual(row.unbilled_cnt, 1, "무료 처리 전에는 미청구 1건");
 
   const waived = setTaskWaived(CHIEF, task.id);
@@ -40,7 +40,6 @@ test("setTaskWaived: 토글 + 예산·미청구 집계에서 제외, 되돌리�
 
   rows = listProjects(CHIEF, {});
   row = rows.find((r) => r.id === projectId);
-  assert.strictEqual(row.task_total, 0, "무료 처리 후 예산 제외");
   assert.strictEqual(row.unbilled_cnt, 0, "무료 처리 후 미청구 집계 제외");
 
   // 되돌리기(같은 토글 재호출) — 원래 금액 그대로 복원.
@@ -49,7 +48,6 @@ test("setTaskWaived: 토글 + 예산·미청구 집계에서 제외, 되돌리�
   assert.strictEqual(restored.total_price, 300000, "되돌리면 원래 금액 그대로");
   rows = listProjects(CHIEF, {});
   row = rows.find((r) => r.id === projectId);
-  assert.strictEqual(row.task_total, 300000, "되돌리면 예산도 복원");
   assert.strictEqual(row.unbilled_cnt, 1);
 
   // 청구된 작업은 무료 처리 불가.
@@ -70,7 +68,6 @@ test("setSessionWaived: 토글 + 미청구 집계에서 제외, 청구된 세션
   let rows = listProjects(CHIEF, {});
   let row = rows.find((r) => r.id === projectId);
   assert.strictEqual(row.unbilled_cnt, 1, "무료 처리 전에는 미청구 1건");
-  assert.ok(row.session_amount_total > 0, "무료 처리 전에는 세션 예산 포함");
 
   const waived = setSessionWaived(CHIEF, sessionId);
   assert.strictEqual(waived.waived, 1);
@@ -78,14 +75,12 @@ test("setSessionWaived: 토글 + 미청구 집계에서 제외, 청구된 세션
   rows = listProjects(CHIEF, {});
   row = rows.find((r) => r.id === projectId);
   assert.strictEqual(row.unbilled_cnt, 0, "무료 처리 후 미청구 집계 제외");
-  assert.strictEqual(row.session_amount_total, 0, "무료 처리 후 세션 예산 제외");
 
   const restored = setSessionWaived(CHIEF, sessionId);
   assert.strictEqual(restored.waived, 0);
   rows = listProjects(CHIEF, {});
   row = rows.find((r) => r.id === projectId);
   assert.strictEqual(row.unbilled_cnt, 1, "되돌리면 미청구 집계 복원");
-  assert.ok(row.session_amount_total > 0, "되돌리면 세션 예산도 복원");
 
   const inv = db().prepare("INSERT INTO invoices (title, amount, paid_amount, status, tax_status) VALUES ('테스트 청구', 0, 0, '발행', '계산서 미발행')").run();
   db().prepare("INSERT INTO invoice_items (invoice_id, session_id, track_title, task_type, description, quantity, unit_price, amount) VALUES (?, ?, '', '', '', 1, 0, 0)").run(Number(inv.lastInsertRowid), sessionId);

@@ -25,12 +25,12 @@ function distinctProjectFields() {
   return { artists: col("artist"), companies: col("artist_company"), productions: col("production_company") };
 }
 
-/** 프로젝트 ID 배열의 녹음 세션 금액 합계 맵(단가표 산정, 취소 제외). 내부 헬퍼. */
+/** 프로젝트 ID 배열의 청구된 세션 금액 합계 맵(청구 라인 금액). 내부 헬퍼. */
 function sessionAmountsByProject(projectIds) {
   if (!projectIds || !projectIds.length) return {};
   const placeholders = projectIds.map(() => "?").join(",");
   const sums = {};
-  // ① 청구가 확정된(청구서에 걸린) 세션 = 협의 끝 → invoice_items의 확정 청구액 우선(예상 단가 산정 대신). 사용자 요청.
+  // 청구서에 걸린 세션 = invoice_items의 청구 금액.
   const invoiced = db()
     .prepare(
       `SELECT s.project_id AS pid, ii.session_id AS sid, SUM(ii.amount) AS amt
@@ -40,29 +40,8 @@ function sessionAmountsByProject(projectIds) {
        GROUP BY ii.session_id`
     )
     .all(...projectIds);
-  const invoicedSids = new Set();
-  for (const r of invoiced) {
-    invoicedSids.add(r.sid);
-    sums[r.pid] = (sums[r.pid] || 0) + (r.amt || 0);
-  }
-  // ② 미청구 대관 세션 = 사람이 적어 둔 확정액만(단가표 제거 — 개편 3단계). 없으면 아직 금액 미정이라 0.
-  const rows = db()
-    .prepare(
-      `SELECT s.id, s.project_id, s.billing_amount
-       FROM sessions s
-       WHERE s.project_id IN (${placeholders})
-         AND s.session_type IN (${RENTAL_IN})
-         AND (s.all_day = 1 OR (s.start_time IS NOT NULL AND s.end_time IS NOT NULL))
-         AND s.status <> '취소'
-         AND s.waived = 0
-         AND s.billing_amount IS NOT NULL
-         AND NOT EXISTS (SELECT 1 FROM track_tasks tt WHERE tt.session_id = s.id)`
-    )
-    .all(...projectIds);
-  for (const row of rows) {
-    if (invoicedSids.has(row.id)) continue; // 청구 확정분은 ①에서 확정액으로 반영
-    sums[row.project_id] = (sums[row.project_id] || 0) + Math.round(row.billing_amount);
-  }
+  for (const r of invoiced) sums[r.pid] = (sums[r.pid] || 0) + (r.amt || 0);
+  // 미청구 세션은 더하지 않는다 — 금액은 청구서 작성 화면에서 처음 정한다(2026-10-14 사용자 결정).
   return sums;
 }
 
@@ -117,7 +96,7 @@ function listProjects(_user, { q } = {}) {
       ${songTitlesSql("p")} AS track_titles,
       (SELECT COALESCE(SUM(t.total_price), 0)
        FROM track_tasks t
-       WHERE t.project_id = p.id AND t.waived = 0) AS task_total,
+       WHERE t.project_id = p.id AND t.is_invoiced = 1) AS task_total, -- 청구된 금액만(미청구 금액은 없다 — 2026-10-14)
       (SELECT COUNT(*) FROM sessions s
        WHERE s.project_id = p.id AND s.session_date >= @today AND s.status <> '취소') AS upcoming_cnt,
       (SELECT MIN(s.session_date) FROM sessions s
@@ -196,7 +175,7 @@ function getProjectForUser(user, id) {
        LEFT JOIN (
          SELECT t.project_id, COALESCE(SUM(t.total_price), 0) AS task_total
          FROM track_tasks t
-         WHERE t.waived = 0
+         WHERE t.is_invoiced = 1
          GROUP BY t.project_id
        ) task_sum ON task_sum.project_id = p.id
        WHERE p.id = ?`

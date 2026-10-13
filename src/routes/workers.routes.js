@@ -244,13 +244,13 @@ router.get("/:id", requireInvoice, asyncHandler(async (req, res) => {
       // 정산 재구성(2026-07-09 점검): ①이체 정보 ②합계 ③미지급(위·일괄 지급+지급일 소급) ④지급완료(지급월별 그룹 — 원천세 신고는 지급월 기준).
       // 작업·세션을 공통 아이템으로 통합해 한 목록에서 다룬다(worker_rate 기준, 고객청구는 작업만 참고 표기).
       const payItems = [
-        ...tasks.map((t) => ({ kind: "task", id: t.id, label: taskTypeLabel(t.task_type), metaHtml: taskMeta(t), rate: t.worker_rate || 0, paid: !!t.worker_paid, paidDate: t.worker_paid_date || "", clientPrice: t.total_price || 0, sortDate: kstYmd(t.created_at) })),
+        ...tasks.map((t) => ({ kind: "task", id: t.id, label: taskTypeLabel(t.task_type), metaHtml: taskMeta(t), rate: t.worker_rate || 0, paid: !!t.worker_paid, paidDate: t.worker_paid_date || "", clientPrice: t.is_invoiced ? t.total_price || 0 : 0, sortDate: kstYmd(t.created_at) })),
         ...sessionPayouts.map((x) => ({ kind: "session", id: x.session_id, label: `${x.session_type || "녹음"} 세션`, metaHtml: `<span class="text-xs text-muted"> · ${esc(x.project_title)} / ${esc(formatYmdShort(x.session_date))}</span>`, rate: x.worker_rate || 0, paid: !!x.worker_paid, paidDate: x.worker_paid_date || "", clientPrice: 0, sortDate: x.session_date || "" })),
       ];
       const payTotal = payItems.reduce((s2, x) => s2 + x.rate, 0);
       const paidTotal = payItems.filter((x) => x.paid).reduce((s2, x) => s2 + x.rate, 0);
       const unpaid = payTotal - paidTotal;
-      const clientTotal = tasks.reduce((s2, t) => s2 + (t.total_price || 0), 0);
+      const clientTotal = tasks.reduce((s2, t) => s2 + (t.is_invoiced ? t.total_price || 0 : 0), 0); // 청구된 금액만(미청구엔 금액이 없다)
       // 원천징수 3.3%(개인 사업소득 기준·표시 참고용 — 소액부징수·사업자 외주 예외 미반영, lib/tax)
       const whUnpaid = withholding33(unpaid);
 
@@ -351,7 +351,7 @@ router.get("/:id", requireInvoice, asyncHandler(async (req, res) => {
         <a href="/projects/${t.project_id}?tab=tracks" class="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface p-2.5 hover:opacity-80">
           <div class="min-w-0 text-sm"><span class="font-medium">${esc(taskTypeLabel(t.task_type))}</span>${taskMeta(t)}</div>
           <div class="flex shrink-0 items-center gap-2">
-            ${t.total_price ? `<span class="text-sm font-semibold">${formatKRW(t.total_price)}</span>` : ""}
+            ${t.is_invoiced && t.total_price ? `<span class="text-sm font-semibold">${formatKRW(t.total_price)}</span>` : ""}
           </div>
         </a>`
       )

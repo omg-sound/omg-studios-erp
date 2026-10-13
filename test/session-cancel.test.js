@@ -144,8 +144,9 @@ test("sessionProjectCard: 청구 줄은 일정 취소 버튼과 같은 오른쪽
   const html = sessionProjectCard([row({})], { isAdmin: true });
   // 오른쪽 묶음 = 버튼 줄 + 청구 줄을 세로로 쌓은 컨테이너. 청구 줄이 왼쪽 정보 블록에 남아 있으면 회귀.
   const right = html.slice(html.indexOf("flex min-w-0 flex-col items-end"));
-  assert.ok(right.indexOf("예상 청구액") > -1 && right.indexOf("예상 청구액") < right.indexOf("</summary>"), "청구 줄이 오른쪽 묶음 안");
-  assert.match(right, /일정 취소<\/button>[\s\S]*예상 청구액/, "버튼이 위, 청구 줄이 아래");
+  assert.ok(right.indexOf("청구 가능") > -1 && right.indexOf("청구 가능") < right.indexOf("</summary>"), "청구 줄이 오른쪽 묶음 안");
+  assert.match(right, /일정 취소<\/button>[\s\S]*청구 가능/, "버튼이 위, 청구 줄이 아래");
+  assert.doesNotMatch(html, /청구액/, "청구 전엔 금액 없음(2026-10-14) — 적어 둔 값이 있어도");
   assert.doesNotMatch(html, />완료<\/button>/, "완료 버튼 없음(개편 5단계)");
 });
 

@@ -247,9 +247,9 @@ test("projectBillingSummary(개편 3단계 — 프로젝트 청구 탭): 후보 
   assert.match(withFlag, /작업을 만들어야 청구할 수 있습니다/);
   const noFlag = projectBillingSummary({ project: proj, items: [], postprod: false });
   assert.doesNotMatch(noFlag, /작업을 만들어야/);
-  const withItems = projectBillingSummary({ project: proj, items: [{ kind: "session", label: "10월 2일 · 녹음", future: false, amount: null, waived: false }] });
+  const withItems = projectBillingSummary({ project: proj, items: [{ kind: "session", label: "10월 2일 · 녹음", future: false, waived: false }] });
   assert.match(withItems, /href="\/invoices\/inbox\?project=77"/, "청구서는 대기함에서 — 이 프로젝트로 걸러 연다");
-  assert.match(withItems, /금액 미정/);
+  assert.doesNotMatch(withItems, /금액 미정|₩/, "금액은 청구서 작성 화면에서 — 요약에 없다");
   assert.match(projectBillingSummary({ project: { ...proj, internal_support: 1 } }), /내부 지원/);
 });
 

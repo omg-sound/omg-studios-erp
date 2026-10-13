@@ -50,8 +50,8 @@ test("대기함: 모든 프로젝트의 미청구 세션·작업 — 내부 지�
   assert.ok(!groups.some((g) => g.project.id === internal), "내부 지원 프로젝트 제외");
   assert.ok(!keys.includes(`s${waivedS}`), "청구 안 함은 기본 숨김");
   assert.equal(count, keys.length);
-  assert.equal(groups.find((g) => g.project.id === a).items[0].amount, 300000, "적어 둔 확정액은 그대로");
-  assert.equal(groups.find((g) => g.project.id === b).items.find((i) => i.kind === "task").amount, null, "작업 기본 단가 없음 — 금액 미정");
+  // 금액은 싣지 않는다(2026-10-14) — 옛 확정액(300,000)이 DB에 있어도 대기함엔 안 보인다.
+  assert.ok(groups.every((g) => g.items.every((i) => !("amount" in i))), "대기함 항목에 금액 없음");
 
   const withWaived = D.listBillableItems(CHIEF, { q: "대기", showWaived: true });
   assert.ok(withWaived.groups.flatMap((g) => g.items).some((i) => i.key === `s${waivedS}` && i.waived), "'청구 안 함 보기'면 되돌리기용으로 보인다");
@@ -209,12 +209,13 @@ test("작업을 청구해도 세션 상태는 그대로 — 진행/완료는 날
 const { inboxPage } = require("../src/views.billing");
 const { mountDom, fire } = require("./helpers-dom");
 const grp = (id, items) => ({ project: { id, title: `묶음${id}`, artist: "루나" }, items });
-const item = (key, extra = {}) => ({ kind: key[0] === "s" ? "session" : "task", id: Number(key.slice(1)), key, date: "2026-09-01", future: false, waived: false, label: key, time: "", amount: null, ...extra });
+const item = (key, extra = {}) => ({ kind: key[0] === "s" ? "session" : "task", id: Number(key.slice(1)), key, date: "2026-09-01", future: false, waived: false, label: key, time: "", ...extra });
 
-test("대기함 묶음: 기본 접힘 · 접힌 줄에 건수·오래된 날짜·금액 합·일정 전 수", () => {
-  const html = inboxPage({ groups: [grp(1, [item("s1", { amount: 300000 }), item("t2", { date: null, amount: 200000 }), item("s3", { date: "2099-01-01", future: true })]), grp(2, [item("s4")])], count: 4 });
+test("대기함 묶음: 기본 접힘 · 접힌 줄에 건수·오래된 날짜·일정 전 수(금액 없음)", () => {
+  const html = inboxPage({ groups: [grp(1, [item("s1"), item("t2", { date: null }), item("s3", { date: "2099-01-01", future: true })]), grp(2, [item("s4")])], count: 4 });
   assert.doesNotMatch(html, /data-inbox-group open/, "여러 묶음이면 전부 접힘");
-  assert.match(html, /3건 · 9월 1일부터 · ₩500,000/, "건수·가장 오래된 날짜·적어 둔 금액 합");
+  assert.match(html, /3건 · 9월 1일부터 · <span class="text-warning">일정 전 1/, "건수·가장 오래된 날짜");
+  assert.doesNotMatch(html, /₩|금액 미정/, "대기함엔 금액이 없다 — 작성 화면에서 정한다");
   assert.match(html, /일정 전 1/);
   assert.match(html, /data-inbox-expand="1"/, "모두 펼치기");
 });

@@ -328,20 +328,6 @@ function sessionBillableMinutes(session) {
   return minutesBetween(session.start_time, session.end_time);
 }
 
-/**
- * 세션 확정 청구액 저장(청구 폼 금액칸 즉시 저장 — 작업의 setTaskAmount와 대칭).
- * amount=null이면 컬럼을 비워 **'미정'으로 되돌린다**(빈 칸). 0은 '0원 청구'로 유효한 값.
- * 이미 청구된 세션은 거부(invoice_items 스냅샷이 잠금).
- */
-function setSessionAmount(user, sessionId, amount) {
-  const { isSessionInvoiced } = require("../data"); // invoices와 상호의존 → 지연 require
-  const s = getSessionForUser(user, sessionId);
-  if (!s) return null;
-  if (isSessionInvoiced(s.id)) throw new Error("SESSION_INVOICED");
-  const val = amount == null ? null : Math.max(0, Math.round(Number(amount) || 0));
-  db().prepare("UPDATE sessions SET billing_amount = ? WHERE id = ?").run(val, s.id);
-  return { ...db().prepare("SELECT * FROM sessions WHERE id = ?").get(s.id), project_id: s.project_id };
-}
 
 /**
  * 같은 날 + **같은 룸**에서 시간대가 겹치는 다른 녹음/믹싱 세션(취소 제외)을 찾는다.
@@ -672,7 +658,6 @@ module.exports = {
   setSessionEventId,
   setSessionStatus,
   setSessionWaived,
-  setSessionAmount,
   deleteSession,
   upcomingSessions,
   searchSessions,

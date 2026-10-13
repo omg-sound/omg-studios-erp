@@ -46,6 +46,7 @@
   - 곡명 NULL = 표시는 프로젝트 이름(`COALESCE(t.song_title, p.title)`). 작업 추가·`/new`는 곡명 **줄마다 작업 하나**(`createTasks`, withTx). 곡 이름 바꾸기(`renameSong`)는 미청구 작업만(청구된 작업 = 스냅샷 잠금).
 - **3단계 청구 대기함** (`docs/redesign/03-billing-inbox.md`): 🔒 **청구 생성 경로 = 청구 대기함 하나**(`/invoices/inbox` → `/invoices/new?items=s12,t34` → `POST /invoices`, 데이터 `createInvoice` 라인 배열). 프로젝트 청구 탭은 요약 + 대기함 링크뿐(옛 from-tasks·미리보기 주소는 303). `createInvoiceFromTasks`는 테스트용 호환 어댑터.
   - 🔒 **금액은 사람이 쓴다** — 단가표 산정·기본가/초과 분해·작업 종류 기본 단가 **폐지**. 세션 금액 = `billing_amount`(확정액)뿐, 없으면 '미정'(0). 발행하면 세션 확정액이 청구 금액으로 기록된다. 요금표 화면·세션 단가 칸·촬영 구간 입력 삭제.
+  - 🔒 **청구 전엔 금액이 없다**(2026-10-14 사용자 결정 — '미리 기입된 금액이 헷갈린다'): 금액은 **청구서 작성 화면에서 처음** 정한다. 대기함·작성 화면 기본값(빈칸)·프로젝트 금액(`task_total`=청구된 작업만, `session_amount_total`=청구 라인만)·세션 줄·외주 고객청구 참고는 **청구된 것만** 금액을 보인다. 옛 미청구 `total_price`·`billing_amount` 값은 DB에 남아 있어도 읽지 않는다(지우지 않았다). 작업 만들기의 금액 칸과 금액 즉시 저장 경로(`setTaskAmount`·`setSessionAmount`)는 삭제. 회귀 `session-amount.test.js`.
   - 🔒 청구 가능 세션 조건은 `BILLABLE_SESSION_SQL` 하나(대관 종류 · 취소 제외 · 시간 또는 종일 · 미청구 · 작업 전환 없음) — 대기함·작성·발행이 같이 쓴다. 믹싱·마스터링 **세션**은 대기함에 없다(작업으로 청구, 작업 없는 완료 후반 세션은 대기함 위 알림 — 사용자 결정).
   - 여러 프로젝트 청구서 = `invoices.project_id` NULL. 청구서↔프로젝트는 **라인에서 파생**(`listInvoicesForProject`·`projectsForInvoice`·목록의 '여러 프로젝트 (N)'). 프로젝트 할인 합계는 `invoiceDiscountByProject` — 라인 금액 비례 배분(한 프로젝트 청구서는 종전과 같은 값).
   - 라인 순서 `ITEM_ORDER_SQL` = 세션(날짜) → 작업(등록) → 자유 줄(날짜). 발행 초안(`buildInvoiceDraft`)도 같은 순서. 같은 날짜 세션은 시작 시간을 붙여 구분(2026-08-22 규칙 유지).

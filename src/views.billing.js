@@ -37,7 +37,7 @@ function inboxFilterForm(f) {
     </form>`;
 }
 
-/** 대기함 한 줄 — 체크박스(name=items, value=s12/t34) + 설명 + 상태 + 적어 둔 금액 + [청구 안 함]. */
+/** 대기함 한 줄 — 체크박스(name=items, value=s12/t34) + 설명 + 상태 + [청구 안 함]. 금액은 없다(작성 화면에서 정한다). */
 function inboxRow(it, ret) {
   const waiveAction = it.kind === "session" ? `/sessions/${it.id}/waive` : `/projects/tasks/${it.id}/waive`;
   // 날짜가 안 된(오늘 이후) 세션만 표시 — 개편 5단계부터 완료 상태가 없다(작업은 등록=수주라 늘 청구 가능).
@@ -57,7 +57,6 @@ function inboxRow(it, ret) {
         <span class="block text-sm font-medium">${esc(it.label)}${statusTag}</span>
         ${meta ? `<span class="block text-xs text-muted">${esc(meta)}</span>` : ""}
       </label>
-      <span class="shrink-0 text-sm tabular ${it.amount != null ? "" : "text-muted"}">${it.amount != null ? formatKRW(it.amount) : "금액 미정"}</span>
       <button type="submit" formaction="${waiveAction}" formmethod="post" name="return" value="${esc(ret)}" class="btn-ghost btn-xs shrink-0 whitespace-nowrap text-muted" data-waive-btn>청구 안 함</button>
     </div>`;
 }
@@ -75,7 +74,7 @@ function inboxPage({ groups, count, postprod = [], filters = {}, ret = "/invoice
       </div>`
     : "";
   // 프로젝트 묶음은 **기본 접힘**(2026-10-13 사용자 요청 '다 펼쳐져 있으니 정신없다') — 대기함의 일은 '어느 프로젝트를
-  // 청구할지 고르기'라 첫 화면은 프로젝트 목록이고, 접힌 줄에 건수·가장 오래된 날짜·적어 둔 금액 합을 싣는다.
+  // 청구할지 고르기'라 첫 화면은 프로젝트 목록이고, 접힌 줄에 건수·가장 오래된 날짜를 싣는다(금액은 작성 화면에서 정하므로 없다).
   // [모두 선택]은 접힌 채로 된다(프로젝트 하나를 통째로 청구하는 게 가장 흔하다 — 접힌 묶음 안 체크도 그대로 제출된다).
   // 자동 펼침 = 한 프로젝트로 걸러 들어왔거나(프로젝트 청구 탭 링크) 묶음이 하나뿐일 때. 펼침 상태는 기억하지 않는다.
   const autoOpen = !!filters.projectId || groups.length === 1;
@@ -86,12 +85,10 @@ function inboxPage({ groups, count, postprod = [], filters = {}, ret = "/invoice
         const live = g.items.filter((i) => !i.waived);
         const selectable = live.length > 0;
         const oldest = live.map((i) => i.date).filter(Boolean).sort()[0];
-        const known = live.filter((i) => i.amount != null).reduce((sum, i) => sum + i.amount, 0);
         const futureN = live.filter((i) => i.future).length;
         const facts = [
           `${live.length}건`,
           oldest ? `${formatYmdShort(oldest)}부터` : "",
-          known > 0 ? formatKRW(known) : "",
         ].filter(Boolean).join(" · ");
         return `
           <details class="card group p-0" data-inbox-group${autoOpen ? " open" : ""}>
@@ -267,7 +264,7 @@ function projectBillingSummary({ project, items = [], postprod = false }) {
   const live = items.filter((i) => !i.waived);
   const note = postprod ? `<p class="mt-2 text-xs text-warning">믹싱·마스터링 세션이 있지만 작업이 없습니다 — 작업 탭에서 작업을 만들어야 청구할 수 있습니다.</p>` : "";
   if (!live.length) return `<div class="rounded-lg border border-border bg-bg px-3 py-3 text-center text-sm text-muted">청구할 세션·작업이 없습니다.</div>${note}`;
-  const rows = live.slice(0, 8).map((i) => `<li class="flex items-center justify-between gap-2"><span class="min-w-0 truncate">${esc(i.label)}${i.future ? ` <span class="text-xs text-warning">일정 전</span>` : ""}</span><span class="shrink-0 tabular text-muted">${i.amount != null ? formatKRW(i.amount) : "금액 미정"}</span></li>`).join("");
+  const rows = live.slice(0, 8).map((i) => `<li class="flex items-center justify-between gap-2"><span class="min-w-0 truncate">${esc(i.label)}${i.future ? ` <span class="text-xs text-warning">일정 전</span>` : ""}</span></li>`).join("");
   const more = live.length > 8 ? `<li class="text-xs text-muted">외 ${live.length - 8}건</li>` : "";
   return `
     <div class="rounded-lg border border-border bg-bg p-3">
