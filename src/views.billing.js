@@ -157,7 +157,6 @@ function composePage({ lines, projects, values = {}, error = "", skipped = 0 }) 
   const defaultTitle = values.title != null ? values.title : one ? `${one.title} 청구` : "";
   const base = peekInvoiceNumber(issued);
   const act = (t) => `/invoices/preview/${encodeURIComponent(t)}/${encodeURIComponent(docNumberWithType(base, t))}.pdf`;
-  const hasPending = lines.some((l) => l.kind !== "free" && l.done === false);
   const freeTemplate = composeLine({ kind: "free" }, 0);
   return `
     ${pageHeader({ title: "청구서 작성", desc: "내용과 금액을 직접 적습니다. 줄을 빼면 그 항목은 청구 대기함에 남습니다." })}
@@ -198,8 +197,6 @@ function composePage({ lines, projects, values = {}, error = "", skipped = 0 }) 
         <div data-compose-lines>${lines.map(composeLine).join("")}${composeLine({ kind: "free" }, lines.length)}</div>
         <template data-compose-free-template>${freeTemplate}</template>
         <button type="button" class="btn-ghost btn-xs mt-1" data-compose-add>+ 줄 추가</button>
-        ${explain("‘줄 추가’는 세션·작업과 연결되지 않는 줄입니다(계약금·출장비 등). 비워 둔 줄은 무시됩니다.")}
-        ${hasPending ? explain("예정 세션·대기 작업이 있습니다. 발행하면 완료로 바뀝니다.") : ""}
       </div>
       <div class="grid gap-3 sm:grid-cols-2">
         <div>
