@@ -167,3 +167,39 @@ test("매출 상세: 청구서 단위 그대로 — 작업 종류·세부·항�
   assert.equal(row.supply, 350000, "자유 줄도 매출(공급가)에 포함");
   assert.equal(row.work_kind, "녹음");
 });
+
+test("작업 청구 시 그 프로젝트의 지난 예정 믹싱·마스터링 세션도 완료 — 앞으로 잡힌 세션·다른 프로젝트는 그대로", () => {
+  const p = project("후반완료");
+  const other = project("후반완료다른");
+  const past = session(p, { type: "믹싱", status: "예정", date: "2026-01-05" });
+  const future = session(p, { type: "마스터링", status: "예정", date: "2099-01-01" });
+  const otherPast = session(other, { type: "믹싱", status: "예정", date: "2026-01-05" });
+  const t1 = task(p, { song: "곡" });
+  D.createInvoice(CHIEF, { payerId: PAYER, lines: [{ kind: "task", id: t1, amount: "100000" }] });
+  const st = (id) => d.prepare("SELECT status FROM sessions WHERE id = ?").get(id).status;
+  assert.equal(st(past), "완료", "지난 믹싱 세션 = 완료(청구=완료를 후반 세션까지)");
+  assert.equal(st(future), "예정", "앞으로 잡힌 세션은 아직 안 한 일");
+  assert.equal(st(otherPast), "예정", "청구하지 않은 프로젝트는 그대로");
+  assert.equal(D.listProjects(CHIEF, {}).find((r) => r.id === p).is_completed, false, "미래 세션이 남아 있으니 진행 중이 맞다");
+});
+
+test("1회 정리(postprod_sessions_billed_complete_v1): 청구가 끝난 프로젝트만 지난 예정 후반 세션을 완료로", () => {
+  const done = project("정리끝");
+  const s1 = session(done, { date: "2026-02-01" });
+  const mix = session(done, { type: "믹싱", status: "예정", date: "2026-02-02" });
+  d.prepare("INSERT INTO invoices (project_id, title, amount, status) VALUES (?, 'x', 1, '발행')").run(done);
+  const invId = d.prepare("SELECT MAX(id) id FROM invoices").get().id;
+  d.prepare("INSERT INTO invoice_items (invoice_id, session_id, description, amount) VALUES (?, ?, 'x', 1)").run(invId, s1);
+  const half = project("정리덜끝");
+  const mix2 = session(half, { type: "믹싱", status: "예정", date: "2026-02-02" });
+  task(half, { song: "아직" }); // 미청구 작업 — 청구가 덜 끝남
+  d.prepare("INSERT INTO invoices (project_id, title, amount, status) VALUES (?, 'y', 1, '발행')").run(half);
+  const none = project("정리청구없음");
+  const mix3 = session(none, { type: "믹싱", status: "예정", date: "2026-02-02" }); // 청구서 없음 = 누락 의심 → 건드리지 않음
+  d.prepare("DELETE FROM admin_state WHERE key = 'postprod_sessions_billed_complete_v1'").run();
+  init();
+  const st = (id) => d.prepare("SELECT status FROM sessions WHERE id = ?").get(id).status;
+  assert.equal(st(mix), "완료");
+  assert.equal(st(mix2), "예정", "미청구 작업이 남은 프로젝트는 그대로");
+  assert.equal(st(mix3), "예정", "청구 흔적이 없는 프로젝트는 그대로(청구 누락일 수 있다)");
+});

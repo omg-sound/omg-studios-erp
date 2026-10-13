@@ -14,8 +14,9 @@ const { songOrderSql } = require("../lib/task-order");
 const { db } = require("../db");
 const { todayYmd, formatYmdShort, kstYmd } = require("../lib/date");
 const { parseMoney } = require("../lib/forms");
-const { RENTAL_SESSION_TYPES } = require("../config");
+const { RENTAL_SESSION_TYPES, POSTPROD_SESSION_TYPES } = require("../config");
 const RENTAL_IN = RENTAL_SESSION_TYPES.map((t) => `'${t}'`).join(", "); // SQL IN절(정적 config 값 — 인젝션 무관)
+const POSTPROD_IN = POSTPROD_SESSION_TYPES.map((t) => `'${t}'`).join(", ");
 const { canBill, canInvoice } = require("../auth");
 const { getProjectForUser } = require("./projects"); // 무순환
 const { getParty, listOrgContacts } = require("./parties"); // 무순환 — 청구처(payer)=parties.id
@@ -625,6 +626,18 @@ function createInvoice(user, opts = {}) {
       insertItem.run(invoiceId, it.task_id, it.session_id, it.track_title, it.task_type, it.description, it.quantity, it.unit_price, it.amount, it.item_date);
       if (it.task_id && !markTask.run(invoiceId, it.amount, it.amount, it.task_id).changes) throw new Error("TASK_NOT_BILLABLE"); // 동시 청구 경합
       if (it.session_id) markSession.run(it.amount, it.session_id);
+    }
+    // 작업을 청구하면 그 프로젝트의 **날짜가 지난 예정 믹싱·마스터링 세션**도 완료(2026-10-13 사용자 결정).
+    // 후반작업은 세션이 아니라 작업으로 청구하므로 세션은 청구서에 안 들어가 '청구=완료'를 못 받았다 →
+    // 아무도 완료를 안 누르면 청구가 끝난 프로젝트가 '진행 중'에 남았다(운영 실측 7개 프로젝트·세션 8건).
+    // 앞으로 잡힌(오늘 이후) 세션은 아직 안 한 일이라 그대로 둔다.
+    const taskProjects = [...new Set(draft.items.filter((it) => it._task).map((it) => it._task.project_id))];
+    if (taskProjects.length) {
+      d.prepare(
+        `UPDATE sessions SET status = '완료'
+          WHERE project_id IN (${taskProjects.map(() => "?").join(",")})
+            AND session_type IN (${POSTPROD_IN}) AND status = '예정' AND session_date < ?`
+      ).run(...taskProjects, todayYmd());
     }
     d.exec("COMMIT;");
     return getInvoiceForUser(user, invoiceId);
