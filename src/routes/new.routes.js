@@ -20,7 +20,7 @@ const {
   cleanProjectTitle,
 } = require("../data");
 const { layout, errorPage } = require("../views");
-const { newPage, CARRY_FIELDS } = require("../views.new");
+const { newPage, newChoicePage, CARRY_FIELDS } = require("../views.new");
 const { safePath } = require("../lib/nav");
 const { withTx } = require("../lib/tx");
 const { asyncHandler } = require("../lib/async");
@@ -80,8 +80,14 @@ function renderForm(req, res, { type, project = null, title = "", values = {}, r
 
 // ── 화면 ──
 router.get("/", requireEditor, (req, res) => {
-  const type = req.query.type === "task" ? "task" : "session";
   const projectId = Number(req.query.project_id) || null;
+  // 종류를 안 정하고 들어오면(즐겨찾기·옛 링크) 세션/작업부터 고르게 한다(2026-10-13). 캘린더 날짜 칸 '+'(date)는
+  // 날짜를 찍은 것이라 세션이 분명하다 — 바로 세션.
+  if (req.query.type !== "session" && req.query.type !== "task" && typeof req.query.date !== "string") {
+    const body = newChoicePage({ projectId, ret: returnPath(req, req.query.return) });
+    return res.send(layout({ title: "새로 만들기", user: req.user, current: "/new", body }));
+  }
+  const type = req.query.type === "task" ? "task" : "session";
   const project = projectId ? getProjectForUser(req.user, projectId) : null;
   const values = {};
   for (const k of CARRY_FIELDS) if (typeof req.query[k] === "string") values[k] = req.query[k];

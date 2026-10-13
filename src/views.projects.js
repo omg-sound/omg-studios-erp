@@ -17,6 +17,7 @@ const {
   dateCombo,
   pageHeader,
   layout,
+  newMenu,
 } = require("./views");
 const { formatYmdShort, todayYmd, kstYmd } = require("./lib/date");
 const {
@@ -33,9 +34,9 @@ const {
   listGroupsForPicker,
 } = require("./data");
 
-/** 목록 상단 버튼 — 개편 1단계(2026-10-13)부터 '새 프로젝트' 대신 빠른 생성(/new). 프로젝트는 이름을 쓰면 자동 생성된다. */
+/** 목록 상단 버튼 — '새 프로젝트' 대신 빠른 생성(/new, 세션/작업 고르기 메뉴). 프로젝트는 이름을 쓰면 자동 생성된다. */
 function newProjectMenu() {
-  return `<a href="/new?return=%2Fprojects" class="btn-primary ml-auto">+ 새로 만들기</a>`;
+  return newMenu({ ret: "/projects" });
 }
 
 

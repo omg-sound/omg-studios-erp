@@ -10,7 +10,7 @@
  *   띄우고, JS가 없으면 서버가 같은 패널을 그려 되돌린다(`dupRows`).
  */
 
-const { esc, pageHeader, tabBar, dateCombo, detailsChevron, personComboOptionsScript, personComboCompanyScript } = require("./views");
+const { esc, pageHeader, tabBar, dateCombo, detailsChevron, personComboOptionsScript, personComboCompanyScript, NEW_KINDS } = require("./views");
 const { sessionBookingFields } = require("./views.sessions");
 const { projectInfoFields, projectInfoSummary, engineerSelect, taskTypeOptions, defaultTaskType } = require("./views.projects");
 const { contactOptions, partyOptions } = require("./data");
@@ -149,4 +149,20 @@ function newPage({ type, project, title = "", values = {}, ret = "", dupRows = [
     </form>`;
 }
 
-module.exports = { newPage, newHref, CARRY_FIELDS };
+/**
+ * 종류를 정하지 않고 `/new`로 들어왔을 때(즐겨찾기·옛 링크) — 세션/작업 두 카드에서 먼저 고른다.
+ * 버튼 메뉴(views.newMenu)와 같은 문구·같은 목적지(NEW_KINDS) — 둘이 갈리면 어디서 들어왔냐에 따라 설명이 달라진다.
+ */
+function newChoicePage({ projectId = null, ret = "" } = {}) {
+  const cards = NEW_KINDS.map((k) => `
+      <a href="${esc(newHref({ type: k.type, projectId, ret }))}" data-new-kind="${k.key}" class="card row-link block">
+        <div class="font-display text-lg font-semibold">${esc(k.label)}</div>
+        <p class="mt-1 text-sm text-muted">${esc(k.desc)}</p>
+      </a>`).join("");
+  return `
+    ${pageHeader({ title: "새로 만들기", desc: "무엇을 만들지 먼저 고르세요." })}
+    <div class="grid gap-3 sm:grid-cols-2">${cards}
+    </div>`;
+}
+
+module.exports = { newPage, newHref, newChoicePage, CARRY_FIELDS };

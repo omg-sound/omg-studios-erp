@@ -3,7 +3,7 @@
 const express = require("express");
 const { requireAuth, canBill, canEdit } = require("../auth");
 const { dashboardStats, upcomingSessions, listProjects, myTodo, invoiceTodo } = require("../data");
-const { layout, pageHeader, esc, formatKRW, emptyState, ddayPill } = require("../views");
+const { layout, pageHeader, esc, formatKRW, emptyState, ddayPill, newMenu } = require("../views");
 const { todayYmd, formatYmdShort } = require("../lib/date");
 
 const router = express.Router();
@@ -157,7 +157,7 @@ router.get("/", requireAuth, (req, res) => {
     ${pageHeader({
       title: "대시보드",
       desc: s.canInvoice ? "스튜디오 전체 현황" : "스튜디오 현황",
-      action: canEdit(user) ? '<a href="/new?return=%2F" class="btn-primary">+ 새로 만들기</a>' : "", // 개편 1단계 — 프로젝트는 이름을 쓰면 자동 생성
+      action: canEdit(user) ? newMenu({ ret: "/" }) : "", // 세션/작업 고르기 메뉴(프로젝트는 이름을 쓰면 자동 생성)
     })}
     ${cards}
     ${myTodoCard}

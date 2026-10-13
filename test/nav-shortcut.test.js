@@ -91,3 +91,39 @@ test("존재하지 않는 nav-key(g→z)는 아무 것도 안 함", () => {
   fire(win, doc.body, "keydown", { key: "z" });
   assert.deepEqual(hits, []);
 });
+
+// ── n = 새로 만들기 메뉴 → s(세션)/t(작업)(2026-10-13 — 세션·작업을 먼저 고르게) ──
+// 실제 서버 렌더 마크업(views.newMenu)으로 검증한다 — 마커가 갈리면 단축키가 조용히 죽는다.
+const { newMenu } = require("../src/views");
+const withMenu = () => {
+  const { win, doc } = mountDom(newMenu({ full: true, shortcut: true }) + `<input type="text" id="ti" />`);
+  const hits = [];
+  doc.querySelectorAll("[data-new-kind]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); hits.push(a.getAttribute("href")); }));
+  return { win, doc, hits, menu: doc.querySelector("details[data-new-menu]") };
+};
+
+test("n은 메뉴를 열고(이동 없음), s=세션·t=작업으로 고른다", () => {
+  let m = withMenu();
+  fire(m.win, m.doc.body, "keydown", { key: "n" });
+  assert.equal(m.menu.hasAttribute("open"), true, "n → 메뉴 열림");
+  assert.deepEqual(m.hits, [], "n만으로는 이동하지 않는다");
+  fire(m.win, m.doc.body, "keydown", { key: "s" });
+  assert.deepEqual(m.hits, ["/new?type=session"]);
+  m = withMenu();
+  fire(m.win, m.doc.body, "keydown", { key: "n" });
+  fire(m.win, m.doc.body, "keydown", { key: "t" });
+  assert.deepEqual(m.hits, ["/new?type=task"]);
+});
+
+test("메뉴가 닫혀 있으면 s/t는 무동작, Esc는 열린 메뉴를 닫는다, 입력 중 n은 무시", () => {
+  const m = withMenu();
+  fire(m.win, m.doc.body, "keydown", { key: "s" });
+  assert.deepEqual(m.hits, [], "닫힌 메뉴에서 s는 아무것도 안 한다");
+  fire(m.win, m.doc.body, "keydown", { key: "n" });
+  fire(m.win, m.doc.body, "keydown", { key: "Escape" });
+  assert.equal(m.menu.hasAttribute("open"), false, "Esc로 닫힘");
+  const ti = m.doc.getElementById("ti");
+  ti.focus();
+  fire(m.win, ti, "keydown", { key: "n" });
+  assert.equal(m.menu.hasAttribute("open"), false, "입력 중 n은 무시");
+});

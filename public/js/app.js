@@ -3010,10 +3010,24 @@ function announceParty(detail) { if (detail && detail.id && detail.name) documen
       return;
     }
     if (k === "g") { armed = true; timer = setTimeout(disarm, 1500); return; } // g 후 1.5초 안에 둘째 키
-    // n = 새로 만들기(개편 1단계 — 단독 키). 사이드바 버튼이 렌더된 계정(편집 권한)에서만 동작.
+    // n = 새로 만들기 메뉴 열기 → s(세션)/t(작업)로 고른다(2026-10-13 — 세션·작업을 먼저 고르게).
+    // 사이드바 버튼이 렌더된 계정(편집 권한)에서만 동작. 메뉴가 열려 있을 때만 s/t를 가로챈다.
+    var openNew = document.querySelector("details[data-new-menu][open]");
+    if (openNew && (k === "s" || k === "t")) {
+      var pick = openNew.querySelector('[data-new-kind="' + k + '"]');
+      if (pick) { e.preventDefault(); pick.click(); }
+      return;
+    }
+    if (openNew && k === "escape") { openNew.removeAttribute("open"); return; }
     if (k === "n") {
       var nb = document.querySelector("[data-new-shortcut]");
-      if (nb && nb.getAttribute("href")) { e.preventDefault(); nb.click(); }
+      var menu = nb && nb.closest("details[data-new-menu]");
+      if (menu) {
+        e.preventDefault();
+        menu.setAttribute("open", "");
+        var first = menu.querySelector("[data-new-kind]");
+        if (first) first.focus();
+      }
     }
   });
 })();

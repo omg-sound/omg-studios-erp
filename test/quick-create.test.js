@@ -58,7 +58,7 @@ const sessionsOf = (pid) => db().prepare("SELECT * FROM sessions WHERE project_i
 const SESSION = { kind: "session", session_date: "2026-11-03", start_time: "14:00", end_time: "18:00", session_type: "녹음", room_id: String(roomA), status: "예정" };
 
 test("GET /new — 세션·작업 화면이 렌더되고, 상세 정보는 접혀 있다", async () => {
-  for (const p of ["/new", "/new?type=task", "/new?date=2026-12-24"]) {
+  for (const p of ["/new?type=session", "/new?type=task", "/new?date=2026-12-24"]) {
     const r = await get(p);
     assert.equal(r.status, 200, p);
     const html = await r.text();
@@ -68,7 +68,17 @@ test("GET /new — 세션·작업 화면이 렌더되고, 상세 정보는 접�
   const taskHtml = await (await get("/new?type=task")).text();
   assert.match(taskHtml, /<option value="Vocal_Recording" selected>/, "작업 종류 기본값 = 보컬 녹음");
   const html = await (await get("/new?date=2026-12-24")).text();
-  assert.match(html, /name="session_date" value="2026-12-24"/, "캘린더 '+'의 날짜가 채워진다");
+  assert.match(html, /name="session_date" value="2026-12-24"/, "캘린더 '+'의 날짜가 채워진다(종류를 안 골라도 바로 세션)");
+});
+
+test("GET /new(종류 없음) — 세션/작업을 먼저 고르는 화면, 사이드바 버튼도 고르기 메뉴", async () => {
+  const html = await (await get("/new")).text();
+  assert.doesNotMatch(html, /name="project_title"/, "입력 폼이 아니라 고르기 화면");
+  assert.match(html, /href="\/new\?type=session"[^>]*data-new-kind="s"/, "세션 카드");
+  assert.match(html, /href="\/new\?type=task"[^>]*data-new-kind="t"/, "작업 카드");
+  // 사이드바 '+ 새로 만들기' = 링크가 아니라 메뉴(<details data-new-menu>) — 단축키 n은 summary에 걸린다.
+  assert.match(html, /<details[^>]*data-new-menu>\s*<summary data-new-shortcut/, "사이드바 버튼 = 고르기 메뉴 + 단축키 n");
+  assert.doesNotMatch(html, /<a href="\/new" data-new-shortcut/, "옛 바로가기 링크 없음");
 });
 
 test("새 이름 → 프로젝트 + 세션을 함께 만들고, 그 달 캘린더에서 방금 만든 세션을 연다", async () => {
@@ -155,10 +165,13 @@ test("작업: 프로젝트에 바로 붙고(곡명 없으면 NULL), 곡명 줄�
 test("저장 후 복귀: return이 있으면 그곳, 없으면 화면을 연 페이지(Referer)", async () => {
   const r1 = await post("/new", { ...SESSION, session_date: "2026-11-16", project_title: "복귀 테스트1", return: "/projects" });
   assert.match(r1.headers.get("location"), /^\/projects\?flash=added/);
-  // GET /new가 Referer를 return 칸에 실어 둔다(사이드바·단축키 진입)
-  const html = await (await get("/new", { referer: base + "/invoices?filter=todo" })).text();
+  // GET /new가 Referer를 return 칸에 실어 둔다(사이드바 메뉴·단축키 진입)
+  const html = await (await get("/new?type=session", { referer: base + "/invoices?filter=todo" })).text();
   assert.match(html, /name="return" value="\/invoices\?filter=todo"/);
-  const foreign = await (await get("/new", { referer: "https://evil.example/x" })).text();
+  // 고르기 화면을 거쳐도 처음 연 페이지가 유지된다(카드 링크에 return)
+  const choice = await (await get("/new", { referer: base + "/invoices?filter=todo" })).text();
+  assert.match(choice, /href="\/new\?type=task&amp;return=%2Finvoices%3Ffilter%3Dtodo"/);
+  const foreign = await (await get("/new?type=session", { referer: "https://evil.example/x" })).text();
   assert.match(foreign, /name="return" value=""/, "다른 사이트 Referer는 버린다");
 });
 

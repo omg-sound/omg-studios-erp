@@ -135,13 +135,39 @@ const NAV_GROUPS = [
 ];
 
 /**
- * 사이드바 '+ 새로 만들기'(개편 1단계, 2026-10-13) — 편집 권한자만. data-new-shortcut = 단축키 `n`의 목적지
- * (app.js가 렌더된 링크에서만 찾으므로 권한 없는 계정은 단축키도 무동작). return은 /new가 Referer로 채운다.
+ * '+ 새로 만들기' 메뉴 — 누르면 **세션 / 작업**을 먼저 고른다(2026-10-13 사용자 요청).
+ * 이유: 운영 청구 라인이 세션 122·작업 112로 반반인데 세션이 기본이라 작업은 매번 한 번 더 눌러야 했고,
+ * 무심코 믹싱 일감을 세션으로 잡아 작업 없이 청구가 누락되는 일이 있었다(믹싱 세션 52건) — 처음에 한 줄
+ * 설명과 함께 고르게 한다. 별도 페이지가 아니라 `<details data-menu>` 팝오버라 클릭 수는 같고 이동이 없다.
+ * `shortcut`=사이드바 버튼만 — 단축키 `n`이 이 메뉴를 열고 `s`/`t`로 고른다(app.js, 렌더된 계정에서만 동작).
+ * `ret`=저장 후 돌아갈 경로(없으면 /new가 Referer로 채운다).
  */
+const NEW_KINDS = [
+  { type: "session", key: "s", label: "세션", desc: "스튜디오·장소를 시간 단위로 잡는 일 — 녹음·대관·공연, 참관 믹싱" },
+  { type: "task", key: "t", label: "작업", desc: "결과물로 납품하는 일 — 믹싱·마스터링·보컬튠 등(일정 없음)" },
+];
+function newKindHref(type, ret = "", extra = "") {
+  return `/new?type=${type}${extra}${ret ? `&return=${encodeURIComponent(ret)}` : ""}`;
+}
+function newMenu({ ret = "", full = false, shortcut = false } = {}) {
+  const items = NEW_KINDS.map((k) => `
+        <a href="${esc(newKindHref(k.type, ret))}" data-new-kind="${k.key}" class="row-link block px-4 py-2.5">
+          <span class="flex items-center justify-between gap-2"><span class="text-sm font-medium text-fg">${esc(k.label)}</span>${shortcut ? `<kbd class="text-xs text-muted">${k.key}</kbd>` : ""}</span>
+          <span class="mt-0.5 block text-xs leading-snug text-muted">${esc(k.desc)}</span>
+        </a>`).join("");
+  return `
+    <details class="relative ${full ? "mb-6 block" : "ml-auto inline-block"}" data-menu data-new-menu>
+      <summary ${shortcut ? 'data-new-shortcut title="새로 만들기 · n" ' : ""}class="btn-primary ${full ? "flex w-full" : ""} cursor-pointer select-none list-none items-center justify-center gap-1.5 [&::-webkit-details-marker]:hidden">+ 새로 만들기</summary>
+      <div class="absolute ${full ? "left-0 right-0" : "right-0 w-72"} z-30 mt-1 overflow-hidden rounded-lg border border-border bg-bg py-1 text-left shadow-lg">${items}
+      </div>
+    </details>`;
+}
+
+/** 사이드바 '+ 새로 만들기'(개편 1단계) — 편집 권한자만. 단축키 `n`의 목적지(data-new-shortcut). */
 function newButton(user) {
   const role = user && user.role;
   if (!(role === "chief" || role === "staff" || role === "owner")) return "";
-  return `<a href="/new" data-new-shortcut title="새로 만들기 · n" class="btn-primary mb-6 flex w-full items-center justify-center gap-1.5">+ 새로 만들기</a>`;
+  return newMenu({ full: true, shortcut: true });
 }
 
 function navItemsFor(user) {
@@ -974,4 +1000,7 @@ function groupCombo(fieldName, selectedId, currentName, groups = []) {
     </div>`;
 }
 
-module.exports = { esc, formatKRW, personLabel, personName, formatBytes, icon, layout, pageHeader, emptyState, errorPage, flashBanner, navItemsFor, NAV, detailsChevron, ddayPill, explain, dirtyActionRow, tabBar, filterChips, searchBox, capList, listGroup, listRow, listRowLinked, dataTable, personCombo, personComboOptionsScript, personComboCompanyScript, payerCombo, companyCombo, groupCombo, copyable, dateCombo, fileViewerPage };
+module.exports = {
+  newMenu,
+  newKindHref,
+  NEW_KINDS, esc, formatKRW, personLabel, personName, formatBytes, icon, layout, pageHeader, emptyState, errorPage, flashBanner, navItemsFor, NAV, detailsChevron, ddayPill, explain, dirtyActionRow, tabBar, filterChips, searchBox, capList, listGroup, listRow, listRowLinked, dataTable, personCombo, personComboOptionsScript, personComboCompanyScript, payerCombo, companyCombo, groupCombo, copyable, dateCombo, fileViewerPage };
