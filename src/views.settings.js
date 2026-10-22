@@ -217,7 +217,7 @@ async function studioCalendarSection(chief = false) {
         </form>`;
       if (current && chief) {
         // 이미 만들어진 캘린더 일정의 제목·설명을 현재 로직(예: 아티스트 먼저 표기)으로 다시 맞춘다 — 1회성 관리 액션(치프 전용 라우트, resync는 requireChief).
-        inner += `<form method="post" action="/settings/resync-calendar" class="mt-2 border-t border-border pt-3" data-confirm="예정된(취소 제외) 세션의 캘린더 일정을 지금 로직으로 전부 다시 씁니다. 계속할까요?">
+        inner += `<form method="post" action="/settings/resync-calendar" class="mt-2 border-t border-border pt-3" data-confirm="캘린더에 올라간 세션(취소 포함)의 일정을 지금 로직으로 전부 다시 씁니다. 계속할까요?">
             <button class="btn-ghost btn-sm" type="submit">기존 캘린더 일정 다시 동기화</button>
             <p class="mt-1 text-xs text-muted">제목·설명 표기 방식을 바꾼 뒤(예: 아티스트 표기 순서) 이미 등록된 일정에도 반영하고 싶을 때 누르세요.</p>
           </form>`;

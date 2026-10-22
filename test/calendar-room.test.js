@@ -123,7 +123,7 @@ test("syncSessionEvent: 룸을 Studio C로 바꾸면 기존 일정을 C 캘린�
   }
 });
 
-test("updateEvent: move 실패(404)면 대상 캘린더에 새로 만든다, 그 외 실패는 null", async () => {
+test("updateEvent: move 실패(404)면 대상 캘린더에 새로 만든다(취소 세션은 안 만든다), 그 외 실패는 null", async () => {
   const { config } = require("../src/config");
   const { google } = require("googleapis");
   const calendar = require("../src/calendar");
@@ -136,6 +136,11 @@ test("updateEvent: move 실패(404)면 대상 캘린더에 새로 만든다, 그
     fake.client.events.move = async () => { const e = new Error("gone"); e.code = 404; throw e; };
     assert.equal(await calendar.updateEvent("evt-x", input, CAL_MAIN), "evt-new");
     assert.deepEqual(fake.calls, [["insert", CAL_C]]);
+    fake.calls.length = 0;
+    assert.equal(await calendar.updateEvent("evt-x", input, CAL_MAIN, { recreate: false }), null, "취소 세션: 지워진 일정은 되살리지 않는다");
+    fake.client.events.patch = async () => { const e = new Error("gone"); e.code = 404; throw e; };
+    assert.equal(await calendar.updateEvent("evt-x", input, CAL_C, { recreate: false }), null, "같은 캘린더 patch 404도 마찬가지");
+    assert.deepEqual(fake.calls, [], "insert 호출 없음");
     fake.client.events.move = async () => { const e = new Error("forbidden"); e.code = 403; throw e; };
     assert.equal(await calendar.updateEvent("evt-x", input, CAL_MAIN), null, "옮기지 못하면 실패로 알린다");
   } finally {

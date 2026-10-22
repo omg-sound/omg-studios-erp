@@ -153,8 +153,10 @@ async function createEvent(input = {}) {
  * `fromCalendarId` = 그 일정이 지금 있는 캘린더(sessions.gcal_calendar_id, NULL=스튜디오 캘린더).
  * 대상 캘린더와 다르면(룸을 Studio C로 바꿈·룸 캘린더 지정 후 재동기화) **먼저 events.move로 옮긴다** —
  * 지우고 새로 만들면 id가 바뀌고 실패 시 일정이 두 벌이 되거나 사라진다. move는 id를 유지한다.
+ * `recreate=false`(취소 세션) — 구글에서 일정이 지워졌으면(404) 되살리지 않고 null. 사람이 지운 취소 기록을
+ * 재동기화가 다시 만들어 내면 안 된다.
  */
-async function updateEvent(eventId, input = {}, fromCalendarId = null) {
+async function updateEvent(eventId, input = {}, fromCalendarId = null, { recreate = true } = {}) {
   const cal = calendarClient();
   const calId = targetCalendarId(input);
   if (!cal || !calId || !RE_DATE.test(input.date)) {
@@ -167,7 +169,7 @@ async function updateEvent(eventId, input = {}, fromCalendarId = null) {
     try {
       await cal.events.move({ calendarId: fromId, eventId, destination: calId });
     } catch (e) {
-      if (e && (e.code === 404 || e.code === 410)) return createEvent(input); // 원래 캘린더에서 지워졌으면 대상에 재생성
+      if (e && (e.code === 404 || e.code === 410)) return recreate ? createEvent(input) : null; // 원래 캘린더에서 지워졌으면 대상에 재생성
       console.error(`[calendar] updateEvent move 실패 — code=${e && e.code} msg=${e && e.message}`);
       return null; // 옮기지 못했으면 실패로 알린다(기존 연결·캘린더 기록은 그대로)
     }
@@ -177,7 +179,7 @@ async function updateEvent(eventId, input = {}, fromCalendarId = null) {
     await cal.events.patch({ calendarId: calId, eventId, requestBody: eventBody(input, true) });
     return eventId;
   } catch (e) {
-    if (e && e.code === 404) return createEvent(input); // 외부에서 지워졌으면 재생성
+    if (e && e.code === 404) return recreate ? createEvent(input) : null; // 외부에서 지워졌으면 재생성
     // 400이면 시간 형태 충돌일 가능성이 크다(종일↔시간 전환). null로 지우는 방식은 **구글 문서에 명시가 없어**
     // 확증할 수 없으므로, 병합 자체가 없는 update(전체 교체)로 한 번 더 시도한다. 우리는 제목·장소·설명·
     // 참석자·시간을 매번 전부 보내므로 교체해도 잃는 것이 없다(앱→구글 단방향이라 캘린더는 DB의 복제다).

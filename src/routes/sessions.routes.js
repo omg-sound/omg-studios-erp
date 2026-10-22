@@ -114,7 +114,7 @@ async function syncSessionEvent(user, session) {
   if (session.status === "취소" && !session.gcal_event_id) return { synced: true };
   try {
     const input = eventInputForSession(session, project);
-    const newId = await calendar.updateEvent(session.gcal_event_id || null, input, session.gcal_calendar_id);
+    const newId = await calendar.updateEvent(session.gcal_event_id || null, input, session.gcal_calendar_id, { recreate: session.status !== "취소" });
     // 일정 id와 함께 **어느 캘린더에 있는지**도 기록한다 — 룸을 바꿔 다른 캘린더로 옮겨 갈 때·삭제할 때 출발지가 된다.
     const calId = calendar.targetCalendarId(input);
     if (newId && (newId !== session.gcal_event_id || calId !== session.gcal_calendar_id)) setSessionEventId(session.id, newId, calId);

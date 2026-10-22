@@ -176,17 +176,19 @@ router.post("/studio-calendar", requireStaff, (req, res) => {
 });
 
 // ── 기존 캘린더 일정 재동기화(1회성 관리 액션) — 제목·설명 포맷을 최신 로직으로 다시 적용 ──
-// gcal_event_id가 있는(=이미 구글 캘린더에 올라간) 취소 제외 세션 전부를 순회해 updateEvent만 다시 호출한다.
+// gcal_event_id가 있는(=이미 구글 캘린더에 올라간) 세션 전부를 순회해 updateEvent만 다시 호출한다.
+// 취소 세션도 포함한다(2026-10-22 사용자 요청 — 취소 기록도 룸 캘린더 기준으로 정리). 단 구글에서 지워진
+// 취소 일정은 되살리지 않는다(recreate:false).
 // 실패는 개별 건너뛰고 계속(전체 중단 방지) — fail-safe. 결과는 notice로 안내.
 router.post("/resync-calendar", requireChief, asyncHandler(async (req, res) => {
-  const rows = db().prepare("SELECT * FROM sessions WHERE gcal_event_id IS NOT NULL AND status <> '취소'").all();
+  const rows = db().prepare("SELECT * FROM sessions WHERE gcal_event_id IS NOT NULL").all();
   let ok = 0, fail = 0;
   for (const s of rows) {
     const project = db().prepare("SELECT * FROM projects WHERE id = ?").get(s.project_id);
     if (!project) { fail++; continue; }
     try {
       const input = eventInputForSession(s, project);
-      const newId = await calendar.updateEvent(s.gcal_event_id, input, s.gcal_calendar_id); // 룸 캘린더가 바뀌었으면 여기서 옮겨진다
+      const newId = await calendar.updateEvent(s.gcal_event_id, input, s.gcal_calendar_id, { recreate: s.status !== "취소" }); // 룸 캘린더가 바뀌었으면 여기서 옮겨진다
       const calId = calendar.targetCalendarId(input);
       if (newId && (newId !== s.gcal_event_id || calId !== s.gcal_calendar_id)) setSessionEventId(s.id, newId, calId);
       if (newId) ok++; else fail++;
