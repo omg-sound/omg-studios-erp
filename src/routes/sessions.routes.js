@@ -5,6 +5,7 @@ const { requireAuth, requireEditor, canEdit } = require("../auth");
 const {
   listProjectManagers,
   listRooms,
+  getRoom,
   upcomingSessions,
   pastSessions,
   sessionsForCalendar,
@@ -44,6 +45,17 @@ function sessionTypeLabel(session) {
   return `${t} 세션`;
 }
 
+/**
+ * 캘린더 제목 뒤 종류 태그 — `[녹음]`·`[믹스]`(2026-10-22 사용자 요청 — 월간뷰에서 녹음인지 믹스인지 식별이 안 됐다).
+ * 짧은 표기: 대관은 '대관'을 떼고, '기타'는 붙이지 않는다(정보가 없다). 모르는 종류는 그대로.
+ */
+const TYPE_TAG = { 믹싱: "믹스", "촬영 대관": "촬영", "작업 대관": "작업", 기타: "" };
+function sessionTypeTag(session) {
+  const t = String(session.session_type || "").trim();
+  const tag = Object.hasOwn(TYPE_TAG, t) ? TYPE_TAG[t] : t;
+  return tag ? `[${tag}]` : "";
+}
+
 function eventInputForSession(session, project) {
   // ⚠️ trim 필수 — 공백만 든 값(" ")은 truthy라 그대로 두면 제목 앞자리를 차지하고, 화면상으로는
   // "아티스트를 안 적었는데 프로젝트명이 안 붙는다"로 보인다(값이 있는지 없는지 눈으로 구분이 안 된다).
@@ -56,11 +68,14 @@ function eventInputForSession(session, project) {
   const baseTitle = [who, company].filter(Boolean).join(" · ") || "스튜디오 세션"; // 아티스트 먼저(2026-07-05 사용자 요청 — 이전엔 회사가 먼저)
   // 취소된 세션은 캘린더에서 삭제하지 않고 제목에 '(취소)' prefix를 붙여 기록으로 남긴다(2026-07-15 사용자 요청).
   const cancelable = session.status === "취소" ? `(취소) ${baseTitle}` : baseTitle;
+  // 종류 태그는 장소(@) 앞 — `루나 · 뮤직팜 [녹음] @잠실실내체육관`.
+  const typeTag = sessionTypeTag(session);
+  const typed = typeTag ? `${cancelable} ${typeTag}` : cancelable;
   // 외부 일정은 **제목 맨 뒤에 장소**를 붙인다(2026-08-03 사용자 요청 — 월간뷰·알림에는 제목만 보여서
   // 어디서 하는 일정인지 열어봐야 알았다). 라벨은 자동완성에서 고를 때만 생기고, 스튜디오 룸 세션은
   // sessionFields가 null로 지우므로 여기 조건 하나로 '외부 일정만'이 성립한다.
   const placeTag = String(session.location_label || "").trim();
-  const title = placeTag ? `${cancelable} @${placeTag}` : cancelable;
+  const title = placeTag ? `${typed} @${placeTag}` : typed;
   // 담당 디렉터(다대다) 이름 — 본명 (활동명) 병기(전면 병기 통일, 2026-07-05). 캘린더 설명에 포함.
   const directors = session.id ? listSessionDirectors(session.id).map((d) => personLabel(d.name, d.activity_name)).filter(Boolean) : [];
   // 담당 엔지니어(다대다, 2026-07-05) — 배정된 전원을 콤마로 병기(레거시 engineer_name은 첫 명뿐이라 여러 명일 때 누락됨).
@@ -75,7 +90,10 @@ function eventInputForSession(session, project) {
     config.baseUrl ? `${config.baseUrl}/projects/${session.project_id}` : "",
   ].filter(Boolean).join("\n");
   const attendees = sessionAttendeeEmails(session, project); // 프로젝트 매니저·예약담당자·담당엔지니어 이메일(참석자)
-  return { title, location: session.location || calendar.getStudioLocation(), description, attendees, date: session.session_date, start: session.start_time, end: session.end_time, endDate: session.all_day ? session.end_date : null };
+  // 룸에 캘린더가 지정돼 있으면 그 캘린더로(예: Studio C 전용 캘린더). 없으면 null → 스튜디오 캘린더.
+  const room = session.room_id ? getRoom(session.room_id) : null;
+  const calendarId = (room && room.gcal_calendar_id) || null;
+  return { title, location: session.location || calendar.getStudioLocation(), description, attendees, calendarId, date: session.session_date, start: session.start_time, end: session.end_time, endDate: session.all_day ? session.end_date : null };
 }
 
 /**
@@ -95,8 +113,11 @@ async function syncSessionEvent(user, session) {
   // 없던 '(취소)' 일정이 새로 생기던 것 차단(전수 점검 2026-07-15). 이미 있는 일정만 '(취소)' 제목 반영.
   if (session.status === "취소" && !session.gcal_event_id) return { synced: true };
   try {
-    const newId = await calendar.updateEvent(session.gcal_event_id || null, eventInputForSession(session, project));
-    if (newId && newId !== session.gcal_event_id) setSessionEventId(session.id, newId);
+    const input = eventInputForSession(session, project);
+    const newId = await calendar.updateEvent(session.gcal_event_id || null, input, session.gcal_calendar_id);
+    // 일정 id와 함께 **어느 캘린더에 있는지**도 기록한다 — 룸을 바꿔 다른 캘린더로 옮겨 갈 때·삭제할 때 출발지가 된다.
+    const calId = calendar.targetCalendarId(input);
+    if (newId && (newId !== session.gcal_event_id || calId !== session.gcal_calendar_id)) setSessionEventId(session.id, newId, calId);
     if (!newId) return { synced: false, reason: "구글 캘린더 API 오류(서버 로그 확인)" };
     return { synced: true };
   } catch (e) {
@@ -398,7 +419,7 @@ router.post("/sessions/:id/delete", requireEditor, asyncHandler(async (req, res)
     return sessionInputError(e, res, req.user);
   }
   if (!r) return res.status(404).send("세션을 찾을 수 없습니다.");
-  if (existing && existing.gcal_event_id) await calendar.deleteEvent(existing.gcal_event_id);
+  if (existing && existing.gcal_event_id) await calendar.deleteEvent(existing.gcal_event_id, existing.gcal_calendar_id);
   res.redirect(`/projects/${r.project_id}?tab=sessions&flash=deleted`);
 }));
 

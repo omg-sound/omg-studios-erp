@@ -73,9 +73,12 @@ function updateRoom(id, input = {}) {
   const cur = getRoom(id);
   if (!cur) return null;
   const f = roomFields(input);
+  // 캘린더는 **보냈을 때만** 바꾼다 — 구글 미연동이면 select이 안 그려져 값이 안 오는데, 그때 지우면
+  // 연동이 잠깐 끊긴 사이 저장한 것만으로 룸 캘린더 지정이 조용히 사라진다(빈 문자열 = 스튜디오 캘린더로 되돌림).
+  const calendarId = input.gcal_calendar_id === undefined ? cur.gcal_calendar_id : String(input.gcal_calendar_id || "").trim() || null;
   db()
-    .prepare("UPDATE rooms SET name=@name, bookable=@bookable, is_external=@is_external WHERE id=@id")
-    .run({ ...f, id: cur.id });
+    .prepare("UPDATE rooms SET name=@name, bookable=@bookable, is_external=@is_external, gcal_calendar_id=@gcal_calendar_id WHERE id=@id")
+    .run({ ...f, gcal_calendar_id: calendarId, id: cur.id });
   return getRoom(cur.id);
 }
 
@@ -96,6 +99,7 @@ function bulkUpdateRooms(body = {}) {
         room_name: body[`room_name_${id}`],
         bookable: body[`bookable_${id}`],
         is_external: body[`is_external_${id}`],
+        gcal_calendar_id: body[`gcal_calendar_${id}`], // undefined면 updateRoom이 보존
       };
       try { updateRoom(id, input); updated++; }
       catch (e) { if (e.message !== "ROOM_NAME_REQUIRED") throw e; skipped++; }

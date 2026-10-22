@@ -165,14 +165,14 @@ const base = { id: 0, project_id: 5, session_type: "녹음", session_date: "2026
 const titleOf = (extra) => eventInputForSession({ ...base, ...extra }, project).title;
 
 test("제목: 외부 일정이면 맨 뒤에 @장소, 라벨이 없으면 그대로", () => {
-  assert.equal(titleOf({}), "루나 · 뮤직팜", "라벨 없음 = 기존 제목(스튜디오 룸 세션이 여기 해당)");
-  assert.equal(titleOf({ location_label: "잠실실내체육관" }), "루나 · 뮤직팜 @잠실실내체육관");
-  assert.equal(titleOf({ location_label: "튀르키예 이스탄불" }), "루나 · 뮤직팜 @튀르키예 이스탄불");
-  assert.equal(titleOf({ location_label: "   " }), "루나 · 뮤직팜", "공백뿐인 라벨은 없는 것으로");
+  assert.equal(titleOf({}), "루나 · 뮤직팜 [녹음]", "라벨 없음 = 기존 제목(스튜디오 룸 세션이 여기 해당)");
+  assert.equal(titleOf({ location_label: "잠실실내체육관" }), "루나 · 뮤직팜 [녹음] @잠실실내체육관");
+  assert.equal(titleOf({ location_label: "튀르키예 이스탄불" }), "루나 · 뮤직팜 [녹음] @튀르키예 이스탄불");
+  assert.equal(titleOf({ location_label: "   " }), "루나 · 뮤직팜 [녹음]", "공백뿐인 라벨은 없는 것으로");
 });
 
 test("제목: '(취소)'는 맨 앞, 장소는 맨 뒤 — 둘이 함께 걸린다", () => {
-  assert.equal(titleOf({ status: "취소", location_label: "장충체육관" }), "(취소) 루나 · 뮤직팜 @장충체육관");
+  assert.equal(titleOf({ status: "취소", location_label: "장충체육관" }), "(취소) 루나 · 뮤직팜 [녹음] @장충체육관");
 });
 
 // ── 저장 계약 ──
@@ -187,7 +187,7 @@ const mk = (extra) => createSession(CHIEF, projectId, {
 test("저장: 라벨은 주소와 같은 조건 — 외부 장소일 때만 남고 스튜디오 룸이면 지워진다", () => {
   const ext = mk({ room_id: String(extRoom), location: "대한민국 서울특별시 송파구 올림픽로 25", location_label: "잠실실내체육관" });
   assert.equal(ext.location_label, "잠실실내체육관", "외부 장소: 저장됨");
-  assert.equal(eventInputForSession(getSessionForUser(CHIEF, ext.id), project).title, "루나 · 뮤직팜 @잠실실내체육관");
+  assert.equal(eventInputForSession(getSessionForUser(CHIEF, ext.id), project).title, "루나 · 뮤직팜 [녹음] @잠실실내체육관");
 
   const studio = mk({ room_id: String(studioRoom), location: "무시됨", location_label: "잠실실내체육관" });
   assert.equal(studio.location_label, null, "스튜디오 룸: 주소와 함께 라벨도 null");
@@ -198,7 +198,7 @@ test("저장: 라벨은 주소와 같은 조건 — 외부 장소일 때만 남�
     room_id: String(studioRoom), location_label: "잠실실내체육관",
   });
   assert.equal(moved.location_label, null, "장소를 스튜디오로 되돌리면 라벨도 지워진다");
-  assert.equal(eventInputForSession(getSessionForUser(CHIEF, moved.id), project).title, "루나 · 뮤직팜");
+  assert.equal(eventInputForSession(getSessionForUser(CHIEF, moved.id), project).title, "루나 · 뮤직팜 [녹음]");
 });
 
 test("저장: 클라이언트가 보낸 라벨은 길이·개행만 정리한다(계산은 서버가 place-label로 따로 한다)", () => {
@@ -212,24 +212,24 @@ test("저장: 클라이언트가 보낸 라벨은 길이·개행만 정리한다
 // 아티스트를 안 적으면 제목이 회사 이름 하나뿐이라, 그 회사의 여러 일정이 캘린더에서 전부 같은 제목이었다.
 test("제목: 아티스트가 없으면 프로젝트명 · 회사", () => {
   const noArtist = { title: "8월 정기 녹음", production_company: "뮤직팜" };
-  assert.equal(eventInputForSession({ ...base }, noArtist).title, "8월 정기 녹음 · 뮤직팜");
+  assert.equal(eventInputForSession({ ...base }, noArtist).title, "8월 정기 녹음 · 뮤직팜 [녹음]");
   // 아티스트가 있으면 종전대로 프로젝트명은 안 넣는다(길어지고, 설명 맨 앞에 이미 있다).
-  assert.equal(eventInputForSession({ ...base }, { ...noArtist, artist: "루나" }).title, "루나 · 뮤직팜");
+  assert.equal(eventInputForSession({ ...base }, { ...noArtist, artist: "루나" }).title, "루나 · 뮤직팜 [녹음]");
   // 회사도 없으면 프로젝트명만. 둘 다 없으면 폴백 문구.
-  assert.equal(eventInputForSession({ ...base }, { title: "8월 정기 녹음" }).title, "8월 정기 녹음");
-  assert.equal(eventInputForSession({ ...base }, {}).title, "스튜디오 세션");
+  assert.equal(eventInputForSession({ ...base }, { title: "8월 정기 녹음" }).title, "8월 정기 녹음 [녹음]");
+  assert.equal(eventInputForSession({ ...base }, {}).title, "스튜디오 세션 [녹음]");
   // 소속사만 있는 경우(제작사 없음)도 같은 규칙 — 회사 자리는 제작사 우선, 없으면 레이블.
-  assert.equal(eventInputForSession({ ...base }, { title: "데모", artist_company: "워터멜론" }).title, "데모 · 워터멜론");
+  assert.equal(eventInputForSession({ ...base }, { title: "데모", artist_company: "워터멜론" }).title, "데모 · 워터멜론 [녹음]");
 });
 
 test("제목: 아티스트 없는 외부 일정 — 프로젝트명 · 회사 @장소, 취소면 접두까지", () => {
   const p = { title: "8월 정기 녹음", production_company: "뮤직팜" };
-  assert.equal(eventInputForSession({ ...base, location_label: "잠실실내체육관" }, p).title, "8월 정기 녹음 · 뮤직팜 @잠실실내체육관");
-  assert.equal(eventInputForSession({ ...base, status: "취소", location_label: "장충체육관" }, p).title, "(취소) 8월 정기 녹음 · 뮤직팜 @장충체육관");
+  assert.equal(eventInputForSession({ ...base, location_label: "잠실실내체육관" }, p).title, "8월 정기 녹음 · 뮤직팜 [녹음] @잠실실내체육관");
+  assert.equal(eventInputForSession({ ...base, status: "취소", location_label: "장충체육관" }, p).title, "(취소) 8월 정기 녹음 · 뮤직팜 [녹음] @장충체육관");
 });
 
 test("제목: 공백만 든 아티스트·회사는 없는 것으로 본다(눈으로 구분이 안 되는 값)", () => {
   // " "는 truthy라 방어가 없으면 제목 앞자리를 차지하고, 화면상 '아티스트를 안 적었는데 프로젝트명이 안 붙는다'가 된다.
-  assert.equal(eventInputForSession({ ...base }, { title: "넷플릭스 흑백가수", artist: "   ", production_company: "뮤직팜" }).title, "넷플릭스 흑백가수 · 뮤직팜");
-  assert.equal(eventInputForSession({ ...base }, { title: "넷플릭스 흑백가수", artist: "", production_company: " " }).title, "넷플릭스 흑백가수");
+  assert.equal(eventInputForSession({ ...base }, { title: "넷플릭스 흑백가수", artist: "   ", production_company: "뮤직팜" }).title, "넷플릭스 흑백가수 · 뮤직팜 [녹음]");
+  assert.equal(eventInputForSession({ ...base }, { title: "넷플릭스 흑백가수", artist: "", production_company: " " }).title, "넷플릭스 흑백가수 [녹음]");
 });

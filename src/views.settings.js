@@ -234,13 +234,13 @@ async function studioCalendarSection(chief = false) {
  * 룸(스튜디오 공간) 관리 — 추가·이름 수정·순서 이동·삭제. 룸별 시간 겹침 검사의 기준.
  * 계층(상위/하위)은 2026-07-28 폐지 — 목록은 sort_order 한 축의 평면 나열이다(src/data/rooms.js 참조).
  */
-function roomsSection() {
+function roomsSection(calendars = []) {
   const rooms = listRooms({ includeInactive: true });
-  const rows = rooms.length ? rooms.map((r) => roomRow(r)).join("") : emptyState("등록된 룸이 없습니다.");
+  const rows = rooms.length ? rooms.map((r) => roomRow(r, calendars)).join("") : emptyState("등록된 룸이 없습니다.");
   return `
     <div class="${SETTING_BLOCK}" id="rooms-section">
       <div>
-        <h2 class="mb-3 text-sm font-semibold">장소 (스튜디오 룸 · 외부)${settingHint(`<span class="text-fg">같은 장소끼리만</span> 세션 시간 겹침을 검사합니다(다른 장소는 같은 시간에 나란히 예약 가능). <b>예약 대상</b>을 끄면 세션 폼 장소 목록에서 빠지고(예: Lounge), <b>외부</b>로 표시하면 주소 입력칸이 나옵니다. 이름은 고쳐도 그 장소로 잡힌 세션이 유지됩니다(지웠다 만들면 '장소 미지정'이 됩니다).`, "장소 설정 설명")}</h2>
+        <h2 class="mb-3 text-sm font-semibold">장소 (스튜디오 룸 · 외부)${settingHint(`<span class="text-fg">같은 장소끼리만</span> 세션 시간 겹침을 검사합니다(다른 장소는 같은 시간에 나란히 예약 가능). <b>예약 대상</b>을 끄면 세션 폼 장소 목록에서 빠지고(예: Lounge), <b>외부</b>로 표시하면 주소 입력칸이 나옵니다. 이름은 고쳐도 그 장소로 잡힌 세션이 유지됩니다(지웠다 만들면 '장소 미지정'이 됩니다). <b>캘린더</b>를 고르면 그 장소의 세션이 스튜디오 캘린더 대신 그 캘린더에 올라갑니다(이미 올라간 일정은 '기존 캘린더 일정 다시 동기화'로 옮겨집니다).`, "장소 설정 설명")}</h2>
       </div>
       <form method="post" action="/settings/rooms" class="flex flex-wrap items-center gap-2">
         <input class="input py-1.5 text-sm" name="room_name" placeholder="장소 이름 (예: Studio D · 외부일정)" autocomplete="off" required />
@@ -263,17 +263,34 @@ function roomsSection() {
  * wide 전환으로 여유 폭은 생겼지만, 데스크톱에서 확실히 한 줄이 되도록 `sm:flex-nowrap` + 이름칸 상한(`sm:max-w-xs`)을 더한다.
  * 모바일(<640px)은 현행 flex-wrap 그대로(감김 허용).
  */
-function roomRow(r) {
+function roomRow(r, calendars = []) {
   return `
     <div class="flex flex-wrap items-center gap-2 rounded-lg p-2 sm:flex-nowrap" id="room-${r.id}">
       <input class="input min-w-36 flex-1 py-1.5 text-sm sm:max-w-xs" name="room_name_${r.id}" value="${esc(r.name)}" aria-label="장소 이름" autocomplete="off" required />
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm sm:shrink-0"><input type="checkbox" name="bookable_${r.id}" value="1" ${r.bookable ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 예약 대상</label>
       <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm sm:shrink-0"><input type="checkbox" name="is_external_${r.id}" value="1" ${r.is_external ? "checked" : ""} class="h-4 w-4 rounded border-border text-primary" /> 외부</label>
+      ${roomCalendarSelect(r, calendars)}
       <span class="ml-auto flex shrink-0 items-center gap-1">
         <button class="btn-ghost btn-xs whitespace-nowrap text-danger" type="submit" form="room-del-${r.id}">삭제</button>
         ${moveButtons(`room-mv-u-${r.id}`, `room-mv-d-${r.id}`)}
       </span>
     </div>`;
+}
+
+/**
+ * 룸별 캘린더 select(2026-10-22 — Studio C는 다른 룸과 장소가 안 겹쳐 따로 보고 싶다는 요청).
+ * 캘린더 목록이 없으면(구글 미연동·자동 연동 꺼짐) **그리지 않는다** — 값이 안 오면 updateRoom이 기존 지정을 보존한다.
+ * 지정된 캘린더가 목록에 없어도(권한 해제 등) 옵션으로 살려 둔다(전 화면 불변식 — 안 그러면 다른 칸만 고쳐 저장해도 지정이 지워진다).
+ */
+function roomCalendarSelect(r, calendars) {
+  if (!calendars.length) return "";
+  const cur = r.gcal_calendar_id || "";
+  const known = calendars.some((c) => c.id === cur);
+  return `<select class="input py-1.5 text-sm sm:max-w-[12rem]" name="gcal_calendar_${r.id}" aria-label="${esc(r.name)} 캘린더">
+        <option value="" ${cur ? "" : "selected"}>캘린더: 스튜디오 기본</option>
+        ${cur && !known ? `<option value="${esc(cur)}" selected>(목록에 없음)</option>` : ""}
+        ${calendars.map((c) => `<option value="${esc(c.id)}" ${c.id === cur ? "selected" : ""}>${esc(c.summary)}</option>`).join("")}
+      </select>`;
 }
 
 /** 룸 행의 형제 hidden 액션 폼(↑↓·삭제) — bulk 폼 밖에 렌더해 중첩 폼 회피. */

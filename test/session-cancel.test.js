@@ -19,9 +19,9 @@ const base = { id: 0, project_id: 5, session_type: "녹음", session_date: "2026
 const titleOf = (status) => eventInputForSession({ ...base, status }, project).title;
 
 test("eventInputForSession: 취소면 제목에 '(취소)' prefix, 예정·완료는 없음", () => {
-  assert.equal(titleOf("예정"), "루나 · 뮤직팜", "예정: prefix 없음");
-  assert.equal(titleOf("완료"), "루나 · 뮤직팜", "완료: prefix 없음");
-  assert.equal(titleOf("취소"), "(취소) 루나 · 뮤직팜", "취소: '(취소)' prefix");
+  assert.equal(titleOf("예정"), "루나 · 뮤직팜 [녹음]", "예정: prefix 없음");
+  assert.equal(titleOf("완료"), "루나 · 뮤직팜 [녹음]", "완료: prefix 없음");
+  assert.equal(titleOf("취소"), "(취소) 루나 · 뮤직팜 [녹음]", "취소: '(취소)' prefix");
 });
 
 test("sessionCardModal: 편집자 취소/취소 해제 버튼(상태별), 비편집자는 없음", () => {

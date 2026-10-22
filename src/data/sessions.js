@@ -484,8 +484,8 @@ function updateSession(user, sessionId, input = {}) {
 }
 
 /** 세션에 자동 생성한 구글 캘린더 일정 id 저장(null이면 해제). */
-function setSessionEventId(sessionId, eventId) {
-  db().prepare("UPDATE sessions SET gcal_event_id = ? WHERE id = ?").run(eventId || null, sessionId);
+function setSessionEventId(sessionId, eventId, calendarId = null) {
+  db().prepare("UPDATE sessions SET gcal_event_id = ?, gcal_calendar_id = ? WHERE id = ?").run(eventId || null, calendarId || null, sessionId);
 }
 
 /**

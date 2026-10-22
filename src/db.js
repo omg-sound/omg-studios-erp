@@ -452,6 +452,7 @@ function init() {
   addColumn("project_managers", "contact_id", "INTEGER"); // 연동 연락처(contacts.id). null=미연동
   addColumn("sessions", "booker_name", "TEXT"); // 예약 담당자(담당자 마스터에서 선택, 담당 엔지니어와 별개)
   addColumn("sessions", "gcal_event_id", "TEXT"); // 예약 시 자동 생성한 구글 캘린더 일정 id(수정·삭제 추적)
+  addColumn("sessions", "gcal_calendar_id", "TEXT"); // 그 일정이 올라간 캘린더 id(룸별 캘린더, 2026-10-22). NULL=스튜디오 캘린더(옛 일정)
   addColumn("sessions", "room_id", "INTEGER"); // 룸(스튜디오 공간). FK 없음(ALTER 한계) — 룸별 겹침 검사, 룸 삭제 시 코드가 NULL 처리(SET NULL 의미)
   // room_id 컬럼은 위 addColumn으로 보장되므로 의존 인덱스는 여기서 생성(big exec 블록보다 뒤).
   d.exec("CREATE INDEX IF NOT EXISTS idx_sessions_room ON sessions(room_id);");
@@ -495,6 +496,7 @@ function init() {
   // 컬럼을 빼면 옛 DB와 스키마가 갈리고, rooms_drop_hierarchy_v1이 이 컬럼을 조회하므로 존재해야 한다.
   addColumn("rooms", "parent_id", "INTEGER");
   addColumn("rooms", "bookable", "INTEGER NOT NULL DEFAULT 1");
+  addColumn("rooms", "gcal_calendar_id", "TEXT"); // 이 룸 세션을 올릴 구글 캘린더(2026-10-22). NULL=스튜디오 캘린더
   addColumn("track_tasks", "work_date", "TEXT"); // 작업일(YYYY-MM-DD, 선택 — 개편 1단계 2026-10-13). 청구 라인 날짜·대기함 기간 필터 기준, NULL=등록일로 폴백
   addColumn("session_directors", "party_id", "INTEGER"); // 다대다 디렉터(parties.id, 기존 contact_id 대체)
   addColumn("parties", "group_id", "INTEGER"); // 아티스트(사람)의 소속 그룹(parties.id, kind='group'). 그룹↔멤버 연결

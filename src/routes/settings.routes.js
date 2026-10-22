@@ -27,6 +27,7 @@ const {
   getParty,
   setPartyGoogleRef,
   syncSessionEngineerName,
+  setSessionEventId,
 } = require("../data");
 const { layout, pageHeader, esc, flashBanner } = require("../views");
 const {
@@ -82,7 +83,8 @@ router.get("/", requireStaff, asyncHandler(async (req, res) => {
   // 배경·테두리 없이 맨바닥에 렌더됐다(최종 리뷰가 잡음) → 여기서 감싼다. 나머지 화면은 스스로 카드를 두른다.
   const card = (html) => `<section class="card space-y-4">${html}</section>`;
   let pane;
-  if (cur === "rooms") pane = card(roomsSection());
+  // 룸별 캘린더 select용 목록 — 자동 연동이 켜져 있을 때만 구글에 묻는다(꺼져 있으면 고를 의미가 없고 API 왕복만 생긴다).
+  if (cur === "rooms") pane = card(roomsSection(calendar.syncStatus().ok ? await calendar.listCalendars() : []));
   else if (cur === "tasks") pane = taskTypesPane();
   else if (cur === "booking") pane = bookingDefaultsSection();
   else if (cur === "users") pane = peopleTab(req.user);
@@ -183,7 +185,10 @@ router.post("/resync-calendar", requireChief, asyncHandler(async (req, res) => {
     const project = db().prepare("SELECT * FROM projects WHERE id = ?").get(s.project_id);
     if (!project) { fail++; continue; }
     try {
-      const newId = await calendar.updateEvent(s.gcal_event_id, eventInputForSession(s, project));
+      const input = eventInputForSession(s, project);
+      const newId = await calendar.updateEvent(s.gcal_event_id, input, s.gcal_calendar_id); // 룸 캘린더가 바뀌었으면 여기서 옮겨진다
+      const calId = calendar.targetCalendarId(input);
+      if (newId && (newId !== s.gcal_event_id || calId !== s.gcal_calendar_id)) setSessionEventId(s.id, newId, calId);
       if (newId) ok++; else fail++;
     } catch (e) {
       fail++;

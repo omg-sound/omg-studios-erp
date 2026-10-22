@@ -126,10 +126,15 @@ function syncStatus() {
   return { ok: !reason, reason };
 }
 
-/** 스튜디오 캘린더에 일정 생성 → event id. 미연동/오류면 null(예약 자체는 막지 않음). */
+/** 일정이 올라갈 캘린더 — 룸에 지정된 캘린더(input.calendarId), 없으면 스튜디오 캘린더. */
+function targetCalendarId(input = {}) {
+  return input.calendarId || getStudioCalendarId();
+}
+
+/** 대상 캘린더(룸 캘린더 또는 스튜디오 캘린더)에 일정 생성 → event id. 미연동/오류면 null(예약 자체는 막지 않음). */
 async function createEvent(input = {}) {
   const cal = calendarClient();
-  const calId = getStudioCalendarId();
+  const calId = targetCalendarId(input);
   if (!cal || !calId || !RE_DATE.test(input.date)) {
     console.warn(`[calendar] createEvent 스킵 — ${skipReason(cal, calId, input.date)}`);
     return null;
@@ -143,15 +148,30 @@ async function createEvent(input = {}) {
   }
 }
 
-/** 기존 일정 수정(시간/제목/장소). 성공 true. 일정이 없으면(404) 새로 만들어 새 id 반환(string). */
-async function updateEvent(eventId, input = {}) {
+/**
+ * 기존 일정 수정(시간/제목/장소) → event id. 일정이 없으면(404) 새로 만들어 새 id 반환.
+ * `fromCalendarId` = 그 일정이 지금 있는 캘린더(sessions.gcal_calendar_id, NULL=스튜디오 캘린더).
+ * 대상 캘린더와 다르면(룸을 Studio C로 바꿈·룸 캘린더 지정 후 재동기화) **먼저 events.move로 옮긴다** —
+ * 지우고 새로 만들면 id가 바뀌고 실패 시 일정이 두 벌이 되거나 사라진다. move는 id를 유지한다.
+ */
+async function updateEvent(eventId, input = {}, fromCalendarId = null) {
   const cal = calendarClient();
-  const calId = getStudioCalendarId();
+  const calId = targetCalendarId(input);
   if (!cal || !calId || !RE_DATE.test(input.date)) {
     console.warn(`[calendar] updateEvent 스킵 — ${skipReason(cal, calId, input.date)}`);
     return null;
   }
   if (!eventId) return createEvent(input); // 연동 후 처음 수정되는 옛 세션 → 새로 생성
+  const fromId = fromCalendarId || getStudioCalendarId();
+  if (fromId && fromId !== calId) {
+    try {
+      await cal.events.move({ calendarId: fromId, eventId, destination: calId });
+    } catch (e) {
+      if (e && (e.code === 404 || e.code === 410)) return createEvent(input); // 원래 캘린더에서 지워졌으면 대상에 재생성
+      console.error(`[calendar] updateEvent move 실패 — code=${e && e.code} msg=${e && e.message}`);
+      return null; // 옮기지 못했으면 실패로 알린다(기존 연결·캘린더 기록은 그대로)
+    }
+  }
   try {
     // clearOpposite=true — patch 병합으로 date/dateTime이 공존하지 않게(종일↔시간 전환, 위 eventTimes 참조).
     await cal.events.patch({ calendarId: calId, eventId, requestBody: eventBody(input, true) });
@@ -180,10 +200,10 @@ async function updateEvent(eventId, input = {}) {
   }
 }
 
-/** 일정 삭제. 미연동/없음/오류는 조용히 무시. */
-async function deleteEvent(eventId) {
+/** 일정 삭제(calendarId = 일정이 있는 캘린더, 없으면 스튜디오 캘린더). 미연동/없음/오류는 조용히 무시. */
+async function deleteEvent(eventId, calendarId = null) {
   const cal = calendarClient();
-  const calId = getStudioCalendarId();
+  const calId = calendarId || getStudioCalendarId();
   if (!cal || !calId || !eventId) return false;
   try {
     await cal.events.delete({ calendarId: calId, eventId });
@@ -203,6 +223,7 @@ module.exports = {
   setStudioLocation,
   calendarClient,
   listCalendars,
+  targetCalendarId,
   rfc3339Kst,
   eventTimes, // 종일/다일/야간 시간 조립(순수) — 테스트 노출(KST +1일 산술 회귀 잠금)
   eventBody,
