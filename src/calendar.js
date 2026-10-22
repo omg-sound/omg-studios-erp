@@ -100,12 +100,26 @@ function eventTimes(date, start, end, endDate, clearOpposite = false) {
   return { start: { date, ...clear }, end: { date: dt.toISOString().slice(0, 10), ...clear } };
 }
 
-function eventBody({ title, location, description, date, start, end, endDate, attendees }, clearOpposite = false) {
+/**
+ * 참석자 응답 상태(2026-10-22 사용자 결정 '보존 + 수락'). `{email}`만 보내면 구글이 응답을 needsAction으로
+ * 되돌려, 세션을 저장하거나 재동기화할 때마다 전원이 '응답 대기'가 됐다(실측: accepted → needsAction).
+ * → ①이미 응답한 사람(accepted·declined·tentative)은 그 응답을 그대로 둔다 ②새로 배정됐거나 응답 전인 사람은
+ *   accepted — ERP 배정이 곧 참석 확정이라 수락 버튼은 형식이다. `prev`=구글의 현재 참석자(갱신 경로만).
+ */
+function attendeeList(emails, prev = null) {
+  const prior = new Map((prev || []).map((a) => [String(a.email || "").toLowerCase(), a.responseStatus]));
+  return emails.map((email) => {
+    const st = prior.get(String(email).toLowerCase());
+    return { email, responseStatus: st && st !== "needsAction" ? st : "accepted" };
+  });
+}
+
+function eventBody({ title, location, description, date, start, end, endDate, attendees }, clearOpposite = false, prevAttendees = null) {
   const body = Object.assign({ summary: title || "스튜디오 세션" }, eventTimes(date, start, end, endDate, clearOpposite));
   if (location) body.location = location;
   if (description) body.description = description;
   // 참석자(프로젝트 매니저·예약담당자·담당엔지니어 이메일). 초대 메일은 안 보냄(캘린더 이벤트에만 표시) — sendUpdates 미지정(기본 none).
-  if (Array.isArray(attendees) && attendees.length) body.attendees = attendees.map((email) => ({ email }));
+  if (Array.isArray(attendees) && attendees.length) body.attendees = attendeeList(attendees, prevAttendees);
   return body;
 }
 
@@ -174,9 +188,15 @@ async function updateEvent(eventId, input = {}, fromCalendarId = null, { recreat
       return null; // 옮기지 못했으면 실패로 알린다(기존 연결·캘린더 기록은 그대로)
     }
   }
+  // 현재 참석자 응답을 읽어 보존한다(attendeeList). 읽기 실패는 무시 — 없으면 전원 accepted로 보낸다(404는 아래 patch가 처리).
+  let prevAttendees = null;
+  try {
+    const { data } = await cal.events.get({ calendarId: calId, eventId });
+    prevAttendees = (data && data.attendees) || null;
+  } catch (_e) { /* fail-safe */ }
   try {
     // clearOpposite=true — patch 병합으로 date/dateTime이 공존하지 않게(종일↔시간 전환, 위 eventTimes 참조).
-    await cal.events.patch({ calendarId: calId, eventId, requestBody: eventBody(input, true) });
+    await cal.events.patch({ calendarId: calId, eventId, requestBody: eventBody(input, true, prevAttendees) });
     return eventId;
   } catch (e) {
     if (e && e.code === 404) return recreate ? createEvent(input) : null; // 외부에서 지워졌으면 재생성
@@ -185,7 +205,7 @@ async function updateEvent(eventId, input = {}, fromCalendarId = null, { recreat
     // 참석자·시간을 매번 전부 보내므로 교체해도 잃는 것이 없다(앱→구글 단방향이라 캘린더는 DB의 복제다).
     if (e && e.code === 400) {
       try {
-        await cal.events.update({ calendarId: calId, eventId, requestBody: eventBody(input) });
+        await cal.events.update({ calendarId: calId, eventId, requestBody: eventBody(input, false, prevAttendees) });
         console.warn(`[calendar] updateEvent patch 400 → update로 복구 — msg=${e && e.message}`);
         return eventId;
       } catch (e2) {

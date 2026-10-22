@@ -70,6 +70,7 @@ function fakeGoogle() {
   const calls = [];
   const events = {
     insert: async (a) => { calls.push(["insert", a.calendarId]); return { data: { id: "evt-new" } }; },
+    get: async () => ({ data: {} }),
     patch: async (a) => { calls.push(["patch", a.calendarId, a.eventId]); return { data: {} }; },
     move: async (a) => { calls.push(["move", a.calendarId, a.eventId, a.destination]); return { data: {} }; },
     delete: async (a) => { calls.push(["delete", a.calendarId, a.eventId]); return { data: {} }; },
@@ -143,6 +144,37 @@ test("updateEvent: move 실패(404)면 대상 캘린더에 새로 만든다(취�
     assert.deepEqual(fake.calls, [], "insert 호출 없음");
     fake.client.events.move = async () => { const e = new Error("forbidden"); e.code = 403; throw e; };
     assert.equal(await calendar.updateEvent("evt-x", input, CAL_MAIN), null, "옮기지 못하면 실패로 알린다");
+  } finally {
+    config.googleConfigured = origConfigured;
+    google.calendar = origCal;
+  }
+});
+
+// ── 참석자 응답 상태(2026-10-22) — {email}만 보내 재동기화마다 전원이 '응답 대기'로 돌아가던 것 ──
+test("attendees: 이미 한 응답은 보존, 새 참석자·응답 전은 accepted", async () => {
+  const { config } = require("../src/config");
+  const { google } = require("googleapis");
+  const calendar = require("../src/calendar");
+  const origConfigured = config.googleConfigured, origCal = google.calendar;
+  const fake = fakeGoogle();
+  let sent = null;
+  fake.client.events.get = async () => ({ data: { attendees: [
+    { email: "A@x.com", responseStatus: "declined" },
+    { email: "b@x.com", responseStatus: "needsAction" },
+    { email: "gone@x.com", responseStatus: "accepted" },
+  ] } });
+  fake.client.events.patch = async (a) => { sent = a.requestBody.attendees; return { data: {} }; };
+  config.googleConfigured = true;
+  google.calendar = () => fake.client;
+  try {
+    const input = { title: "t", date: "2026-11-03", start: "14:00", end: "15:00", calendarId: CAL_C, attendees: ["a@x.com", "b@x.com", "new@x.com"] };
+    assert.equal(await calendar.updateEvent("evt-1", input, CAL_C), "evt-1");
+    assert.deepEqual(sent, [
+      { email: "a@x.com", responseStatus: "declined" },
+      { email: "b@x.com", responseStatus: "accepted" },
+      { email: "new@x.com", responseStatus: "accepted" },
+    ], "거절은 보존(대소문자 무시)·응답 전은 수락·빠진 사람은 제외");
+    assert.deepEqual(calendar.eventBody(input).attendees.map((a) => a.responseStatus), ["accepted", "accepted", "accepted"], "새 일정은 전원 수락");
   } finally {
     config.googleConfigured = origConfigured;
     google.calendar = origCal;
