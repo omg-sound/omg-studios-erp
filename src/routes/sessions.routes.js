@@ -20,6 +20,7 @@ const {
   deleteSession,
   busySessionRanges,
   sessionAttendeeEmails,
+  houseEngineerEmails,
   listSessionDirectors,
   listSessionEngineers,
   contactOptions,
@@ -90,10 +91,11 @@ function eventInputForSession(session, project) {
     config.baseUrl ? `${config.baseUrl}/projects/${session.project_id}` : "",
   ].filter(Boolean).join("\n");
   const attendees = sessionAttendeeEmails(session, project); // 프로젝트 매니저·예약담당자·담당엔지니어 이메일(참석자)
+  const autoAccept = houseEngineerEmails(); // 하우스 엔지니어만 자동 수락, 나머지는 본인이 수락
   // 룸에 캘린더가 지정돼 있으면 그 캘린더로(예: Studio C 전용 캘린더). 없으면 null → 스튜디오 캘린더.
   const room = session.room_id ? getRoom(session.room_id) : null;
   const calendarId = (room && room.gcal_calendar_id) || null;
-  return { title, location: session.location || calendar.getStudioLocation(), description, attendees, calendarId, date: session.session_date, start: session.start_time, end: session.end_time, endDate: session.all_day ? session.end_date : null };
+  return { title, location: session.location || calendar.getStudioLocation(), description, attendees, autoAccept, calendarId, date: session.session_date, start: session.start_time, end: session.end_time, endDate: session.all_day ? session.end_date : null };
 }
 
 /**

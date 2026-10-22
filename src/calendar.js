@@ -101,25 +101,29 @@ function eventTimes(date, start, end, endDate, clearOpposite = false) {
 }
 
 /**
- * 참석자 응답 상태(2026-10-22 사용자 결정 '보존 + 수락'). `{email}`만 보내면 구글이 응답을 needsAction으로
+ * 참석자 응답 상태(2026-10-22 사용자 결정). `{email}`만 보내면 구글이 응답을 needsAction으로
  * 되돌려, 세션을 저장하거나 재동기화할 때마다 전원이 '응답 대기'가 됐다(실측: accepted → needsAction).
- * → ①이미 응답한 사람(accepted·declined·tentative)은 그 응답을 그대로 둔다 ②새로 배정됐거나 응답 전인 사람은
- *   accepted — ERP 배정이 곧 참석 확정이라 수락 버튼은 형식이다. `prev`=구글의 현재 참석자(갱신 경로만).
+ * → ①이미 응답한 사람(accepted·declined·tentative)은 그 응답을 그대로 둔다 ②응답 전인 하우스 엔지니어(autoAccept)는
+ *   accepted — ERP 배정이 곧 참석 확정 ③그 외(외주·외부)는 needsAction으로 두어 본인이 수락한다.
+ * `prev`=구글의 현재 참석자(갱신 경로만). `autoAccept` 미지정 = 전원 자동 수락(호출부 호환).
  */
-function attendeeList(emails, prev = null) {
+function attendeeList(emails, prev = null, autoAccept = null) {
   const prior = new Map((prev || []).map((a) => [String(a.email || "").toLowerCase(), a.responseStatus]));
+  const auto = autoAccept ? new Set(autoAccept.map((e) => String(e).toLowerCase())) : null;
   return emails.map((email) => {
-    const st = prior.get(String(email).toLowerCase());
-    return { email, responseStatus: st && st !== "needsAction" ? st : "accepted" };
+    const key = String(email).toLowerCase();
+    const st = prior.get(key);
+    if (st && st !== "needsAction") return { email, responseStatus: st };
+    return { email, responseStatus: !auto || auto.has(key) ? "accepted" : "needsAction" };
   });
 }
 
-function eventBody({ title, location, description, date, start, end, endDate, attendees }, clearOpposite = false, prevAttendees = null) {
+function eventBody({ title, location, description, date, start, end, endDate, attendees, autoAccept }, clearOpposite = false, prevAttendees = null) {
   const body = Object.assign({ summary: title || "스튜디오 세션" }, eventTimes(date, start, end, endDate, clearOpposite));
   if (location) body.location = location;
   if (description) body.description = description;
   // 참석자(프로젝트 매니저·예약담당자·담당엔지니어 이메일). 초대 메일은 안 보냄(캘린더 이벤트에만 표시) — sendUpdates 미지정(기본 none).
-  if (Array.isArray(attendees) && attendees.length) body.attendees = attendeeList(attendees, prevAttendees);
+  if (Array.isArray(attendees) && attendees.length) body.attendees = attendeeList(attendees, prevAttendees, autoAccept);
   return body;
 }
 
@@ -249,6 +253,7 @@ module.exports = {
   rfc3339Kst,
   eventTimes, // 종일/다일/야간 시간 조립(순수) — 테스트 노출(KST +1일 산술 회귀 잠금)
   eventBody,
+  attendeeList, // 참석자 응답 규칙(순수) — 테스트 노출
   createEvent,
   updateEvent,
   deleteEvent,

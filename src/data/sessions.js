@@ -282,6 +282,15 @@ function sessionAttendeeEmails(session, project) {
   return [...emails];
 }
 
+/**
+ * 캘린더 자동 수락 대상 — 하우스 엔지니어(로그인 계정과 링크된 작업 담당자, user_id 있음)의 이메일(소문자).
+ * 외주 작업자·외부 인원은 여기 없어 본인이 직접 수락한다(2026-10-22 사용자 결정).
+ */
+function houseEngineerEmails() {
+  const rows = db().prepare("SELECT email FROM project_managers WHERE user_id IS NOT NULL AND email IS NOT NULL AND TRIM(email) <> ''").all();
+  return rows.map((r) => String(r.email).trim().toLowerCase());
+}
+
 /** 세션의 담당 디렉터(연락처) 목록. */
 function listSessionDirectors(sessionId) {
   return db()
@@ -646,6 +655,7 @@ module.exports = {
   listSessionsForProject,
   getSessionForUser,
   sessionAttendeeEmails,
+  houseEngineerEmails,
   listSessionDirectors,
   listSessionEngineers,
   listSessionPayoutsForWorker,

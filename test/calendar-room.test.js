@@ -181,4 +181,24 @@ test("attendees: 이미 한 응답은 보존, 새 참석자·응답 전은 accep
   }
 });
 
+test("attendees: 하우스 엔지니어만 자동 수락, 외주·외부는 응답 대기(이미 한 응답은 보존)", () => {
+  const { attendeeList } = require("../src/calendar");
+  const prev = [{ email: "ext-old@x.com", responseStatus: "declined" }, { email: "house@x.com", responseStatus: "needsAction" }];
+  assert.deepEqual(attendeeList(["House@x.com", "ext@x.com", "ext-old@x.com"], prev, ["house@x.com"]), [
+    { email: "House@x.com", responseStatus: "accepted" },
+    { email: "ext@x.com", responseStatus: "needsAction" },
+    { email: "ext-old@x.com", responseStatus: "declined" },
+  ]);
+});
+
+test("eventInputForSession: autoAccept = user_id 링크된 작업 담당자 이메일(하우스)", () => {
+  const D = db();
+  const uid = Number(D.prepare("INSERT INTO users (email, role, name) VALUES ('house-login@x.com', 'staff', '하우스A')").run().lastInsertRowid);
+  D.prepare("INSERT INTO project_managers (name, email, user_id) VALUES ('하우스A', 'House-A@x.com', ?)").run(uid);
+  D.prepare("INSERT INTO project_managers (name, email) VALUES ('외주B', 'ext-b@x.com')").run();
+  const auto = eventInputForSession({ ...base, session_type: "녹음" }, project).autoAccept;
+  assert.ok(auto.includes("house-a@x.com"), "하우스(소문자)");
+  assert.ok(!auto.includes("ext-b@x.com"), "외주 제외");
+});
+
 test.after(() => cleanupDb());
